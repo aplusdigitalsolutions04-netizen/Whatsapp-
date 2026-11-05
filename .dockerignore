@@ -1,0 +1,11 @@
+.cache
+build
+node_modules
+.wa-auth
+.wa-media
+.env
+.env.*
+*.sqlite
+.git
+.finder-media
+.image-editor

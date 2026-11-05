@@ -1,0 +1,65 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "9eb7626dfb4745db9f54edf94a47f8ec"
+name = "Whatsapp Enquery"
+application_url = "https://example.com"
+embedded = true
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_orders,read_customers,read_products,write_products,write_files"
+
+[webhooks]
+api_version = "2027-01"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/orders/create"
+  topics = [ "orders/create" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/orders/updated"
+  topics = [ "orders/updated" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/orders/cancelled"
+  topics = [ "orders/cancelled" ]
+
+[events]
+api_version = "2026-10"
+
+  [[events.subscription]]
+  handle = "product-price-change"
+  topic = "Product"
+  actions = [ "update" ]
+  triggers = [ "product.variants.price", "product.variants.compareAtPrice" ]
+  uri = "/webhooks/products/update"
+  query = """
+  query product_variant_price_change($productId: ID!, $variantsId: ID!) {\r
+    product(id: $productId) {\r
+      id\r
+      title\r
+      status\r
+    }\r
+    productVariant(id: $variantsId) {\r
+      id\r
+      title\r
+      price\r
+      compareAtPrice\r
+    }\r
+  }\r
+  """
+  query_filter = "product.status:'ACTIVE'"
+
+[auth]
+redirect_urls = [ "https://example.com/api/auth" ]
+
+[build]
+automatically_update_urls_on_dev = true

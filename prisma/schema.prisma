@@ -1,0 +1,488 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
+// enough when changing adapters.
+// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+model BotSettings {
+  shop                   String   @id
+  enabled                Boolean  @default(true)
+  maxVerifyAttempts      Int      @default(3)
+  recommendationsEnabled Boolean  @default(true)
+  maxRecommendations     Int      @default(3)
+  // "productType" | "tag"
+  recommendationRule     String   @default("productType")
+  // JSON object of customer-facing templates; missing keys fall back to defaults
+  templates              String   @default("{}")
+  // Optional AI fallback. Key is AES-GCM encrypted at rest and never sent to the browser.
+  aiEnabled              Boolean  @default(false)
+  // "openai" | "anthropic"
+  aiProvider             String   @default("openai")
+  aiModel                String   @default("")
+  aiKeyEnc               String?
+  updatedAt              DateTime @updatedAt
+}
+
+model Conversation {
+  id             String    @id @default(cuid())
+  shop           String
+  phone          String
+  customerName   String?
+  // "bot" | "human"
+  mode           String    @default("bot")
+  // "open" | "closed"
+  status         String    @default("open")
+  // "idle" | "awaiting_order_selection" | "awaiting_order_number" | "awaiting_product_selection"
+  state          String    @default("idle")
+  // JSON array of order GIDs offered for selection
+  pendingOrders  String    @default("[]")
+  verifyAttempts Int       @default(0)
+  // "en" | "hi": language the customer last wrote in
+  lang           String    @default("en")
+  handoffReason  String?
+  lastInboundAt  DateTime?
+  // WhatsApp profile picture, cached on disk under WHATSAPP_MEDIA_DIR (QR connection only)
+  avatarFile     String?
+  avatarAt       DateTime?
+  lastMessageAt  DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+  messages       Message[]
+
+  @@unique([shop, phone])
+  @@index([shop, lastMessageAt])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  // "in" | "out"
+  direction      String
+  // "customer" | "bot" | "agent"
+  sender         String
+  body           String
+  waMessageId    String?      @unique
+  // inbound waMessageId this bot reply answers; unique => at most one reply per inbound
+  inReplyTo      String?      @unique
+  // "queued" | "sent" | "delivered" | "read" | "failed" | "received"
+  status         String       @default("queued")
+  error          String?
+  // Attachments (files live on disk under WHATSAPP_MEDIA_DIR, never in the DB)
+  mediaKind      String?
+  mediaMime      String?
+  mediaName      String?
+  mediaFile      String?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model WebhookEvent {
+  id          String    @id @default(cuid())
+  // message id, or "<statusId>:<status>" for delivery statuses
+  eventKey    String    @unique
+  type        String
+  // "received" | "processed" | "failed"
+  status      String    @default("received")
+  attempts    Int       @default(0)
+  error       String?
+  // minimal, PII-redacted payload needed for retry
+  payload     String
+  duplicates  Int       @default(0)
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
+
+  @@index([status, createdAt])
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  shop      String?
+  // "info" | "error"
+  level     String   @default("info")
+  // "shopify" | "whatsapp" | "bot" | "admin"
+  source    String
+  event     String
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([event, createdAt])
+  @@index([source, level, createdAt])
+}
+
+model Faq {
+  id        String   @id @default(cuid())
+  shop      String
+  title     String
+  // comma-separated, matched case-insensitively as substrings (English, Hindi, Hinglish)
+  keywords  String
+  replyEn   String
+  replyHi   String
+  // Roman-script Hindi, sent to customers who write in Hinglish
+  replyHinglish String @default("")
+  // Full questions, one per line, matched by word overlap (fuzzy)
+  questions String   @default("")
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([shop, enabled])
+}
+
+model ProductEnquiry {
+  id             String   @id @default(cuid())
+  shop           String
+  conversationId String?
+  phone          String
+  customerName   String?
+  // what the customer typed
+  query          String
+  // false = nothing matching was available ("unavailable" reply)
+  found          Boolean  @default(false)
+  // JSON array of product titles the bot showed
+  products       String   @default("[]")
+  createdAt      DateTime @default(now())
+
+  @@index([shop, createdAt])
+  @@index([shop, phone])
+}
+
+// Order Calling Sheet. Shopify-managed columns are overwritten by sync; manual columns (below the
+// divider) are only ever written from the app, so sync can never erase employee data.
+model OrderSheet {
+  id             String   @id @default(cuid())
+  shop           String
+  // Shopify numeric order id, or "manual-<id>" for rows added by hand. Unique per shop: one row per order.
+  shopifyOrderId String
+  isManual       Boolean  @default(false)
+
+  orderName         String?
+  orderDate         DateTime?
+  customerName      String?
+  productName       String?
+  qty               Int      @default(0)
+  amount            Float?
+  currency          String?
+  paymentType       String?
+  primaryMobile     String?
+  altMobileShopify  String?
+  fullAddress       String?
+  city              String?
+  state             String?
+  pinCode           String?
+  financialStatus   String?
+  fulfillmentStatus String?
+  deliveryStatus    String?
+  returnStatus      String?
+  tags              String?
+  cancelledAt       DateTime?
+  // "Cancelled" | "RTO" | "Delivered" | "Fulfilled" | "Unfulfilled" (exactly one per order)
+  status            String   @default("Unfulfilled")
+  // Shopify-generated status text shown in the Remarks column
+  remarks           String?
+  trackingNo        String?
+  trackingCompany   String?
+  dispatchDateShopify DateTime?
+  shippingCharge    Float?
+  shopifyUpdatedAt  DateTime?
+  syncedAt          DateTime?
+
+  // ---- manual (never touched by sync) ----
+  callDate          DateTime?
+  employeeName      String?
+  altMobile         String?
+  landmark          String?
+  addressConfirmed  String?
+  codConfirmed      String?
+  deliveryAvailable String?
+  customerWants     String?
+  callStatus        String?
+  finalDecision     String?
+  employeeRemark    String?
+  dispatchDate      DateTime?
+  awb               String?
+  deliveryCharges   Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([shop, shopifyOrderId])
+  @@index([shop, status])
+  @@index([shop, orderDate])
+  @@index([shop, shopifyUpdatedAt])
+}
+
+model OrderSyncState {
+  shop           String    @id
+  lastSyncAt     DateTime?
+  lastFullSyncAt DateTime?
+  lastCount      Int       @default(0)
+  lastError      String?
+  updatedAt      DateTime  @updatedAt
+}
+
+// Google Sheet that mirrors the Order Calling Sheet. The service-account key is AES-GCM encrypted at rest
+// and never sent to the browser.
+model GoogleSheetConfig {
+  shop             String   @id
+  spreadsheetId    String
+  spreadsheetTitle String?
+  tabName          String   @default("Order Calling Sheet")
+  saEmail          String
+  saKeyEnc         String
+  // "service" (service-account key) | "script" (Apps Script web app inside the sheet; no Google Cloud needed)
+  mode             String   @default("service")
+  scriptUrl        String?
+  formatted        Boolean  @default(false)
+  enabled          Boolean  @default(true)
+  connectedAt      DateTime @default(now())
+  lastPushAt       DateTime?
+  lastPushRows     Int      @default(0)
+  lastError        String?
+  updatedAt        DateTime @updatedAt
+}
+
+// Product Scrapper: one row per search run, one row per product it found.
+model FinderRun {
+  id             String    @id
+  shop           String
+  category       String
+  brand          String    @default("")
+  // "amazon" | "flipkart" | "shopify" | "custom"
+  mode           String
+  site           String    @default("")
+  minPrice       Float?
+  maxPrice       Float?
+  maxProducts    Int       @default(30)
+  maxPages       Int       @default(3)
+  // hide products already found by an earlier run
+  skipEarlier    Boolean   @default(false)
+  // "running" | "done" | "error" | "stopped"
+  status         String    @default("running")
+  checked        Int       @default(0)
+  skippedInStore Int       @default(0)
+  skippedEarlier Int       @default(0)
+  // JSON array of the last log lines
+  log            String    @default("[]")
+  error          String?
+  createdAt      DateTime  @default(now())
+  finishedAt     DateTime?
+  products       FinderProduct[]
+
+  @@index([shop, createdAt])
+}
+
+model FinderProduct {
+  id           String    @id @default(cuid())
+  runId        String
+  run          FinderRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  shop         String
+  title        String
+  brand        String    @default("")
+  price        String    @default("")
+  comparePrice String    @default("")
+  discount     Int       @default(0)
+  link         String
+  // link without query/fragment, used to recognise the same product in later runs
+  linkKey      String
+  imageCount   Int       @default(0)
+  folder       String    @default("")
+  thumb        String    @default("")
+  // false = already in the Shopify store (matchReason says why)
+  isNew        Boolean   @default(true)
+  matchReason  String?
+  createdAt    DateTime  @default(now())
+
+  @@index([runId])
+  @@index([shop, linkKey])
+}
+
+// Image Editor: a batch of product photos processed by a pool of worker processes.
+model ImageJob {
+  id         String      @id
+  shop       String
+  name       String
+  // "upload" (photos from this computer) | "store" (images of products that are already listed in Shopify)
+  kind       String      @default("upload")
+  // "draft" (uploading) | "queued" | "running" | "done" | "stopped" | "error"
+  status     String      @default("draft")
+  // JSON: the processing settings shared by every image of the batch
+  settings   String      @default("{}")
+  total      Int         @default(0)
+  createdAt  DateTime    @default(now())
+  startedAt  DateTime?
+  finishedAt DateTime?
+  items      ImageItem[]
+
+  @@index([shop, createdAt])
+}
+
+model ImageItem {
+  id         String    @id @default(cuid())
+  jobId      String
+  job        ImageJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  shop       String
+  // original file name (never used as a path on disk)
+  name       String
+  // top-level folder the file came from, kept inside the ZIP
+  folder     String    @default("")
+  ext        String    @default("jpg")
+  // "queued" | "running" | "done" | "error" | "cancelled"
+  status     String    @default("queued")
+  error      String?
+  note       String?
+  inBytes    Float     @default(0)
+  outBytes   Float     @default(0)
+  width      Int       @default(0)
+  height     Int       @default(0)
+  ms         Int       @default(0)
+  // name of the result inside the ZIP
+  outName    String?
+  // ---- only for batches made from Shopify products ----
+  productId    String?
+  productTitle String?
+  // the product image (MediaImage) this photo came from; replaced in place when the edit is applied
+  mediaId      String?
+  srcUrl       String?
+  // "" (not applied) | "applying" | "applied" | "failed" | "restored"
+  applyStatus  String    @default("")
+  applyError   String?
+  appliedAt    DateTime?
+  newUrl       String?
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([jobId, status])
+  @@index([shop, finishedAt])
+}
+
+// How many worker processes the batch runner may use (changeable while a batch runs).
+model ImageSettings {
+  shop      String   @id
+  workers   Int      @default(2)
+  updatedAt DateTime @updatedAt
+}
+
+// The untouched original of a product image, saved before it is replaced in Shopify, so it can always be restored.
+// One per image: the first backup is the true original and is never overwritten by later edits.
+model ImageBackup {
+  id           String    @id @default(cuid())
+  shop         String
+  mediaId      String
+  productId    String
+  productTitle String    @default("")
+  originalUrl  String
+  ext          String
+  // path relative to the Image Editor folder
+  file         String
+  bytes        Float     @default(0)
+  createdAt    DateTime  @default(now())
+  restoredAt   DateTime?
+
+  @@unique([shop, mediaId])
+}
+
+// SEO: the latest scan of the store's products (checked against the rules in app/lib/seo/rules.ts).
+model SeoProduct {
+  id             String   @id @default(cuid())
+  shop           String
+  productId      String
+  title          String
+  handle         String
+  vendor         String   @default("")
+  productType    String   @default("")
+  tags           String   @default("")
+  status         String   @default("ACTIVE")
+  descText       String   @default("")
+  seoTitle       String   @default("")
+  seoDescription String   @default("")
+  thumb          String   @default("")
+  // JSON: [{ id, alt, url }]
+  images         String   @default("[]")
+  // JSON: [{ rule, severity, message, fix }]
+  issues         String   @default("[]")
+  score          Int      @default(100)
+  errors         Int      @default(0)
+  warnings       Int      @default(0)
+  scannedAt      DateTime @default(now())
+
+  @@unique([shop, productId])
+  @@index([shop, score])
+}
+
+model SeoScan {
+  id         String    @id
+  shop       String
+  // "running" | "done" | "error"
+  status     String    @default("running")
+  fetched    Int       @default(0)
+  error      String?
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([shop, startedAt])
+}
+
+// One uploaded CSV, checked and turned into a list of changes. Nothing reaches Shopify until the person applies it.
+model SeoBatch {
+  id        String      @id
+  shop      String
+  name      String
+  // "preview" | "applying" | "done" | "restored"
+  status    String      @default("preview")
+  createdAt DateTime    @default(now())
+  appliedAt DateTime?
+  changes   SeoChange[]
+
+  @@index([shop, createdAt])
+}
+
+// One value to change. `before` is the old value, kept so the change can be undone.
+model SeoChange {
+  id           String    @id @default(cuid())
+  batchId      String
+  batch        SeoBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  shop         String
+  // "seoTitle" | "seoDescription" | "alt"
+  kind         String
+  productId    String
+  productTitle String    @default("")
+  mediaId      String?
+  before       String    @default("")
+  after        String
+  warn         String?
+  // "pending" | "applied" | "failed" | "restored"
+  status       String    @default("pending")
+  error        String?
+  appliedAt    DateTime?
+
+  @@index([batchId, status])
+}

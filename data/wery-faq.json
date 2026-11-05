@@ -1,0 +1,988 @@
+[
+ {
+  "category": "General shopping and website help",
+  "question": "What products do you sell?",
+  "replyEn": "WERY offers products across categories such as printers, laptops, computer accessories, storage devices, stationery and selected home appliances. Browse the website categories or search by product name or model number.",
+  "replyHinglish": "WERY par printers, laptops, computer accessories, storage devices, stationery aur kuch home appliances mil sakte hain. Product ka naam ya model number search karein.",
+  "source": "master",
+  "questions": [
+   "What products do you sell?",
+   "Aap WERY par kya-kya khareed sakte hain?",
+   "WERY par kaun se products milte hain?",
+   "kya kya milta hai",
+   "aap kya bechte ho",
+   "products list",
+   "which products are available"
+  ]
+ },
+ {
+  "category": "General shopping and website help",
+  "question": "How do I find a product?",
+  "replyEn": "Use the search bar and enter the product name, brand, model number or part number. You can also browse product categories.",
+  "replyHinglish": "Search bar mein product ka naam, brand ya model number likhein. Aap category se bhi products dekh sakte hain.",
+  "source": "master",
+  "questions": [
+   "How do I find a product?",
+   "Mujhe product kaise milega?",
+   "Website par item kaise search karun?",
+   "How can I find a product?"
+  ]
+ },
+ {
+  "category": "General shopping and website help",
+  "question": "Are the products genuine?",
+  "replyEn": "Please check the product listing and brand details on WERY. For confirmation about a specific item, share its product link or model number so support can verify the listing.",
+  "replyHinglish": "Product page par brand aur details check karein. Kisi specific product ki confirmation ke liye uska link ya model number share karein.",
+  "source": "master",
+  "questions": [
+   "Are the products genuine?",
+   "Kya products original hain?",
+   "Original product milega?"
+  ]
+ },
+ {
+  "category": "General shopping and website help",
+  "question": "How do I check the price?",
+  "replyEn": "Open the product page to see the current listed price and available offers. Review the final amount at checkout because prices and offers can change.",
+  "replyHinglish": "Current price aur offers product page par check karein. Final amount checkout par confirm karein, kyunki prices badal sakte hain.",
+  "source": "master",
+  "questions": [
+   "How do I check the price?",
+   "Iska price kya hai?",
+   "Kitne ka padega?",
+   "How do I check the price of a product?"
+  ]
+ },
+ {
+  "category": "General shopping and website help",
+  "question": "Is this product in stock?",
+  "replyEn": "Check the product page for current availability. If the listing is unclear, share the product link or model number with support.",
+  "replyHinglish": "Product page par availability check karein. Agar clear na ho, product link ya model number support ko bhejein.",
+  "source": "master",
+  "questions": [
+   "Is this product in stock?",
+   "Stock mein hai kya?",
+   "Available hai?"
+  ]
+ },
+ {
+  "category": "General shopping and website help",
+  "question": "Can you recommend something within my budget?",
+  "replyEn": "Yes. Tell me your budget, intended use and must-have features. I can help narrow down suitable options.",
+  "replyHinglish": "Bilkul. Apna budget, use aur zaroori features batayein. Main suitable options shortlist karne mein madad karunga.",
+  "source": "master",
+  "questions": [
+   "Can you recommend something within my budget?",
+   "Mere budget mein product batao",
+   "Budget ke hisaab se suggest karo.",
+   "Can you recommend a product within my budget?"
+  ]
+ },
+ {
+  "category": "General shopping and website help",
+  "question": "Can you compare two products?",
+  "replyEn": "Share both product names or model numbers. I can compare the specifications available on their product pages.",
+  "replyHinglish": "Dono product ke naam ya model number bhejein. Main available specifications compare kar dunga.",
+  "source": "master",
+  "questions": [
+   "Can you compare two products?",
+   "Do products compare karo",
+   "Dono model mein kya difference hai?",
+   "Can I compare two products?"
+  ]
+ },
+ {
+  "category": "General shopping and website help",
+  "question": "How do I contact WERY?",
+  "replyEn": "Use the contact details published on WERY's official Contact Us page. Keep your order number and product model ready if your query concerns an order.",
+  "replyHinglish": "WERY ki official Contact Us page par diye gaye contact details use karein. Order-related query ke liye order number ready rakhein.",
+  "source": "master",
+  "questions": [
+   "How do I contact WERY?",
+   "WERY se contact kaise karun?",
+   "Customer care number kya hai?",
+   "How can I contact WERY support?"
+  ]
+ },
+ {
+  "category": "Printers, scanners and consumables",
+  "question": "Which printer is best for home use?",
+  "replyEn": "The best printer depends on print volume, colour needs, scanning/copying requirements and budget. Tell me these details for a useful recommendation.",
+  "replyHinglish": "Printer aapke monthly pages, colour need, scan/copy aur budget par depend karta hai. Ye details batayein.",
+  "source": "master",
+  "questions": [
+   "Which printer is best for home use?",
+   "Ghar ke liye kaunsa printer best hai?",
+   "Home use printer suggest karo."
+  ]
+ },
+ {
+  "category": "Printers, scanners and consumables",
+  "question": "Which printer is best for office use?",
+  "replyEn": "For an office, consider monthly volume, speed, duplex printing, network connectivity, paper size and toner or ink cost. Share your budget and needs.",
+  "replyHinglish": "Office ke liye monthly print volume, speed, duplex, connectivity aur toner cost dekhein. Budget aur requirements batayein.",
+  "source": "master",
+  "questions": [
+   "Which printer is best for office use?",
+   "Office ke liye printer chahiye",
+   "Office printer kaunsa loon?",
+   "Which printer is best for an office?"
+  ]
+ },
+ {
+  "category": "Printers, scanners and consumables",
+  "question": "What is the difference between laser and inkjet printers?",
+  "replyEn": "Laser printers often suit text-heavy and higher-volume printing. Inkjet printers can suit colour documents and images. Actual running costs depend on the model and consumables.",
+  "replyHinglish": "Laser printer text-heavy printing ke liye useful ho sakta hai; inkjet colour documents aur images ke liye. Running cost model par depend karti hai.",
+  "source": "master",
+  "questions": [
+   "What is the difference between laser and inkjet printers?",
+   "Laser aur inkjet printer mein kya farq hai?"
+  ]
+ },
+ {
+  "category": "Printers, scanners and consumables",
+  "question": "Does this printer support Wi-Fi?",
+  "replyEn": "Wi-Fi support varies by model. Share the exact model number or product link so the specifications can be checked.",
+  "replyHinglish": "Wi-Fi support model par depend karta hai. Exact model number ya product link bhejein.",
+  "source": "master",
+  "questions": [
+   "Does this printer support Wi-Fi?",
+   "Is printer mein Wi-Fi hai?",
+   "Wireless print hota hai?",
+   "wifi printer hai kya",
+   "wireless printer hai",
+   "printer me wifi hai",
+   "wifi wala printer",
+   "is it a wireless printer"
+  ]
+ },
+ {
+  "category": "Printers, scanners and consumables",
+  "question": "Does this printer print on both sides?",
+  "replyEn": "Check the specifications for automatic or manual duplex printing. Share the model number if you would like help checking.",
+  "replyHinglish": "Specifications mein automatic ya manual duplex check karein. Model number bhejein to main help karunga.",
+  "source": "master",
+  "questions": [
+   "Does this printer print on both sides?",
+   "Dono side print karta hai?",
+   "Duplex printing hai?"
+  ]
+ },
+ {
+  "category": "Printers, scanners and consumables",
+  "question": "Which toner or cartridge fits my printer?",
+  "replyEn": "Please share the exact printer model. Consumable compatibility should be checked against the manufacturer's specifications.",
+  "replyHinglish": "Printer ka exact model bhejein. Compatible toner/cartridge manufacturer specifications se verify karna zaroori hai.",
+  "source": "master",
+  "questions": [
+   "Which toner or cartridge fits my printer?",
+   "Mere printer mein kaunsa toner lagega?",
+   "Cartridge model batao."
+  ]
+ },
+ {
+  "category": "Printers, scanners and consumables",
+  "question": "My printer is not printing.",
+  "replyEn": "Check power, paper, toner or ink, connection and the print queue. If the issue continues, share the model and any error message.",
+  "replyHinglish": "Power, paper, toner/ink, connection aur print queue check karein. Issue rahe to model aur error message bhejein.",
+  "source": "master",
+  "questions": [
+   "My printer is not printing.",
+   "Printer print nahi kar raha",
+   "Print nahi nikal raha.",
+   "My printer is not printing. What should I do?"
+  ]
+ },
+ {
+  "category": "Printers, scanners and consumables",
+  "question": "My printer shows an error code.",
+  "replyEn": "Share the exact printer model, error or Failure ID code, and when it appears. Do not share passwords or other sensitive information.",
+  "replyHinglish": "Printer model, exact error/Failure ID aur error kab aata hai batayein. Password ya sensitive details share na karein.",
+  "source": "master",
+  "questions": [
+   "My printer shows an error code.",
+   "Printer error de raha hai",
+   "Failure ID aa rahi hai."
+  ]
+ },
+ {
+  "category": "Printers, scanners and consumables",
+  "question": "How do I install my printer?",
+  "replyEn": "Follow the printer setup guide and download the driver from the manufacturer's official support website. Share your model and operating system for step-by-step guidance.",
+  "replyHinglish": "Setup guide follow karein aur official manufacturer website se driver download karein. Model aur Windows/macOS version batayein.",
+  "source": "master",
+  "questions": [
+   "How do I install my printer?",
+   "Printer install kaise karun?",
+   "Driver kaise install hoga?",
+   "How do I install a new printer?"
+  ]
+ },
+ {
+  "category": "Printers, scanners and consumables",
+  "question": "Do you sell scanners?",
+  "replyEn": "Browse WERY's current product categories or search for scanners. Tell me whether you need occasional document scanning or high-volume office scanning.",
+  "replyHinglish": "WERY par scanner search karein. Batayein ki normal documents scan karne hain ya high-volume office scanning chahiye.",
+  "source": "master",
+  "questions": [
+   "Do you sell scanners?",
+   "Scanner milta hai?",
+   "Document scanner chahiye."
+  ]
+ },
+ {
+  "category": "Laptops, computers and accessories",
+  "question": "Which laptop is best for students?",
+  "replyEn": "Consider budget, processor, RAM, SSD, battery life and the software you use. Share your budget and study needs for a more suitable shortlist.",
+  "replyHinglish": "Budget, processor, RAM, SSD, battery aur software needs dekhein. Budget batayein to options shortlist kar sakta hoon.",
+  "source": "master",
+  "questions": [
+   "Which laptop is best for students?",
+   "Student ke liye laptop suggest karo",
+   "Padhai ke liye laptop chahiye."
+  ]
+ },
+ {
+  "category": "Laptops, computers and accessories",
+  "question": "Which laptop is good for office work?",
+  "replyEn": "Consider RAM, SSD capacity, processor, display, webcam, connectivity and warranty. Tell me your budget and software needs.",
+  "replyHinglish": "RAM, SSD, processor, display aur warranty dekhein. Budget aur kaun se software chalane hain batayein.",
+  "source": "master",
+  "questions": [
+   "Which laptop is good for office work?",
+   "Office work ke liye laptop kaunsa hai?",
+   "Which laptop is suitable for office work?"
+  ]
+ },
+ {
+  "category": "Laptops, computers and accessories",
+  "question": "Do you sell desktops or All-in-One PCs?",
+  "replyEn": "Search WERY for desktop computers or All-in-One PCs to view current listings and availability.",
+  "replyHinglish": "WERY par desktop ya All-in-One PC search karke current listings dekhein.",
+  "source": "master",
+  "questions": [
+   "Do you sell desktops or All-in-One PCs?",
+   "Desktop ya AIO computer milta hai?"
+  ]
+ },
+ {
+  "category": "Laptops, computers and accessories",
+  "question": "Which accessories work with my laptop?",
+  "replyEn": "Share the laptop brand and exact model, plus the accessory you need. Compatibility may depend on ports, dimensions and power requirements.",
+  "replyHinglish": "Laptop ka brand/model aur accessory ka naam bhejein. Compatibility ports aur power requirements par depend kar sakti hai.",
+  "source": "master",
+  "questions": [
+   "Which accessories work with my laptop?",
+   "Mere laptop ke compatible accessories kaun se hain?",
+   "Which accessories are compatible with my laptop?"
+  ]
+ },
+ {
+  "category": "Laptops, computers and accessories",
+  "question": "How do I choose a pen drive?",
+  "replyEn": "Choose capacity and transfer speed based on your files and device. Tell me the capacity and what device you will use it with.",
+  "replyHinglish": "Capacity aur speed apni need ke hisaab se chunein. Kitne GB chahiye aur kis device mein use karni hai batayein.",
+  "source": "master",
+  "questions": [
+   "How do I choose a pen drive?",
+   "Pen drive kaunsi loon?",
+   "Kitne GB ki chahiye?"
+  ]
+ },
+ {
+  "category": "Laptops, computers and accessories",
+  "question": "Do you sell keyboards, mice and monitors?",
+  "replyEn": "Search the relevant computer accessories category on WERY to see current products.",
+  "replyHinglish": "WERY par computer accessories mein keyboard, mouse ya monitor search karein.",
+  "source": "master",
+  "questions": [
+   "Do you sell keyboards, mice and monitors?",
+   "Keyboard mouse monitor milte hain?"
+  ]
+ },
+ {
+  "category": "Stationery and bulk supplies",
+  "question": "Can I order stationery in bulk?",
+  "replyEn": "Share product names, quantities, delivery PIN code and whether you need a formal quotation. The sales team can confirm availability and pricing.",
+  "replyHinglish": "Product names, quantity, delivery PIN code aur quotation ki need batayein. Sales team availability aur pricing confirm karegi.",
+  "source": "master",
+  "questions": [
+   "Can I order stationery in bulk?",
+   "Stationery bulk mein chahiye",
+   "100 pieces milenge?"
+  ]
+ },
+ {
+  "category": "Stationery and bulk supplies",
+  "question": "Can you prepare a stationery list for my office?",
+  "replyEn": "Tell me the number of employees and required items, such as paper, pens, staplers, files and desk supplies. I can prepare a suggested checklist.",
+  "replyHinglish": "Employees ki sankhya aur items batayein—paper, pens, stapler, files etc. Main checklist bana sakta hoon.",
+  "source": "master",
+  "questions": [
+   "Can you prepare a stationery list for my office?",
+   "Office ke liye stationery list bana do."
+  ]
+ },
+ {
+  "category": "Stationery and bulk supplies",
+  "question": "Can I buy multiple units of one product?",
+  "replyEn": "Check the quantity selector on the product page. For large quantities, contact WERY to request a bulk quotation.",
+  "replyHinglish": "Product page par quantity selector check karein. Zyada quantity ke liye bulk quotation maangein.",
+  "source": "master",
+  "questions": [
+   "Can I buy multiple units of one product?",
+   "Ek product ke bahut saare pieces chahiye."
+  ]
+ },
+ {
+  "category": "Offers, discounts and product combos",
+  "question": "What offers are available today?",
+  "replyEn": "Check WERY's current product pages and offer banners for live promotions. Prices, discounts and stock may change.",
+  "replyHinglish": "WERY ke product pages aur offer banners check karein. Discount aur stock badal sakte hain.",
+  "source": "master",
+  "questions": [
+   "What offers are available today?",
+   "Aaj kya offers hain?",
+   "Discount chal raha hai?"
+  ]
+ },
+ {
+  "category": "Offers, discounts and product combos",
+  "question": "How do I use a coupon code?",
+  "replyEn": "Enter the code in the discount field at checkout and apply it before payment. Check expiry, eligible products and minimum order conditions.",
+  "replyHinglish": "Checkout par discount field mein code daal kar apply karein. Expiry aur conditions check karein.",
+  "source": "master",
+  "questions": [
+   "How do I use a coupon code?",
+   "Coupon code kaise lagana hai?"
+  ]
+ },
+ {
+  "category": "Offers, discounts and product combos",
+  "question": "Why is my coupon not working?",
+  "replyEn": "Check expiry, eligible products, minimum order value and code spelling. If it still fails, contact support with the code.",
+  "replyHinglish": "Expiry, eligible products, minimum order aur spelling check karein. Phir bhi issue ho to support ko code bhejein.",
+  "source": "master",
+  "questions": [
+   "Why is my coupon not working?",
+   "Coupon apply nahi ho raha",
+   "Code invalid bata raha hai.",
+   "Why is my coupon code not working?"
+  ]
+ },
+ {
+  "category": "Offers, discounts and product combos",
+  "question": "Can I get a bulk discount?",
+  "replyEn": "Bulk pricing depends on product, quantity and availability. Share model numbers and quantities to request a quotation.",
+  "replyHinglish": "Bulk discount product, quantity aur availability par depend karta hai. Model aur quantity bhejein.",
+  "source": "master",
+  "questions": [
+   "Can I get a bulk discount?",
+   "Bulk order par discount milega?",
+   "Can I get an additional discount on a bulk order?"
+  ]
+ },
+ {
+  "category": "Orders, payment and invoices",
+  "question": "How do I place an order?",
+  "replyEn": "Choose a product, add it to the cart, enter accurate delivery and billing details, choose an available payment method and review the order before confirming.",
+  "replyHinglish": "Product cart mein add karein, delivery/billing details bharein, payment option chunein aur order confirm karne se pehle details check karein.",
+  "source": "master",
+  "questions": [
+   "How do I place an order?",
+   "Order kaise place karun?",
+   "Product kaise khareedun?",
+   "Can I place an order for my company?"
+  ]
+ },
+ {
+  "category": "Orders, payment and invoices",
+  "question": "Can I cancel my order?",
+  "replyEn": "Cancellation depends on the order's current status and the applicable policy. Contact support promptly with your order number; cancellation cannot be guaranteed after processing or dispatch.",
+  "replyHinglish": "Cancellation order status aur policy par depend karta hai. Order number ke saath jaldi support se contact karein.",
+  "source": "master",
+  "questions": [
+   "Can I cancel my order?",
+   "Order cancel karna hai",
+   "Order cancel ho sakta hai?",
+   "order cancel karna hai",
+   "cancel my order",
+   "order cancel kaise kare"
+  ]
+ },
+ {
+  "category": "Orders, payment and invoices",
+  "question": "Can I change my delivery address?",
+  "replyEn": "Address changes depend on dispatch status and courier rules. Contact support immediately; changes may not be possible after dispatch.",
+  "replyHinglish": "Address change dispatch status aur courier rules par depend karta hai. Jaldi support se contact karein.",
+  "source": "master",
+  "questions": [
+   "Can I change my delivery address?",
+   "Address change karna hai",
+   "Delivery address galat hai.",
+   "address change karna hai",
+   "change address",
+   "delivery address badalna hai",
+   "galat address daala"
+  ]
+ },
+ {
+  "category": "Orders, payment and invoices",
+  "question": "My payment failed. What should I do?",
+  "replyEn": "Check your bank or payment app transaction status first. If money was deducted but no order was created, contact support with the transaction reference. Never share OTPs or PINs.",
+  "replyHinglish": "Bank/payment app status check karein. Paise kate par order nahi bana to transaction reference ke saath support se contact karein. OTP/PIN share na karein.",
+  "source": "master",
+  "questions": [
+   "My payment failed. What should I do?",
+   "Payment fail ho gaya",
+   "Paise kat gaye par order nahi bana."
+  ]
+ },
+ {
+  "category": "Orders, payment and invoices",
+  "question": "Can I get a GST invoice?",
+  "replyEn": "Enter accurate billing and GST details at checkout if the fields are available. For invoice help or corrections, contact support with your order number.",
+  "replyHinglish": "Checkout par billing aur GST details sahi bharein. Invoice help ke liye order number ke saath support se contact karein.",
+  "source": "master",
+  "questions": [
+   "Can I get a GST invoice?",
+   "GST bill chahiye",
+   "GST invoice milega?"
+  ]
+ },
+ {
+  "category": "Orders, payment and invoices",
+  "question": "Can I order for my company?",
+  "replyEn": "For business orders, prepare your company details, required products, quantities, GST information if applicable, and delivery address.",
+  "replyHinglish": "Company details, products, quantity, GST details (agar applicable ho) aur delivery address ready rakhein.",
+  "source": "master",
+  "questions": [
+   "Can I order for my company?",
+   "Company ke naam par order karna hai."
+  ]
+ },
+ {
+  "category": "Delivery and tracking",
+  "question": "My order shows delivered but I did not receive it.",
+  "replyEn": "Check with reception or household members if applicable, then contact WERY support and the courier using official tracking details.",
+  "replyHinglish": "Reception ya ghar ke members se check karein, phir official tracking details ke saath support/courier se contact karein.",
+  "source": "master",
+  "questions": [
+   "My order shows delivered but I did not receive it.",
+   "Delivered dikha raha hai par parcel nahi mila.",
+   "My order shows delivered, but I have not received it."
+  ]
+ },
+ {
+  "category": "Delivery and tracking",
+  "question": "What does RTO mean?",
+  "replyEn": "RTO usually means Return to Origin: the shipment is being returned to the sender. Contact support with your order number and tracking ID for next steps.",
+  "replyHinglish": "RTO ka matlab aam taur par Return to Origin hai—parcel sender ko wapas ja raha hai. Order number aur tracking ID ke saath support se baat karein.",
+  "source": "master",
+  "questions": [
+   "What does RTO mean?",
+   "RTO ka matlab kya hai?",
+   "Parcel RTO ho gaya."
+  ]
+ },
+ {
+  "category": "Delivery and tracking",
+  "question": "Do you deliver to my PIN code?",
+  "replyEn": "Enter your PIN code during checkout if the option is available. If delivery eligibility is unclear, contact support with the PIN code and product details.",
+  "replyHinglish": "Checkout par PIN code daal kar check karein. Clear na ho to PIN code aur product details support ko dein.",
+  "source": "master",
+  "questions": [
+   "Do you deliver to my PIN code?",
+   "Mere PIN code par delivery hai?",
+   "pincode check",
+   "mere pincode par delivery",
+   "deliver to my area",
+   "delivery available in my city"
+  ]
+ },
+ {
+  "category": "Returns, refunds and complaints",
+  "question": "What is your return policy?",
+  "replyEn": "Return eligibility and timelines depend on WERY's current policy and product category. Please review the Return and Refund Policy before requesting a return.",
+  "replyHinglish": "Return ki eligibility product category aur current policy par depend karti hai. Return request se pehle policy check karein.",
+  "source": "master",
+  "questions": [
+   "What is your return policy?",
+   "Return policy kya hai?",
+   "Product return kar sakte hain?"
+  ]
+ },
+ {
+  "category": "Returns, refunds and complaints",
+  "question": "My product arrived damaged.",
+  "replyEn": "Keep the product and packaging. Take clear photos and contact support promptly with your order number. Follow the support team's instructions before returning the item.",
+  "replyHinglish": "Product aur packaging sambhal kar rakhein. Photos lein aur order number ke saath support se jaldi contact karein.",
+  "source": "master",
+  "questions": [
+   "My product arrived damaged.",
+   "Product damaged aaya hai",
+   "Parcel toot gaya hai.",
+   "My product arrived damaged. What should I do?"
+  ]
+ },
+ {
+  "category": "Returns, refunds and complaints",
+  "question": "I received the wrong product.",
+  "replyEn": "Keep the product and packaging and contact support with your order number, the item received and the item ordered. Include photos if possible.",
+  "replyHinglish": "Product aur packaging rakhein. Order number, mila hua item aur ordered item ki details support ko dein.",
+  "source": "master",
+  "questions": [
+   "I received the wrong product.",
+   "Galat product mila hai",
+   "Dusra model bhej diya."
+  ]
+ },
+ {
+  "category": "Returns, refunds and complaints",
+  "question": "How long will my refund take?",
+  "replyEn": "Refund timing depends on approval, payment method and the payment provider. Support can confirm the applicable process after reviewing your request.",
+  "replyHinglish": "Refund timing approval, payment method aur provider par depend karti hai. Support aapki request check karke process batayega.",
+  "source": "master",
+  "questions": [
+   "How long will my refund take?",
+   "Refund kitne din mein aayega?",
+   "How long does a refund take?",
+   "refund kab milega",
+   "refund kab aayega",
+   "paise wapas kab milenge",
+   "refund kitne din me milega",
+   "refund ka time kitna hai",
+   "when will i get my refund"
+  ]
+ },
+ {
+  "category": "Returns, refunds and complaints",
+  "question": "My refund has not arrived.",
+  "replyEn": "Check the refund approval status and expected processing time. If it is overdue, contact support with your order number and refund reference if available.",
+  "replyHinglish": "Refund status aur expected time check karein. Delay ho to order number aur refund reference support ko dein.",
+  "source": "master",
+  "questions": [
+   "My refund has not arrived.",
+   "Refund abhi tak nahi aaya.",
+   "refund nahi aaya",
+   "refund abhi tak nahi mila",
+   "refund not received yet",
+   "refund pending hai"
+  ]
+ },
+ {
+  "category": "Warranty and technical support",
+  "question": "How do I claim warranty?",
+  "replyEn": "Keep your invoice, product serial number and warranty documents. Check the manufacturer's official support channel or contact WERY for guidance.",
+  "replyHinglish": "Invoice, serial number aur warranty documents rakhein. Manufacturer ke official support ya WERY se guidance lein.",
+  "source": "master",
+  "questions": [
+   "How do I claim warranty?",
+   "Warranty claim kaise karun?",
+   "Warranty kaise milegi?",
+   "How do I claim a product warranty?"
+  ]
+ },
+ {
+  "category": "Warranty and technical support",
+  "question": "How can I check the warranty period?",
+  "replyEn": "Warranty varies by product and listing. Check the product page, invoice and warranty documents, or ask support with the exact model number.",
+  "replyHinglish": "Warranty product ke hisaab se alag hoti hai. Product page, invoice ya model number ke saath support se confirm karein.",
+  "source": "master",
+  "questions": [
+   "How can I check the warranty period?",
+   "Warranty kitne saal ki hai?"
+  ]
+ },
+ {
+  "category": "Warranty and technical support",
+  "question": "Can you help install drivers?",
+  "replyEn": "Share the exact device model and your operating system. Download drivers only from the manufacturer's official website.",
+  "replyHinglish": "Device model aur Windows/macOS version batayein. Driver official manufacturer website se hi download karein.",
+  "source": "master",
+  "questions": [
+   "Can you help install drivers?",
+   "Driver install karne mein help chahiye.",
+   "Can you help me install drivers?"
+  ]
+ },
+ {
+  "category": "Business, GST and institutional orders",
+  "question": "Can I get a quotation for 20 printers?",
+  "replyEn": "Share printer model, quantity, delivery PIN code, company name and GST/invoice requirements. The sales team can confirm availability and provide a quote if supported.",
+  "replyHinglish": "Printer model, quantity, PIN code, company name aur GST/invoice requirement bhejein. Sales team availability aur quotation confirm karegi.",
+  "source": "master",
+  "questions": [
+   "Can I get a quotation for 20 printers?",
+   "20 printer ka quotation chahiye."
+  ]
+ },
+ {
+  "category": "Business, GST and institutional orders",
+  "question": "Do you supply to schools or offices?",
+  "replyEn": "For institutional orders, share the organisation name, product list, quantities, delivery location and documentation requirements with the sales team.",
+  "replyHinglish": "Organisation ka naam, products, quantity, delivery location aur documents ki requirement sales team ko dein.",
+  "source": "master",
+  "questions": [
+   "Do you supply to schools or offices?",
+   "School ya office ke liye supply karte ho?",
+   "Do you supply to schools, offices or government organisations?"
+  ]
+ },
+ {
+  "category": "Business, GST and institutional orders",
+  "question": "Can I order against a purchase order?",
+  "replyEn": "Contact the sales team with your purchase requirements and ask them to confirm whether PO-based processing is available for your order.",
+  "replyHinglish": "Purchase requirements ke saath sales team se confirm karein ki PO-based order process available hai ya nahi.",
+  "source": "master",
+  "questions": [
+   "Can I order against a purchase order?",
+   "Purchase order ke against supply ho sakti hai?",
+   "Can I purchase against a purchase order?"
+  ]
+ },
+ {
+  "category": "Account and privacy",
+  "question": "I forgot my password.",
+  "replyEn": "Use the website's password-reset option if available. Follow the official instructions and never share your password or OTP with anyone.",
+  "replyHinglish": "Website ka password reset option use karein. Password ya OTP kisi ke saath share na karein.",
+  "source": "master",
+  "questions": [
+   "I forgot my password.",
+   "Password bhool gaya",
+   "Login nahi ho raha.",
+   "I forgot my password. What should I do?"
+  ]
+ },
+ {
+  "category": "Account and privacy",
+  "question": "Where can I see my previous orders?",
+  "replyEn": "Sign in and open your account order history if available. If you checked out as a guest or cannot find an order, contact support with your confirmation details.",
+  "replyHinglish": "Login karke order history check karein. Order na mile to confirmation details ke saath support se contact karein.",
+  "source": "master",
+  "questions": [
+   "Where can I see my previous orders?",
+   "Purane orders kahan dikhenge?"
+  ]
+ },
+ {
+  "category": "Account and privacy",
+  "question": "How do I raise a complaint?",
+  "replyEn": "Use WERY's official support channel and include your order number, a clear issue description and relevant photos or evidence.",
+  "replyHinglish": "Official support channel use karein. Order number, issue details aur relevant photos share karein.",
+  "source": "master",
+  "questions": [
+   "How do I raise a complaint?",
+   "Complaint kaise karun?",
+   "Shikayat karni hai."
+  ]
+ },
+ {
+  "category": "General Shopping & Website Help",
+  "question": "How do I check product availability?",
+  "replyEn": "Open the product page to check whether the item is available to order. If availability is unclear, share the product link or model number and the support team can help confirm it.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "How do I check product availability?"
+  ]
+ },
+ {
+  "category": "General Shopping & Website Help",
+  "question": "Do you sell product combos?",
+  "replyEn": "WERY may list product bundles or combos. Browse the relevant category or search for 'combo'. Check each combo page for included items, quantities and current pricing.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "Do you sell product combos?"
+  ]
+ },
+ {
+  "category": "Printers, Scanners & Supplies",
+  "question": "What is a multifunction printer?",
+  "replyEn": "A multifunction printer combines two or more functions, commonly printing, scanning and copying. Check the product specifications to confirm which functions are included.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "What is a multifunction printer?"
+  ]
+ },
+ {
+  "category": "Printers, Scanners & Supplies",
+  "question": "What is duplex printing?",
+  "replyEn": "Duplex printing means printing on both sides of a sheet. Check the product specifications to see whether duplex printing is automatic or manual.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "What is duplex printing?"
+  ]
+ },
+ {
+  "category": "Printers, Scanners & Supplies",
+  "question": "Which toner or cartridge is compatible with my printer?",
+  "replyEn": "Please share the exact printer model number. Compatibility should be checked against the printer manufacturer's specifications before buying toner or ink.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "Which toner or cartridge is compatible with my printer?"
+  ]
+ },
+ {
+  "category": "Printers, Scanners & Supplies",
+  "question": "My printer is showing an error code. Can you help?",
+  "replyEn": "Yes. Share the printer model, the exact error or Failure ID code, and when the error appears. Do not share passwords or other sensitive information.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "My printer is showing an error code. Can you help?"
+  ]
+ },
+ {
+  "category": "Printers, Scanners & Supplies",
+  "question": "Can you recommend a printer for high-volume printing?",
+  "replyEn": "Yes. Tell me approximately how many pages you print each month, whether you need colour, the paper size, and your budget. Running cost and recommended duty cycle are important factors.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "Can you recommend a printer for high-volume printing?"
+  ]
+ },
+ {
+  "category": "Laptops, Computers & Accessories",
+  "question": "How much RAM do I need in a laptop?",
+  "replyEn": "The right amount depends on your workload. Everyday browsing and office tasks have different needs from programming, design or video editing. Share your use case and budget for guidance.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "How much RAM do I need in a laptop?"
+  ]
+ },
+ {
+  "category": "Laptops, Computers & Accessories",
+  "question": "Do you sell desktop computers or All-in-One PCs?",
+  "replyEn": "Check WERY's current computer categories or search for 'desktop' and 'All-in-One'. Product availability may vary.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "Do you sell desktop computers or All-in-One PCs?"
+  ]
+ },
+ {
+  "category": "Laptops, Computers & Accessories",
+  "question": "How do I choose a pen drive or external storage device?",
+  "replyEn": "Choose capacity and interface based on your files and transfer needs. Tell me the capacity you need and the device you will use it with, and I can explain what to check.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "How do I choose a pen drive or external storage device?"
+  ]
+ },
+ {
+  "category": "Stationery & Office Supplies",
+  "question": "Can you recommend stationery for a new office?",
+  "replyEn": "Yes. Tell me the number of employees and the supplies you need, such as paper, pens, staplers, pins, files or desk accessories. I can help prepare a checklist.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "Can you recommend stationery for a new office?"
+  ]
+ },
+ {
+  "category": "Stationery & Office Supplies",
+  "question": "Can you make a customised product combo?",
+  "replyEn": "Share the products, quantities and target budget you have in mind. The sales team can confirm whether a customised combo or quotation is possible.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "Can you make a customised product combo?"
+  ]
+ },
+ {
+  "category": "Offers, Discounts & Pricing",
+  "question": "What offers are available right now?",
+  "replyEn": "Check the current product pages and offer banners on WERY for live promotions. Offers, prices and stock can change, so the website listing at the time of purchase should be treated as current.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "What offers are available right now?"
+  ]
+ },
+ {
+  "category": "Offers, Discounts & Pricing",
+  "question": "How do I apply a coupon code?",
+  "replyEn": "Enter the coupon in the discount-code field during checkout and apply it before payment. Check the code's terms, expiry date and eligible products if it does not work.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "How do I apply a coupon code?"
+  ]
+ },
+ {
+  "category": "Offers, Discounts & Pricing",
+  "question": "Are prices and offers fixed?",
+  "replyEn": "Prices, discounts and availability may change. Confirm the final amount on the product page and checkout before placing your order.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "Are prices and offers fixed?"
+  ]
+ },
+ {
+  "category": "Orders & Payments",
+  "question": "Can I change my order after placing it?",
+  "replyEn": "Order changes depend on processing and dispatch status. Contact WERY support as soon as possible with your order number; changes cannot be guaranteed after processing or dispatch.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "Can I change my order after placing it?"
+  ]
+ },
+ {
+  "category": "Orders & Payments",
+  "question": "My money was deducted but I did not receive an order confirmation.",
+  "replyEn": "Please check your order history and payment status first. If the order is still missing, contact WERY support with the transaction reference, amount and approximate time. Do not send card PINs or OTPs.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "My money was deducted but I did not receive an order confirmation."
+  ]
+ },
+ {
+  "category": "Orders & Payments",
+  "question": "Which payment methods are available?",
+  "replyEn": "The payment methods available to you are shown during checkout. Availability may vary, so review the options before confirming your order.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "Which payment methods are available?",
+   "payment options",
+   "payment methods",
+   "upi accepted",
+   "cod available",
+   "cash on delivery",
+   "payment kaise kare",
+   "kaise pay karein"
+  ]
+ },
+ {
+  "category": "Shipping, Delivery & Tracking",
+  "question": "What are the shipping charges?",
+  "replyEn": "Applicable shipping charges, if any, should be shown on the product page or during checkout. Review the final order total before payment.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "What are the shipping charges?"
+  ]
+ },
+ {
+  "category": "Shipping, Delivery & Tracking",
+  "question": "My shipment is marked RTO. What does that mean?",
+  "replyEn": "RTO generally means 'Return to Origin', when a shipment is being returned to the sender. Contact WERY support with your order number and tracking ID to ask about the next steps.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "My shipment is marked RTO. What does that mean?"
+  ]
+ },
+ {
+  "category": "Shipping, Delivery & Tracking",
+  "question": "Can I reschedule delivery?",
+  "replyEn": "Delivery rescheduling depends on the courier's available options. Use the official tracking page or contact support for guidance.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "Can I reschedule delivery?"
+  ]
+ },
+ {
+  "category": "Returns, Refunds & Damaged Products",
+  "question": "How do I request a return or replacement?",
+  "replyEn": "Contact WERY support with your order number, product name and reason for the request. Include clear photos or videos if requested. The team will confirm eligibility and next steps.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "How do I request a return or replacement?"
+  ]
+ },
+ {
+  "category": "Returns, Refunds & Damaged Products",
+  "question": "Can I return an opened product?",
+  "replyEn": "Eligibility depends on the product type and the current return policy. Contact support with the product and order details for confirmation before sending it back.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "Can I return an opened product?"
+  ]
+ },
+ {
+  "category": "Warranty & Technical Support",
+  "question": "How do I find the warranty period?",
+  "replyEn": "The warranty period can vary by product and seller listing. Check the product page, invoice and warranty documents. If unclear, share the exact model number with support.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "How do I find the warranty period?"
+  ]
+ },
+ {
+  "category": "Warranty & Technical Support",
+  "question": "Do you provide installation support?",
+  "replyEn": "Installation support varies by product. Check the product listing or contact support with the model number to confirm whether installation is included or available separately.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "Do you provide installation support?"
+  ]
+ },
+ {
+  "category": "Warranty & Technical Support",
+  "question": "My product stopped working after delivery.",
+  "replyEn": "Keep your invoice and packaging, note the issue and any error code, and contact support. The team can help identify the appropriate troubleshooting, return or warranty route based on the product and policy.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "My product stopped working after delivery."
+  ]
+ },
+ {
+  "category": "GST Invoices & Business Orders",
+  "question": "Can I add my company's GSTIN?",
+  "replyEn": "Enter your company's GST and billing details in the relevant checkout fields, if available, before placing the order. Contact support before ordering if you need confirmation about invoice requirements.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "Can I add my company's GSTIN?"
+  ]
+ },
+ {
+  "category": "GST Invoices & Business Orders",
+  "question": "Can I correct GST details after placing an order?",
+  "replyEn": "Invoice changes depend on order and invoice status and applicable rules. Contact support promptly with the order number and the correction needed; changes cannot be guaranteed.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "Can I correct GST details after placing an order?"
+  ]
+ },
+ {
+  "category": "GST Invoices & Business Orders",
+  "question": "Can I get a quotation for a bulk order?",
+  "replyEn": "Yes, you can request a quotation by sharing product names or model numbers, quantities, delivery PIN code and company billing requirements with the sales team.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "Can I get a quotation for a bulk order?"
+  ]
+ },
+ {
+  "category": "Account & Customer Support",
+  "question": "How do I create an account?",
+  "replyEn": "Use the account or login option on WERY and follow the on-screen registration steps, if account registration is available.",
+  "replyHinglish": "",
+  "source": "qa",
+  "questions": [
+   "How do I create an account?"
+  ]
+ }
+]
