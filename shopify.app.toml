@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "9eb7626dfb4745db9f54edf94a47f8ec"
-name = "Whatsapp Enquery"
+name = "ShopPilot"
 application_url = "https://example.com"
 embedded = true
 

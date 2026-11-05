@@ -1,5 +1,5 @@
 {
-  "name": "whatsapp-enquery",
+  "name": "shoppilot",
   "private": true,
   "scripts": {
     "build": "react-router build",
