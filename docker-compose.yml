@@ -1,0 +1,44 @@
+# One command runs everything on a Hostinger VPS:  docker compose up -d --build
+#   app   = this Shopify/WhatsApp app (migrations run automatically on start)
+#   caddy = HTTPS reverse proxy with automatic Let's Encrypt certificate for $DOMAIN
+services:
+  app:
+    build: .
+    container_name: wery-aio
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      SHOPIFY_APP_URL: https://${DOMAIN:?set DOMAIN in .env}
+    expose:
+      - "3000"
+    volumes:
+      - app_data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  caddy:
+    image: caddy:2
+    container_name: wery-caddy
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  app_data:
+  caddy_data:
+  caddy_config:

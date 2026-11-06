@@ -32,3 +32,4 @@ database.sqlite
 .wa-media
 .finder-media
 .image-editor
+!.env.example
