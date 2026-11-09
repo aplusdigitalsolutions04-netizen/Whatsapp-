@@ -66,7 +66,7 @@ For stable WhatsApp + image editor, use a VPS instead.
 1. Push the code to GitHub. In hPanel: Websites > Add website > Node.js Apps, connect the repo.
 2. Node version 22 or newer (the project needs >=22.12).
 3. Build command: `npm ci && npx prisma generate && npm run build`
-4. Start command: `npm run docker-start`
+4. Entry file: `server.js` (in the repo root; it runs migrations, then starts the app). If there is a start command field, use `npm run docker-start`. Do NOT set the entry file to `build/server/index.js` and do not use an output directory.
 5. Environment variables (see `.env.example`): `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SCOPES`,
    `SHOPIFY_APP_URL` (your https domain), `SECRETS_KEY`, `NODE_ENV=production`, plus data paths OUTSIDE the app folder
    so redeploys do not wipe them:
