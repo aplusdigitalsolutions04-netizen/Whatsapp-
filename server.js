@@ -7,14 +7,22 @@ import { fileURLToPath } from "node:url";
 
 const file = (p) => fileURLToPath(new URL(p, import.meta.url));
 
+const prismaBin = file("./node_modules/prisma/build/index.js");
+const run = (args) => spawnSync(process.execPath, args, { stdio: "inherit" });
+
+// Build output is not in git. If the host skipped the build step, build now.
 if (!existsSync(new URL("./build/server/index.js", import.meta.url))) {
-  console.error("build/server/index.js not found. Run `npm run build` first.");
-  process.exit(1);
+  console.log("build/server/index.js missing - building now (this takes a minute)...");
+  let r = run([prismaBin, "generate"]);
+  if (r.status === 0) r = run([file("./node_modules/@react-router/dev/bin.js"), "build"]);
+  if (r.status !== 0 || !existsSync(new URL("./build/server/index.js", import.meta.url))) {
+    console.error("Build failed. Set the host build command to: npm ci --include=dev && npx prisma generate && npm run build");
+    process.exit(r.status || 1);
+  }
 }
 
-const prismaBin = file("./node_modules/prisma/build/index.js");
 for (const args of [["generate"], ["migrate", "deploy"]]) {
-  const r = spawnSync(process.execPath, [prismaBin, ...args], { stdio: "inherit" });
+  const r = run([prismaBin, ...args]);
   if (r.status !== 0) {
     console.error(`prisma ${args.join(" ")} failed`);
     process.exit(r.status ?? 1);

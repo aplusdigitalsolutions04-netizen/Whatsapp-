@@ -47,7 +47,7 @@ cd /opt/wery-aio && git pull && docker compose up -d --build
 ## Alternative: no Docker (PM2)
 Needs Node 22: `curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt install -y nodejs openssl`
 ```bash
-npm ci && npx prisma generate && npm run build
+npm ci --include=dev && npx prisma generate && npm run build
 npm i -g pm2 && pm2 start ecosystem.config.cjs && pm2 save && pm2 startup
 ```
 Set `DATABASE_URL` to an absolute path outside the repo (add it to .env) and keep `.wa-auth` / `.wa-media` persistent.
@@ -65,7 +65,7 @@ For stable WhatsApp + image editor, use a VPS instead.
 
 1. Push the code to GitHub. In hPanel: Websites > Add website > Node.js Apps, connect the repo.
 2. Node version 22 or newer (the project needs >=22.12).
-3. Build command: `npm ci && npx prisma generate && npm run build`
+3. Build command: `npm ci --include=dev && npx prisma generate && npm run build`
 4. Entry file: `server.js` (in the repo root; it runs migrations, then starts the app). If there is a start command field, use `npm run docker-start`. Do NOT set the entry file to `build/server/index.js` and do not use an output directory.
 5. Environment variables (see `.env.example`): `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SCOPES`,
    `SHOPIFY_APP_URL` (your https domain), `SECRETS_KEY`, `NODE_ENV=production`, plus data paths OUTSIDE the app folder
