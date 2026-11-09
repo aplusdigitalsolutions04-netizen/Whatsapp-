@@ -1,9 +1,9 @@
 // Entry file for hosts that ask for a "server.js" (e.g. Hostinger Node.js apps).
 // Runs DB migrations, then starts the built React Router server on $PORT.
 // Requires `npm run build` to have run first (build/server/index.js).
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const file = (p) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -29,10 +29,10 @@ for (const args of [["generate"], ["migrate", "deploy"]]) {
   }
 }
 
-const serveBin = file("./node_modules/@react-router/serve/bin.js");
-const child = spawn(process.execPath, [serveBin, "./build/server/index.js"], {
-  stdio: "inherit",
-  env: { ...process.env, NODE_ENV: process.env.NODE_ENV || "production" },
-});
-for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => child.kill(sig));
-child.on("exit", (code) => process.exit(code ?? 0));
+// Run the server IN THIS PROCESS (hosts like Hostinger attach the port to the entry process).
+process.on("unhandledRejection", (e) => console.error("[unhandledRejection]", e));
+process.on("uncaughtException", (e) => console.error("[uncaughtException]", e));
+process.env.NODE_ENV = process.env.NODE_ENV || "production";
+process.argv[2] = "./build/server/index.js";
+console.log(`[server.js] starting app, PORT=${process.env.PORT || "(default 3000)"}`);
+await import(pathToFileURL(file("./node_modules/@react-router/serve/dist/cli.js")).href);
