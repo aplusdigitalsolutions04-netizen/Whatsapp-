@@ -14,7 +14,7 @@ COPY . .
 RUN npx prisma generate && npm run build && npm prune --omit=dev
 
 # Everything that must survive a restart lives in /data.
-# Mount a persistent volume at /data on your host (Railway / Render / Fly / VPS).
+# Mount a persistent volume at /data on your host (docker-compose.yml mounts the app_data volume on your Hostinger VPS).
 ENV NODE_ENV=production \
     PORT=3000 \
     DATABASE_URL=file:/data/shoppilot.sqlite \
