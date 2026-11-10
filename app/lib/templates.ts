@@ -16,8 +16,10 @@ export const DEFAULT_TEMPLATES = {
     "Sorry, I could not find any order for those details. 😕\n\nPlease check:\n\n1. Your Order Number (Example: #W1219)\n2. Your registered mobile number\n\nOr type \"agent\" to talk to our team.",
   verificationFailed:
     "Sorry, I couldn't verify that order for this WhatsApp number, so I can't share its details. 🔒\n\n1. Try the order number placed with this number\n2. Or type \"agent\" for help",
-  phoneMismatch:
-    "For your security, I can only share orders linked to this WhatsApp number. 🔒\n\n1. Message us from your registered number\n2. Or send your Order Number (Example: #W1219)\n3. Or type \"agent\" for help",
+  verifyOrderPhone:
+    "To protect your order, please send the mobile number registered on it. 🔒\n\nExample: 9876543210",
+  verifyPhoneOrder:
+    "To protect your account, please also send an Order Number placed with this mobile number. 🔒\n\nExample: #W1219",
   handoff: "Sure! 😊 Connecting you to our support team.\nThey will reply here shortly.",
   humanActive: "",
   botDisabled: "",
@@ -49,7 +51,7 @@ export function mergeTemplates(stored: string | null | undefined): Templates {
 
 /** Templates editable in settings (empty-by-design ones excluded). */
 export const EDITABLE_TEMPLATES: TemplateKey[] = [
-  "greeting", "askOrderNumber", "askOrderDetails", "askMore", "askProductName", "chooseOrder", "noOrderFound", "verificationFailed", "phoneMismatch", "handoff", "unknown", "noProduct", "lookupError", "mediaReceived",
+  "greeting", "askOrderNumber", "askOrderDetails", "askMore", "askProductName", "chooseOrder", "noOrderFound", "verificationFailed", "verifyOrderPhone", "verifyPhoneOrder", "handoff", "unknown", "noProduct", "lookupError", "mediaReceived",
 ];
 
 /** Built-in Hindi replies, used when the customer writes in Hindi/Hinglish. */
@@ -70,8 +72,10 @@ export const TEMPLATES_HI: Templates = {
     "माफ़ कीजिए, इन जानकारियों से कोई ऑर्डर नहीं मिला। 😕\n\nकृपया जाँचें:\n\n1. आपका ऑर्डर नंबर (जैसे #W1219)\n2. आपका रजिस्टर्ड मोबाइल नंबर\n\nया हमारी टीम से बात करने के लिए \"agent\" लिखें।",
   verificationFailed:
     "माफ़ कीजिए, यह ऑर्डर इस WhatsApp नंबर से सत्यापित नहीं हो सका, इसलिए जानकारी साझा नहीं कर सकता। 🔒\n\n1. इसी नंबर से किए गए ऑर्डर का नंबर भेजें\n2. या मदद के लिए \"agent\" लिखें",
-  phoneMismatch:
-    "आपकी सुरक्षा के लिए, मैं सिर्फ़ इसी WhatsApp नंबर से जुड़े ऑर्डर की जानकारी दे सकता हूँ। 🔒\n\n1. अपने रजिस्टर्ड नंबर से हमें मैसेज करें\n2. या अपना ऑर्डर नंबर भेजें (जैसे #W1219)\n3. या मदद के लिए \"agent\" लिखें",
+  verifyOrderPhone:
+    "आपके ऑर्डर की सुरक्षा के लिए, कृपया इस ऑर्डर पर रजिस्टर्ड मोबाइल नंबर भेजें। 🔒\n\nजैसे: 9876543210",
+  verifyPhoneOrder:
+    "आपकी सुरक्षा के लिए, कृपया इस मोबाइल नंबर से किया गया कोई ऑर्डर नंबर भी भेजें। 🔒\n\nजैसे: #W1219",
   handoff: "ज़रूर! 😊 मैं आपको हमारी सपोर्ट टीम से जोड़ रहा हूँ।\nवे जल्द ही यहीं जवाब देंगे।",
   humanActive: "",
   botDisabled: "",

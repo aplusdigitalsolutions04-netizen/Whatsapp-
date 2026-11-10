@@ -232,7 +232,9 @@ test("Order with several tracking numbers shows all of them", async () => {
 
 test("Invalid order number: friendly numbered help, no technical details; Shopify failure is handled by the caller", async () => {
   const chat = await newChat();
-  const r = await say(chat, "track #W9999");
+  const ask = await say(chat, "track #W9999");
+  assert.equal(ask.text, DEFAULT_TEMPLATES.verifyOrderPhone, "the same security question as for a real order");
+  const r = await say(chat, "9111122223");
   assert.match(r.text, /could not find any order/);
   assert.match(r.text, /1\. Your Order Number \(Example: #W1219\)/);
   assert.match(r.text, /2\. Your registered mobile number/);
@@ -244,13 +246,46 @@ test("Privacy: someone else's order number or phone number reveals nothing", asy
   const chat = await newChat();
   const other = await say(chat, "track #W1100"); // exists, belongs to another customer
   const missing = await say(chat, "track #W9998"); // does not exist
-  assert.equal(other.text, missing.text.replace("verification", "verification"), "identical answer: no way to tell the two apart");
+  assert.equal(other.text, DEFAULT_TEMPLATES.verifyOrderPhone);
+  assert.equal(other.text, missing.text, "identical question: no way to tell the two apart");
   assert.ok(!other.text.includes("Secret Item"));
-  const typed = await say(await newChat("+919555500000"), OTHER); // typed another customer's mobile number
-  assert.equal(typed.text, DEFAULT_TEMPLATES.phoneMismatch);
+  assert.equal(other.conv.state, "awaiting_order_verify");
+
+  // Wrong second factor: refused with the same words as "no such order".
+  const wrong = await say(chat, "9111122223");
+  assert.match(wrong.text, /could not find any order/);
+  assert.ok(!wrong.text.includes("Secret Item"));
+  await say(chat, "track #W1100");
+  const wrongOwn = await say(chat, OWNER); // the sender's own number is not the number registered on #W1100
+  assert.match(wrongOwn.text, /could not find any order/);
+
+  // A typed mobile number that is not the sender's: nothing is shown until an order placed with it is also sent.
+  const typedChat = await newChat("+919555500000");
+  const typed = await say(typedChat, OTHER);
+  assert.equal(typed.text, DEFAULT_TEMPLATES.verifyPhoneOrder);
   assert.ok(!typed.text.includes("#W1100") && !typed.text.includes("Secret"));
-  const prefixless = await say(chat, "track 1100");
-  assert.ok(!prefixless.text.includes("Secret Item"));
+  const notTheirs = await say(typedChat, "#W1219"); // an order of someone else entirely
+  assert.match(notTheirs.text, /could not find any order/);
+});
+
+test("Second check lets customers see an order placed with another number: order number + the registered mobile number", async () => {
+  const chat = await newChat("+919555500001"); // WhatsApp number is not the one on the order
+  const ask = await say(chat, "track my order #W1100");
+  assert.equal(ask.text, DEFAULT_TEMPLATES.verifyOrderPhone);
+  const done = await say(chat, "+91 98111 11111");
+  assert.match(done.text, /Order Number: #W1100/);
+  assert.match(done.text, /Secret Item/);
+  assert.equal(done.conv.state, "awaiting_followup");
+
+  const chat2 = await newChat("+919555500002");
+  assert.equal((await say(chat2, "9811111111")).text, DEFAULT_TEMPLATES.verifyPhoneOrder);
+  const done2 = await say(chat2, "my order is #w1100");
+  assert.match(done2.text, /Order Number: #W1100/);
+
+  const chat3 = await newChat("+919555500003");
+  await say(chat3, "#W1100 status");
+  const other = await say(chat3, "hello"); // not an answer: handled as a normal message
+  assert.equal(other.text, DEFAULT_TEMPLATES.greeting);
 });
 
 test("Customers who type the number after being asked are understood (state: asked for order details)", async () => {
@@ -262,8 +297,10 @@ test("Customers who type the number after being asked are understood (state: ask
   const first = await say(chat, "1");
   assert.match(first.text, /couldn't find an order linked to this WhatsApp number/);
   assert.equal(first.conv.state, "awaiting_order_number");
-  const second = await say(chat, "w1300"); // not hers
-  assert.match(second.text, /could not find any order/);
+  const second = await say(chat, "w1300"); // not hers: security question first
+  assert.equal(second.text, DEFAULT_TEMPLATES.verifyOrderPhone);
+  const third = await say(chat, "9000000009"); // wrong registered number
+  assert.match(third.text, /could not find any order/);
 });
 
 test("Order question: choice 2 asks for the order number, 3 for the mobile number, and typing it directly also works", async () => {
@@ -472,5 +509,5 @@ test("Unknown words fall back to a short numbered help message", async () => {
 
 test("Saved (custom) templates still win over the new defaults; empty ones fall back", () => {
   assert.equal(mergeTemplates('{"greeting":"Hello from my store"}').greeting, "Hello from my store");
-  assert.equal(mergeTemplates('{"phoneMismatch":" "}').phoneMismatch, DEFAULT_TEMPLATES.phoneMismatch);
+  assert.equal(mergeTemplates('{"verifyOrderPhone":" "}').verifyOrderPhone, DEFAULT_TEMPLATES.verifyOrderPhone);
 });

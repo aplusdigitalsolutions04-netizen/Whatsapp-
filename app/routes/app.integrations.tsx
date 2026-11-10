@@ -22,7 +22,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const target = String((await request.formData()).get("target"));
-  if (target === "shopify") return { target, shopify: await testShopifyConnection(session.shop) };
+  if (target === "shopify") return { target, shopify: await testShopifyConnection(session.shop, true) };
   if (target === "whatsapp") return { target, whatsapp: await whatsappDiagnostics() };
   return {};
 };
@@ -52,7 +52,9 @@ export default function Integrations() {
                   <li key={s.scope}>{s.scope}: <Badge tone={s.granted ? "success" : "critical"}>{s.granted ? "Granted" : "Missing"}</Badge></li>
                 ))}
               </ul>
-              <p className="o-p">Order and customer data also requires approved Protected Customer Data access in the Partner Dashboard.</p>
+              <Banner tone="success">
+                Orders and customer details can be read{result.shopify.orders?.readable != null ? ` (${result.shopify.orders.readable} orders visible to the app)` : ""}. The bot can look orders up.
+              </Banner>
             </>
           ) : (
             <Banner tone="critical">Failed: {result.shopify.error}</Banner>

@@ -165,9 +165,19 @@ async function failVerification(shop: string, conv: Conv, s: Settings) {
 async function orderByNumberFlow(shop: string, conv: Conv, number: string, s: Settings, deps: BotDeps) {
   const sender = normalizePhone(conv.phone);
   const order = sender ? await deps.findOrder(shop, number, sender) : null;
-  // Identical reply for "not found" and "belongs to someone else": no information leak.
-  if (!order) return failVerification(shop, conv, s);
-  return deliverOrder(shop, conv, order, s);
+  if (order) return deliverOrder(shop, conv, order, s);
+  // Not provably this customer's order (maybe it was placed with another number). Second check: the customer must also
+  // know the mobile number registered on it. The question is the same whether the order exists or not: no information leak.
+  return askVerification(conv, s, { order: number });
+}
+
+type Pending = { order?: string; phone?: string };
+
+/** Second factor: order number + the mobile number registered on that order (answered by awaiting_order_verify). */
+async function askVerification(conv: Conv, s: Settings, pending: Pending) {
+  await update(conv, { state: "awaiting_order_verify", pendingOrders: JSON.stringify(pending) });
+  const t = tpl(conv, s);
+  return pending.order ? t.verifyOrderPhone : t.verifyPhoneOrder;
 }
 
 /** Orders placed with the sender's own number: one -> its details, several -> a numbered list to choose from, none -> ask. */
@@ -190,15 +200,12 @@ async function orderOverview(shop: string, conv: Conv, s: Settings, deps: BotDep
 }
 
 /**
- * The customer typed a mobile number. Orders are only shown for the number they are chatting from:
- * anyone could type someone else's number, so a different number never reveals anything (not even whether it has orders).
+ * The customer typed a mobile number. For the number they are chatting from, its orders are shown. For any other number
+ * anyone could type someone else's number, so nothing is shown until they also send an order number placed with it.
  */
 async function phoneFlow(shop: string, conv: Conv, typed: string, s: Settings, deps: BotDeps, lang: Lang) {
   const sender = normalizePhone(conv.phone);
-  if (!sender || !samePhone(typed, sender)) {
-    await logEvent({ shop, source: "bot", event: "phone_mismatch", detail: "order lookup by a different number was refused" });
-    return tpl(conv, s).phoneMismatch;
-  }
+  if (!sender || !samePhone(typed, sender)) return askVerification(conv, s, { phone: typed });
   return orderOverview(shop, conv, s, deps, lang);
 }
 
@@ -241,6 +248,28 @@ export async function decideReply(
   if (intent.type === "agent") {
     await handoff(shop, conv, "Customer requested a human agent");
     return t.handoff;
+  }
+
+  // Second factor for an order that is not on this WhatsApp number: order number + registered mobile number must match.
+  if (conv.state === "awaiting_order_verify") {
+    let pending: Pending = {};
+    try {
+      pending = JSON.parse(conv.pendingOrders || "{}");
+    } catch {
+      /* corrupt state: treated as nothing pending */
+    }
+    const phone = findPhoneInText(text);
+    const marked = findMarkedOrderRef(text);
+    const ref = marked && !refIsPhone(marked) ? marked : findLooseOrderRef(text) ?? (phone ? null : parseOrderRef(text));
+    let checked: OrderSummary | null | undefined;
+    if (pending.order && phone) checked = await deps.findOrder(shop, pending.order, phone);
+    else if (pending.phone && ref) checked = await deps.findOrder(shop, ref.key, pending.phone);
+    if (checked) return deliverOrder(shop, conv, checked, s);
+    if (checked === null) {
+      await update(conv, { state: "awaiting_order_number", pendingOrders: "[]" });
+      return failVerification(shop, conv, s);
+    }
+    await update(conv, { state: "idle", pendingOrders: "[]" }); // something else: handled as a normal message below
   }
 
   // Answer to the welcome menu: 1 Find a Product, 2 Check Order Status, 3 Track My Shipment, 4 Product Information, 5 Support.

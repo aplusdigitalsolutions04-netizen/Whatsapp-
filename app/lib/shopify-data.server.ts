@@ -3,6 +3,7 @@ import { unauthenticated } from "../shopify.server";
 import { productTerms } from "./intent";
 import { logEvent } from "./log.server";
 import { orderNameMatches, parseOrderRef } from "./order-ref";
+import { explainShopifyError } from "./shopify-errors";
 import { htmlToText } from "./product-summary";
 import { normalizePhone, phoneSearchVariants, samePhone } from "./phone";
 import { resolveTrackingUrl, type TrackingInfo } from "./tracking";
@@ -422,7 +423,21 @@ export async function listProducts(shop: string, opts: { after?: string | null; 
 
 export const REQUIRED_SCOPES = ["read_orders", "read_customers", "read_products"];
 
-export async function testShopifyConnection(shop: string) {
+type ConnectionTest =
+  | { ok: true; shopName: string; domain: string; scopes: { scope: string; granted: boolean }[]; orders: { readable: number | null } }
+  | { ok: false; error: string };
+
+const testCache = new Map<string, { at: number; value: ConnectionTest }>();
+
+/**
+ * Can the app read what the bot needs? Checks the shop, the granted permissions AND a real order query with the
+ * same fields the bot uses (phone, customer, tracking), because Shopify hides those unless Protected Customer Data
+ * access is approved. Cached for a minute (the dashboard calls this on every refresh); `fresh` skips the cache.
+ */
+export async function testShopifyConnection(shop: string, fresh = false): Promise<ConnectionTest> {
+  const hit = testCache.get(shop);
+  if (!fresh && hit && Date.now() - hit.at < 60_000) return hit.value;
+  let value: ConnectionTest;
   try {
     const data = await gql(
       shop,
@@ -430,13 +445,18 @@ export async function testShopifyConnection(shop: string) {
     );
     const granted: string[] = (data.currentAppInstallation?.accessScopes ?? []).map((s: Gql) => s.handle);
     const has = (s: string) => granted.includes(s) || granted.includes(s.replace("read_", "write_"));
-    return {
-      ok: true as const,
+    const probe = await gql(shop, `query { orders(first: 1) { nodes { ${ORDER_FIELDS} } } ordersCount(limit: null) { count } }`);
+    const count = Number(probe.ordersCount?.count);
+    value = {
+      ok: true,
       shopName: data.shop?.name as string,
       domain: data.shop?.myshopifyDomain as string,
       scopes: REQUIRED_SCOPES.map((s) => ({ scope: s, granted: has(s) })),
+      orders: { readable: Number.isFinite(count) ? count : null },
     };
   } catch (e) {
-    return { ok: false as const, error: String((e as Error).message ?? e).slice(0, 300) };
+    value = { ok: false, error: explainShopifyError(String((e as Error).message ?? e)) };
   }
+  testCache.set(shop, { at: Date.now(), value });
+  return value;
 }
