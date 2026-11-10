@@ -9,12 +9,12 @@
 //
 // If anything fails, a small status page is served on $PORT instead of the host's generic "503", and the same
 // reason is printed to the log. The status page never prints secret values.
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import http from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 process.chdir(root);
@@ -58,7 +58,7 @@ function serveProblem(title, lines) {
       res.writeHead(503, { "Content-Type": isHealth ? "application/json" : "text/html; charset=utf-8", "Cache-Control": "no-store", "Retry-After": "60" });
       res.end(isHealth ? JSON.stringify({ ok: false, problem: title }) : html);
     })
-    .listen(Number(env.PORT), () => console.error(`[start] status page listening on port ${env.PORT}`));
+    .listen(/^\d+$/.test(env.PORT) ? Number(env.PORT) : env.PORT, () => console.error(`[start] status page listening on port ${env.PORT}`));
 }
 
 const missing = ["SHOPIFY_API_KEY", "SHOPIFY_API_SECRET", "SHOPIFY_APP_URL"].filter((k) => !env[k]?.trim());
@@ -102,7 +102,14 @@ function main() {
     }
   }
 
-  const child = spawn(process.execPath, [pkgFile("@react-router/serve", "bin.js"), "./build/server/index.js"], { stdio: "inherit", env });
-  for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => child.kill(sig));
-  child.on("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
+  // Run the server IN THIS PROCESS: managed Node.js hosts (e.g. Hostinger) attach the port to the entry process,
+  // so a child process would never receive traffic.
+  process.on("unhandledRejection", (e) => console.error("[unhandledRejection]", e));
+  process.on("uncaughtException", (e) => console.error("[uncaughtException]", e));
+  process.argv[2] = "./build/server/index.js";
+  console.log(`[start] starting app on port ${env.PORT}`);
+  import(pathToFileURL(pkgFile("@react-router/serve", "dist/cli.js")).href).catch((e) => {
+    console.error("[start] the server failed to start:", e);
+    serveProblem("The server failed to start", ["The exact error is in the server log."]);
+  });
 }
