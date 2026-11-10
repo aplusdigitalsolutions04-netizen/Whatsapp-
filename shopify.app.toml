@@ -2,7 +2,7 @@
 
 client_id = "9eb7626dfb4745db9f54edf94a47f8ec"
 name = "ShopPilot"
-application_url = "https://example.com"
+application_url = "https://shoppilot.aplusdigitalsolutions.in"
 embedded = true
 
 [access_scopes]
@@ -59,7 +59,11 @@ api_version = "2026-10"
   query_filter = "product.status:'ACTIVE'"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [
+  "https://shoppilot.aplusdigitalsolutions.in/auth/callback",
+  "https://shoppilot.aplusdigitalsolutions.in/auth/shopify/callback",
+  "https://shoppilot.aplusdigitalsolutions.in/api/auth"
+]
 
 [build]
 automatically_update_urls_on_dev = true
