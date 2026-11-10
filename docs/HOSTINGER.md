@@ -47,7 +47,7 @@ cd /opt/wery-aio && git pull && docker compose up -d --build
 ## Alternative: no Docker (PM2)
 Needs Node 22: `curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt install -y nodejs openssl`
 ```bash
-npm ci && npx prisma generate && npm run build
+npm ci --include=dev && npx prisma generate && npm run build
 npm i -g pm2 && pm2 start ecosystem.config.cjs && pm2 save && pm2 startup
 ```
 Set `DATABASE_URL` to an absolute path outside the repo (add it to .env) and keep `.wa-auth` / `.wa-media` persistent.
@@ -56,6 +56,24 @@ Set `DATABASE_URL` to an absolute path outside the repo (add it to .env) and kee
 - Run ONE instance only (SQLite + a single WhatsApp session).
 - Product Scrapper uses `playwright-core`; if a mode needs a real browser, install Chromium on the VPS.
 - Never commit `.env`; `.wa-auth` is a live WhatsApp login - keep it private.
+
+## Hostinger Cloud Startup / managed Node.js (no Docker, no root)
+Cloud Startup is managed hosting, not a VPS: no Docker, no Caddy (Hostinger provides HTTPS).
+Dashboard, Orders, Google Sheet and SEO should work. WhatsApp (Baileys) needs an always-on process and may
+disconnect when the host restarts or idles it, and the image editor / background removal can hit memory limits.
+For stable WhatsApp + image editor, use a VPS instead.
+
+1. Push the code to GitHub. In hPanel: Websites > Add website > Node.js Apps, connect the repo.
+2. Node version 22 or newer (the project needs >=22.12).
+3. Build command: `npm ci --include=dev && npx prisma generate && npm run build`
+4. Entry file: `server.js` (in the repo root; it runs migrations, then starts the app). If there is a start command field, use `npm run docker-start`. Do NOT set the entry file to `build/server/index.js` and do not use an output directory.
+5. Environment variables (see `.env.example`): `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SCOPES`,
+   `SHOPIFY_APP_URL` (your https domain), `SECRETS_KEY`, `NODE_ENV=production`, plus data paths OUTSIDE the app folder
+   so redeploys do not wipe them:
+   `DATABASE_URL=file:/home/<user>/wery-data/shoppilot.sqlite`,
+   `WHATSAPP_AUTH_DIR=/home/<user>/wery-data/wa-auth`, `WHATSAPP_MEDIA_DIR=/home/<user>/wery-data/wa-media`,
+   `FINDER_MEDIA_DIR=/home/<user>/wery-data/finder-media`, `IMAGE_EDITOR_DIR=/home/<user>/wery-data/image-editor`.
+6. Update `shopify.app.toml` (`application_url`, `redirect_urls`) to your domain and run `npm run deploy`.
 
 ## Any Node.js host (generic)
 Requirements: Node >= 22.12, persistent disk, one always-on process. Set the env vars from `.env.example`, then:
