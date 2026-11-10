@@ -26,6 +26,18 @@ export function normalizePhone(input: string | null | undefined): string | null 
   return null;
 }
 
+/**
+ * A mobile number typed inside a message ("9876543210", "+91 98765-43210", "my number is 91 9876543210").
+ * Only counts when the whole message is mostly the number, so order numbers and product models are not mistaken for it.
+ */
+export function findPhoneInText(text: string): string | null {
+  const m = text.match(/(?:\+|00)?\d[\d\s().-]{8,18}\d/);
+  if (!m) return null;
+  const rest = text.replace(m[0], "").replace(/[^\p{L}\p{N}]/gu, "");
+  if (rest.length > 40) return null;
+  return normalizePhone(m[0]);
+}
+
 /** Variants Shopify may have stored the number as, used to search customers. */
 export function phoneSearchVariants(e164: string): string[] {
   const digits = e164.replace(/\D/g, "");

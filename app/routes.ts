@@ -49,6 +49,7 @@ export default [
     route("quick-replies", "routes/app.quick-replies.tsx"),
     route("seo", "routes/app.seo.tsx"),
     route("settings", "routes/app.settings.tsx"),
+    route("waiting", "routes/app.waiting.tsx"),
     route("whatsapp-web", "routes/app.whatsapp-web.tsx"),
   ]),
 ] satisfies RouteConfig;

@@ -2,7 +2,7 @@ import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { Link, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import {
-  AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, Bot, CheckCircle2, ClipboardList, MessagesSquare, Minus, PackageSearch,
+  AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, BellRing, Bot, CheckCircle2, ClipboardList, MessagesSquare, Minus, PackageSearch,
   Phone, ScanSearch, ShoppingBag, Smartphone, Users, WandSparkles, type LucideIcon,
 } from "lucide-react";
 import { authenticate } from "../shopify.server";
@@ -163,6 +163,26 @@ export default function Dashboard() {
         </div>
       }
     >
+      {/* customers the bot handed over: attend them first */}
+      {d.waiting.length > 0 && (
+        <section className="db-wait" aria-label="Customers waiting for you">
+          <div className="db-wait-head">
+            <span className="sa-bell" aria-hidden="true"><BellRing size={18} /><i /></span>
+            <b>{d.pending.waitingHuman} customer{d.pending.waitingHuman > 1 ? "s are" : " is"} waiting for you</b>
+            <span>They asked for our support team. Please attend them.</span>
+          </div>
+          <ul>
+            {d.waiting.slice(0, 4).map((c) => (
+              <li key={c.id}>
+                <div><b>{c.name}</b><small>{c.reason || "Asked for the support team"}</small></div>
+                <time>{ago(c.at)}</time>
+                <Link className="sa-btn" to={`/app/conversations?c=${c.id}&filter=human`}>Attend</Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {/* needs attention */}
       <section className={`db-attn ${todo.length ? "" : "ok"}`} aria-label="Needs attention">
         <div className="db-attn-head">

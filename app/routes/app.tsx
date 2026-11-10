@@ -5,6 +5,7 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
+import { getWaiting } from "../lib/waiting.server";
 import orderlyStyles from "../styles/orderly.css?url";
 import dashboardStyles from "../styles/dashboard.css?url";
 import { Shell } from "../components/Shell";
@@ -15,21 +16,22 @@ export const links: LinksFunction = () => [{ rel: "stylesheet", href: orderlySty
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const since = new Date(Date.now() - 24 * 3_600_000);
-  const [handoffs, errors] = await Promise.all([
+  const [handoffs, errors, waiting] = await Promise.all([
     prisma.conversation.count({ where: { shop: session.shop, mode: "human", status: "open" } }),
     prisma.activityLog.count({ where: { level: "error", createdAt: { gte: since } } }),
+    getWaiting(session.shop),
   ]);
 
   // eslint-disable-next-line no-undef
-  return { apiKey: process.env.SHOPIFY_API_KEY || "", shop: session.shop, handoffs, errors };
+  return { apiKey: process.env.SHOPIFY_API_KEY || "", shop: session.shop, handoffs, errors, waiting };
 };
 
 export default function App() {
-  const { apiKey, shop, handoffs, errors } = useLoaderData<typeof loader>();
+  const { apiKey, shop, handoffs, errors, waiting } = useLoaderData<typeof loader>();
 
   return (
     <AppProvider apiKey={apiKey}>
-      <Shell data={{ shop, handoffs, errors }}>
+      <Shell data={{ shop, handoffs, errors, waiting }}>
         <ClientOnly><Outlet /></ClientOnly>
       </Shell>
     </AppProvider>

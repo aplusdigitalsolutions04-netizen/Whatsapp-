@@ -1,11 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router";
+import { SupportAlert } from "./SupportAlert";
+import type { Waiting } from "../lib/waiting.server";
 import { ChevronsLeft, ChevronsRight, ClipboardList, ScanSearch, WandSparkles, LayoutDashboard, Menu, MessagesSquare, PackageSearch, Plug, ScrollText, SearchCheck, Smartphone, Sparkles, X, Zap, type LucideIcon } from "lucide-react";
 
 type Item = { to: string; label: string; icon: LucideIcon; end?: boolean; badge?: number; also?: string };
 type Group = { title: string; items: Item[] };
 
-export type ShellData = { shop: string; handoffs: number; errors: number };
+export type ShellData = { shop: string; handoffs: number; errors: number; waiting: Waiting[] };
 
 function groups(d: ShellData): Group[] {
   return [
@@ -129,6 +131,7 @@ export function Shell({ data, children }: { data: ShellData; children: ReactNode
             )}
           </nav>
         </header>
+        <SupportAlert initial={data.waiting} />
         <main className="content">{children}</main>
       </div>
     </div>
