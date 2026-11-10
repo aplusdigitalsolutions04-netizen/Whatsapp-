@@ -11,7 +11,7 @@ COPY prisma ./prisma
 RUN npm ci && npm cache clean --force
 
 COPY . .
-RUN npx prisma generate && npm run build && npm prune --omit=dev
+RUN npx prisma generate && npm run build && npm prune --omit=dev && npx prisma generate
 
 # Everything that must survive a restart lives in /data.
 # Mount a persistent volume at /data on your host (Railway / Render / Fly / VPS).

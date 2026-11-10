@@ -216,7 +216,7 @@ export default function Dashboard() {
         {modules.map((m) => {
           const Icon = m.icon;
           return (
-            <Link key={m.to} to={m.to} className="db-mod">
+            <Link key={m.title} to={m.to} className="db-mod">
               <span className="db-mod-ico"><Icon size={17} /></span>
               <span className="db-mod-main">
                 <span className="db-mod-title"><b>{m.title}</b><i className={`db-pip ${m.tone}`} title={m.state} /></span>
@@ -491,7 +491,7 @@ export default function Dashboard() {
           {GUIDE.map((g) => {
             const Icon = g.icon;
             return (
-              <Link to={g.to} key={g.to} className="db-guide-item">
+              <Link to={g.to} key={g.title} className="db-guide-item">
                 <span><Icon size={16} /></span>
                 <div><b>{g.title}</b><p>{g.text}</p></div>
               </Link>

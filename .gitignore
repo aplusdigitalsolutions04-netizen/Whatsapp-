@@ -33,3 +33,4 @@ database.sqlite
 .finder-media
 .image-editor
 !.env.example
+/storage
