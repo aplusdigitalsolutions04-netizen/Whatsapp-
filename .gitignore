@@ -4,7 +4,7 @@ node_modules
 .DS_Store
 
 /.cache
-/build
+# /build is committed on purpose: the host serves it without building
 /app/build
 /public/build/
 /public/_dev
