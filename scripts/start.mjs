@@ -10,7 +10,7 @@
 // If anything fails, a small status page is served on $PORT instead of the host's generic "503", and the same
 // reason is printed to the log. The status page never prints secret values.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import http from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -107,6 +107,8 @@ function main() {
   process.on("unhandledRejection", (e) => console.error("[unhandledRejection]", e));
   process.on("uncaughtException", (e) => console.error("[uncaughtException]", e));
   process.argv[2] = "./build/server/index.js";
+  const assetsDir = path.join(root, "build", "client", "assets");
+  console.log(`[start] folder ${root}, browser files: ${existsSync(assetsDir) ? readdirSync(assetsDir).length : "MISSING"}`);
   console.log(`[start] starting app on port ${env.PORT}`);
   import(pathToFileURL(pkgFile("@react-router/serve", "dist/cli.js")).href).catch((e) => {
     console.error("[start] the server failed to start:", e);

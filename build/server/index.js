@@ -12,7 +12,7 @@ import "@shopify/shopify-app-react-router/adapters/node";
 import { shopifyApp, AppDistribution, ApiVersion, LoginErrorType, boundary } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import { PrismaClient } from "@prisma/client";
-import { mkdirSync, writeFileSync, existsSync, rmSync, readFileSync, statSync, readdirSync, copyFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync, rmSync, readFileSync, readdirSync, statSync, copyFileSync } from "node:fs";
 import path from "node:path";
 import QRCode from "qrcode";
 import makeWASocket, { useMultiFileAuthState, fetchLatestBaileysVersion, Browsers, DisconnectReason, downloadMediaMessage } from "@whiskeysockets/baileys";
@@ -3533,11 +3533,16 @@ const route1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   default: route,
   loader: loader$r
 }, Symbol.toStringTag, { value: "Module" }));
+function assetCount() {
+  const dir = path.join(process.cwd(), "build", "client", "assets");
+  return existsSync(dir) ? readdirSync(dir).length : 0;
+}
 const loader$q = async () => {
   try {
     await prisma.$queryRaw`SELECT 1`;
     return Response.json({
-      ok: true
+      ok: true,
+      assets: assetCount()
     }, {
       headers: {
         "Cache-Control": "no-store"
