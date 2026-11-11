@@ -199,12 +199,24 @@ export async function stopBridge(logout: boolean) {
   bridge.retries = 0;
 }
 
+const NOT_CONNECTED = "WhatsApp is not connected (scan the QR code on the WhatsApp Web page)";
+
+/** The connection can drop for a moment (WhatsApp reconnects by itself); wait briefly for it instead of failing. */
+async function liveSock(waitMs = 0) {
+  const until = Date.now() + waitMs;
+  while (true) {
+    if (bridge.state === "connected" && bridge.sock) return bridge.sock;
+    if (Date.now() >= until) return null;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
 export async function bridgeSendText(
   toPhone: string,
   body: string,
 ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   if (bridge.state !== "connected" || !bridge.sock) {
-    return { ok: false, error: "WhatsApp is not connected (scan the QR code on the WhatsApp Web page)" };
+    return { ok: false, error: NOT_CONNECTED };
   }
   const digits = toPhone.replace(/\D/g, "");
   const jid = bridge.jids.get(digits) ?? `${digits}@s.whatsapp.net`;
@@ -231,7 +243,7 @@ export async function bridgeSendMedia(
   caption: string,
 ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   if (bridge.state !== "connected" || !bridge.sock) {
-    return { ok: false, error: "WhatsApp is not connected (scan the QR code on the WhatsApp Web page)" };
+    return { ok: false, error: NOT_CONNECTED };
   }
   const filePath = mediaFilePath(media.file);
   if (!filePath) return { ok: false, error: "Attachment file is missing on the server" };
@@ -245,7 +257,9 @@ export async function bridgeSendMedia(
     : media.kind === "audio" ? { audio: buffer, mimetype: media.mime }
     : { document: buffer, caption: text, mimetype: media.mime, fileName: media.name ?? media.file };
   try {
-    const res = await bridge.sock.sendMessage(jid, content);
+    const sock = await liveSock(10_000);
+    if (!sock) return { ok: false, error: NOT_CONNECTED };
+    const res = await sock.sendMessage(jid, content);
     return { ok: true, id: res?.key?.id ?? `qr-${Date.now()}` };
   } catch (e) {
     return { ok: false, error: redact((e as Error).message) };
