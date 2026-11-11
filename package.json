@@ -12,7 +12,7 @@
     "start": "node scripts/start.mjs",
     "docker-start": "node scripts/start.mjs",
     "setup": "prisma generate && prisma migrate deploy",
-    "lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
+    "lint": "eslint --ignore-path .gitignore --ignore-pattern build/ --cache --cache-location ./node_modules/.cache/eslint .",
     "shopify": "shopify",
     "prisma": "prisma",
     "graphql-codegen": "graphql-codegen",
