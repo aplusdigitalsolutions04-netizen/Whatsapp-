@@ -21,7 +21,7 @@ export const DEFAULT_TEMPLATES = {
   verifyPhoneOrder:
     "To protect your account, please also send an Order Number placed with this mobile number. 🔒\n\nExample: #W1219",
   handoff: "Sure! 😊 Connecting you to our support team.\nThey will reply here shortly.",
-  humanActive: "",
+  humanActive: "Thanks for your patience. 🙏\n\nOur support team has your request and will reply here shortly.",
   botDisabled: "",
   unknown:
     "Sorry, I didn't understand that. 😕\n\nYou can:\n\n1. Send your Order Number\n2. Ask to track a shipment\n3. Ask about a product\n4. Type \"agent\" to talk to our team",
@@ -51,7 +51,7 @@ export function mergeTemplates(stored: string | null | undefined): Templates {
 
 /** Templates editable in settings (empty-by-design ones excluded). */
 export const EDITABLE_TEMPLATES: TemplateKey[] = [
-  "greeting", "askOrderNumber", "askOrderDetails", "askMore", "askProductName", "chooseOrder", "noOrderFound", "verificationFailed", "verifyOrderPhone", "verifyPhoneOrder", "handoff", "unknown", "noProduct", "lookupError", "mediaReceived",
+  "greeting", "askOrderNumber", "askOrderDetails", "askMore", "askProductName", "chooseOrder", "noOrderFound", "verificationFailed", "verifyOrderPhone", "verifyPhoneOrder", "handoff", "humanActive", "unknown", "noProduct", "lookupError", "mediaReceived",
 ];
 
 /** Built-in Hindi replies, used when the customer writes in Hindi/Hinglish. */
@@ -77,7 +77,7 @@ export const TEMPLATES_HI: Templates = {
   verifyPhoneOrder:
     "आपकी सुरक्षा के लिए, कृपया इस मोबाइल नंबर से किया गया कोई ऑर्डर नंबर भी भेजें। 🔒\n\nजैसे: #W1219",
   handoff: "ज़रूर! 😊 मैं आपको हमारी सपोर्ट टीम से जोड़ रहा हूँ।\nवे जल्द ही यहीं जवाब देंगे।",
-  humanActive: "",
+  humanActive: "आपके धैर्य के लिए धन्यवाद। 🙏\n\nहमारी सपोर्ट टीम को आपका अनुरोध मिल गया है और वे जल्द ही यहीं जवाब देंगे।",
   botDisabled: "",
   unknown:
     "माफ़ कीजिए, मैं समझ नहीं पाया। 😕\n\nआप ये कर सकते हैं:\n\n1. अपना ऑर्डर नंबर भेजें\n2. शिपमेंट ट्रैक करवाएँ\n3. प्रोडक्ट के बारे में पूछें\n4. टीम से बात करने के लिए \"agent\" लिखें",

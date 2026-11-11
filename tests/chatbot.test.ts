@@ -399,6 +399,32 @@ test("Support request: the customer shows up in the waiting list (pop-up alert +
   assert.ok(!(await getWaiting(SHOP)).some((w: any) => w.phone === chat.phone), "gone once the chat is closed");
 });
 
+test("A customer writing while the chat is with a person is never left in silence, but is not nagged either", async () => {
+  await newChat();
+  const chat = await newChat("+919444400001");
+  await prisma.conversation.update({ where: { id: chat.id }, data: { mode: "human", handoffReason: "Customer requested a human agent" } });
+  const sent: any[] = [];
+  const send = async (m: any) => (sent.push(m), { ok: true });
+  const conv = () => prisma.conversation.findUniqueOrThrow({ where: { id: chat.id } });
+
+  assert.equal(await bot.acknowledgeWaiting(SHOP, await conv(), settings, "m1", send), true, "first message gets an answer");
+  assert.equal(sent[0].body, DEFAULT_TEMPLATES.humanActive);
+  assert.equal(sent[0].sender, "bot");
+  assert.equal(sent[0].inReplyTo, "m1:wait");
+  assert.equal(await bot.acknowledgeWaiting(SHOP, await conv(), settings, "m2", send), false, "not again within 30 minutes");
+  assert.equal(sent.length, 1);
+
+  const chat2 = await newChat("+919444400002");
+  await prisma.conversation.update({ where: { id: chat2.id }, data: { mode: "human" } });
+  await prisma.message.create({ data: { conversationId: chat2.id, direction: "out", sender: "agent", body: "Hello, how can I help?", status: "sent" } });
+  assert.equal(await bot.acknowledgeWaiting(SHOP, await prisma.conversation.findUniqueOrThrow({ where: { id: chat2.id } }), settings, "m3", send), false, "a person already replied");
+
+  const chat3 = await newChat("+919444400003");
+  await prisma.conversation.update({ where: { id: chat3.id }, data: { mode: "human", lang: "hi" } });
+  await bot.acknowledgeWaiting(SHOP, await prisma.conversation.findUniqueOrThrow({ where: { id: chat3.id } }), settings, "m4", send);
+  assert.equal(sent[1].body, TEMPLATES_HI.humanActive);
+});
+
 test("Hindi and Hinglish customers: Hindi gets Hindi labels, Hinglish gets the same short English layout", async () => {
   const hiChat = await newChat("+919000000001");
   const hiAsk = await say(hiChat, "मेरा ऑर्डर कहाँ है");

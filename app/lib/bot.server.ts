@@ -470,6 +470,21 @@ async function askAi(shop: string, conv: Conv, question: string, lang: Lang) {
   return aiFallbackReply({ shop, lang, question, history, facts });
 }
 
+/**
+ * A customer writes while the chat is handed to a person. If nobody has answered yet, tell them (at most once every
+ * 30 minutes) that the team has the request; once a person has replied the bot stays quiet so it never interrupts.
+ * `send` is replaceable for tests. Returns true when a message was sent.
+ */
+export async function acknowledgeWaiting(shop: string, conv: Conv, s: Settings, inboundId: string, send: typeof sendAndRecord = sendAndRecord): Promise<boolean> {
+  const body = tpl(conv, s).humanActive.trim();
+  if (!body) return false;
+  const last = await prisma.message.findFirst({ where: { conversationId: conv.id, direction: "out" }, orderBy: { createdAt: "desc" }, select: { sender: true } });
+  if (last?.sender === "agent") return false; // a person is already chatting with this customer
+  if (rateLimited(`human-ack:${conv.id}`, 1, 30 * 60_000)) return false;
+  const sent = await send({ shop, conversationId: conv.id, to: conv.phone, body, sender: "bot", inReplyTo: `${inboundId}:wait` });
+  return sent.ok;
+}
+
 /** Processes one inbound WhatsApp message. Safe to call again for the same message id. */
 export async function handleInbound(shop: string, msg: InboundPayload) {
   const phone = normalizePhone(msg.from) ?? `+${msg.from.replace(/\D/g, "")}`;
@@ -503,7 +518,12 @@ export async function handleInbound(shop: string, msg: InboundPayload) {
     .catch(() => undefined); // already stored on an earlier attempt
 
   const s = await getSettings(shop);
-  if (conv.mode === "human" || !s.enabled) return;
+  if (!s.enabled) return;
+  if (conv.mode === "human") {
+    // The chat is with a person now. Never leave the customer in silence, though: say once that the team has the request.
+    await acknowledgeWaiting(shop, conv, s, msg.id).catch(() => undefined);
+    return;
+  }
 
   const key = msg.id;
   const rawText = msg.text.trim();
