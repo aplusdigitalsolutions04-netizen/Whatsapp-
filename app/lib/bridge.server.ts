@@ -204,7 +204,7 @@ const NOT_CONNECTED = "WhatsApp is not connected (scan the QR code on the WhatsA
 /** The connection can drop for a moment (WhatsApp reconnects by itself); wait briefly for it instead of failing. */
 async function liveSock(waitMs = 0) {
   const until = Date.now() + waitMs;
-  while (true) {
+  for (;;) {
     if (bridge.state === "connected" && bridge.sock) return bridge.sock;
     if (Date.now() >= until) return null;
     await new Promise((r) => setTimeout(r, 500));
