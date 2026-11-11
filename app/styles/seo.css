@@ -122,9 +122,12 @@ details[open] > summary .seo-caret { transform: rotate(180deg); }
 .seo-detail > div { padding-top: 14px; min-width: 0; }
 .seo-detail h4 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--taupe); }
 .seo-detail-wide { grid-column: 1 / -1; }
-.seo-detail-left { display: grid; gap: 14px; align-content: start; }
+/* minmax(0, 1fr) + min-width: 0: a long, non-wrapping URL line must never stretch the left column over the right one */
+.seo-detail-left { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-content: start; }
+.seo-detail-left > * { min-width: 0; }
+.seo-detail-right { min-width: 0; overflow-wrap: anywhere; }
 
-.seo-serp { padding: 14px 16px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+.seo-serp { padding: 14px 16px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
 .seo-serp-url { display: flex; align-items: center; gap: 9px; font-size: 12px; color: #4d5156; margin-bottom: 4px; min-width: 0; }
 .seo-serp-url > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .seo-serp-url em { font-style: normal; color: #70757a; }
