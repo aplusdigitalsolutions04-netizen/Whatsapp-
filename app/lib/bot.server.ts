@@ -365,10 +365,14 @@ export async function decideReply(
     if (ref) return orderByNumberFlow(shop, conv, ref.key, s, deps);
   }
 
-  // A bare "W1219" is an order only when it is one of THIS customer's orders; otherwise it may be a product model.
+  // A bare "W1219" (no "#") is an order when it is one of THIS customer's orders. Otherwise it may be a product model
+  // ("M1005"): if the store has such a product it is shown, and if not the customer meant an order, so the order
+  // security question is asked instead of a confusing "product not found".
   if (intent.type === "order" && intent.weak && intent.orderNumber) {
     const found = sender ? await deps.findOrder(shop, intent.orderNumber, sender) : null;
     if (found) return deliverOrder(shop, conv, found, s);
+    const products = await deps.searchProducts(shop, text, 1);
+    if (!products.length) return askVerification(conv, s, { order: intent.orderNumber });
     intent = { type: "unknown" };
   }
 

@@ -217,6 +217,20 @@ test("Order without tracking says so and does not invent anything; cancelled ord
   assert.ok(!/not available yet/.test(cancelled.text));
 });
 
+test("A bare order id (W1219 / w1219 / 1219-style) never answers 'product not found': it is checked as an order", async () => {
+  const chat = await newChat("+919555500010"); // WhatsApp number is not the one on #W1100
+  const r = await say(chat, "W1100");
+  assert.equal(r.text, DEFAULT_TEMPLATES.verifyOrderPhone);
+  assert.ok(!/couldn't find that product/.test(r.text));
+  const done = await say(chat, "9811111111");
+  assert.match(done.text, /Order Number: #W1100/);
+  const missing = await say(await newChat("+919555500011"), "w9999");
+  assert.equal(missing.text, DEFAULT_TEMPLATES.verifyOrderPhone);
+  // A real product model that looks the same is still shown as a product.
+  const model = await say(await newChat("+919555500012"), "M1005", { searchProducts: async () => [product({ title: "HP LaserJet M1005 MFP" })] as any });
+  assert.match(model.text, /HP LaserJet M1005 MFP/);
+});
+
 test("Order with several tracking numbers shows all of them", async () => {
   const chat = await newChat();
   const r = await say(chat, "track #W1217");
