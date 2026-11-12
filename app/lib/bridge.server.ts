@@ -160,6 +160,7 @@ export async function startBridge() {
       printQRInTerminal: false,
       syncFullHistory: false,
       markOnlineOnConnect: false,
+      getMessage: async (key: any) => sentCache.get(String(key?.id ?? "")),
       keepAliveIntervalMs: 25_000, // a ping to WhatsApp every 25 s keeps idle connections from being dropped
       connectTimeoutMs: 60_000,
     });
@@ -240,7 +241,10 @@ export async function startBridge() {
         if (!id || !u.key.fromMe || typeof st !== "number") continue;
         // proto status: 3 = delivered, 4 = read, 5 = played
         const mapped = st >= 4 ? "read" : st === 3 ? "delivered" : null;
-        if (mapped) await applyStatus({ id, status: mapped }).catch(() => undefined);
+        if (mapped) {
+          remember(acks, id, mapped);
+          await applyStatus({ id, status: mapped }).catch(() => undefined);
+        }
       }
     });
 
@@ -333,6 +337,36 @@ export async function stopBridge(logout: boolean) {
 
 const NOT_CONNECTED = "WhatsApp is not connected (scan the QR code on the WhatsApp Web page)";
 
+// Recent outgoing messages. WhatsApp sometimes asks the sender to send a message again (the customer's phone could not
+// decrypt it). Without a copy to hand over, the customer sees "Waiting for this message" and never gets the text.
+const sentCache = new Map<string, any>();
+// Delivery confirmations from the customers' phones: message id -> "delivered" | "read".
+const acks = new Map<string, string>();
+function remember<T>(map: Map<string, T>, key: string, value: T) {
+  map.set(key, value);
+  if (map.size > 500) map.delete(map.keys().next().value as string);
+}
+export const bridgeAck = (id: string) => acks.get(id) ?? null;
+
+/** The address WhatsApp wants for this number: the one we already know from a chat, else ask WhatsApp (it also says whether the number has WhatsApp at all). */
+async function resolveJid(sock: any, digits: string): Promise<{ jid: string } | { error: string }> {
+  const known = bridge.jids.get(digits);
+  if (known) return { jid: known };
+  const plain = `${digits}@s.whatsapp.net`;
+  try {
+    const r = await sock.onWhatsApp(plain);
+    const hit = Array.isArray(r) ? r[0] : null;
+    if (hit && hit.exists === false) return { error: "This number is not on WhatsApp." };
+    if (hit?.jid) {
+      bridge.jids.set(digits, hit.jid);
+      return { jid: hit.jid };
+    }
+  } catch {
+    /* the lookup is only a help: send to the plain address */
+  }
+  return { jid: plain };
+}
+
 /** The connection can drop for a moment (WhatsApp reconnects by itself); wait briefly for it instead of failing. */
 async function liveSock(waitMs = 0) {
   const until = Date.now() + waitMs;
@@ -347,17 +381,22 @@ export async function bridgeSendText(
   toPhone: string,
   body: string,
 ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
-  if (bridge.state !== "connected" || !bridge.sock) {
-    return { ok: false, error: NOT_CONNECTED };
-  }
+  const first = await liveSock(8_000);
+  if (!first) return { ok: false, error: NOT_CONNECTED };
   const digits = toPhone.replace(/\D/g, "");
-  const jid = bridge.jids.get(digits) ?? `${digits}@s.whatsapp.net`;
   try {
+    const target = await resolveJid(first, digits);
+    if ("error" in target) return { ok: false, error: target.error };
+    const jid = target.jid;
     // Show "typing…" briefly so the chat feels human.
-    await bridge.sock.sendPresenceUpdate("composing", jid).catch(() => undefined);
+    await first.sendPresenceUpdate("composing", jid).catch(() => undefined);
     await new Promise((r) => setTimeout(r, Math.min(1800, 400 + body.length * 8)));
-    const res = await bridge.sock.sendMessage(jid, { text: body });
-    void bridge.sock?.sendPresenceUpdate("paused", jid).catch(() => undefined);
+    // The connection may have dropped during the pause: wait for the reconnect instead of failing on a dead connection.
+    const sock = await liveSock(10_000);
+    if (!sock) return { ok: false, error: NOT_CONNECTED };
+    const res = await sock.sendMessage(jid, { text: body });
+    if (res?.key?.id && res.message) remember(sentCache, res.key.id, res.message);
+    void sock.sendPresenceUpdate("paused", jid).catch(() => undefined);
     return { ok: true, id: res?.key?.id ?? `qr-${Date.now()}` };
   } catch (e) {
     return { ok: false, error: redact((e as Error).message) };
@@ -398,7 +437,6 @@ export async function bridgeSendMedia(
   const filePath = mediaFilePath(media.file);
   if (!filePath) return { ok: false, error: "Attachment file is missing on the server" };
   const digits = toPhone.replace(/\D/g, "");
-  const jid = bridge.jids.get(digits) ?? `${digits}@s.whatsapp.net`;
   const buffer = readFileSync(filePath);
   const text = caption.trim() || undefined;
   const content: any =
@@ -409,7 +447,10 @@ export async function bridgeSendMedia(
   try {
     const sock = await liveSock(10_000);
     if (!sock) return { ok: false, error: NOT_CONNECTED };
-    const res = await sock.sendMessage(jid, content);
+    const target = await resolveJid(sock, digits);
+    if ("error" in target) return { ok: false, error: target.error };
+    const res = await sock.sendMessage(target.jid, content);
+    if (res?.key?.id && res.message) remember(sentCache, res.key.id, res.message);
     return { ok: true, id: res?.key?.id ?? `qr-${Date.now()}` };
   } catch (e) {
     return { ok: false, error: redact((e as Error).message) };

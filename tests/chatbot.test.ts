@@ -703,3 +703,28 @@ test("WhatsApp disconnects are explained in plain words and summarised", async (
   const replaced = [historyRow({ event: "bridge_replaced", detail: "x", createdAt: new Date(NOW - 1000) })];
   assert.match(summarizeHistory(replaced, NOW).verdict, /another place/i);
 });
+
+test("WhatsApp send: survives a reconnect during the typing pause, and tells when a number is not on WhatsApp", async () => {
+  const b: any = await loadApp("/app/lib/bridge.server.ts");
+  const bridge = (globalThis as any).__waBridge;
+  const sent: string[] = [];
+  const mkSock = (name: string, extra: any = {}) => ({
+    onWhatsApp: async () => [{ jid: "919800000001@s.whatsapp.net", exists: true }],
+    sendPresenceUpdate: async () => undefined,
+    sendMessage: async (jid: string) => { sent.push(`${name}:${jid}`); return { key: { id: `id-${name}` }, message: { conversation: "x" } }; },
+    ...extra,
+  });
+  const second = mkSock("second");
+  // the first connection dies while JAZZ is "typing"; a moment later the bridge has reconnected
+  const first = mkSock("first", { sendPresenceUpdate: async () => { bridge.sock = null; bridge.state = "stopped"; setTimeout(() => { bridge.sock = second; bridge.state = "connected"; }, 300); } });
+  bridge.sock = first; bridge.state = "connected"; bridge.jids.clear();
+  const r = await b.bridgeSendText("+919800000001", "hello");
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(sent, ["second:919800000001@s.whatsapp.net"], "the message goes out on the new connection, never on a dead one");
+
+  bridge.sock = mkSock("third", { onWhatsApp: async () => [{ jid: "919800000002@s.whatsapp.net", exists: false }] });
+  bridge.state = "connected"; bridge.jids.clear();
+  const bad = await b.bridgeSendText("+919800000002", "hello");
+  assert.deepEqual([bad.ok, bad.error], [false, "This number is not on WhatsApp."]);
+  bridge.sock = null; bridge.state = "stopped";
+});

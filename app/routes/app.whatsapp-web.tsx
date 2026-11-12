@@ -1,9 +1,10 @@
 import { useEffect } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { Form, useLoaderData, useNavigation, useRevalidator } from "react-router";
+import { Form, useActionData, useLoaderData, useNavigation, useRevalidator } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
-import { activeProvider, bridgeStatus, startBridge, stopBridge } from "../lib/bridge.server";
+import { activeProvider, bridgeAck, bridgeSendText, bridgeStatus, startBridge, stopBridge } from "../lib/bridge.server";
+import { normalizePhone } from "../lib/phone";
 import prisma from "../db.server";
 import { historyRow, summarizeHistory, type HistoryRow } from "../lib/bridge-reasons";
 import { logEvent } from "../lib/log.server";
@@ -17,12 +18,31 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     take: 40,
   });
   const history = rows.map(historyRow).filter((r): r is HistoryRow => !!r);
-  return { ...bridgeStatus(), provider: activeProvider(), history, summary: summarizeHistory(history) };
+  // Did the customers' phones really receive what the bot sent? (sent = WhatsApp took it; delivered/read = the phone confirmed)
+  const since = new Date(Date.now() - 24 * 3_600_000);
+  const byStatus = await prisma.message.groupBy({ by: ["status"], where: { direction: "out", createdAt: { gte: since } }, _count: { _all: true } });
+  const n = (...st: string[]) => byStatus.filter((g) => st.includes(g.status)).reduce((a, g) => a + g._count._all, 0);
+  const failed = await prisma.message.findMany({ where: { direction: "out", status: "failed", createdAt: { gte: since } }, orderBy: { createdAt: "desc" }, take: 20, select: { error: true } });
+  const errors = [...new Set(failed.map((m) => m.error ?? "unknown error"))].slice(0, 4);
+  const delivery = { delivered: n("delivered", "read"), unconfirmed: n("sent"), failed: n("failed"), errors };
+  return { ...bridgeStatus(), provider: activeProvider(), history, summary: summarizeHistory(history), delivery };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  const intent = String((await request.formData()).get("intent"));
+  const form = await request.formData();
+  const intent = String(form.get("intent"));
+  if (intent === "test") {
+    const phone = normalizePhone(String(form.get("phone") ?? ""));
+    if (!phone) return { test: { ok: false, message: "Enter a valid mobile number, for example 9876543210." } };
+    const r = await bridgeSendText(phone, "Test message from JAZZ ✅\nIf you can read this, WhatsApp sending works.");
+    if (!r.ok) return { test: { ok: false, message: `Not sent: ${r.error}` } };
+    for (let i = 0; i < 12; i++) {
+      if (bridgeAck(r.id)) return { test: { ok: true, message: `Delivered to +${phone.replace(/\D/g, "")}: the phone confirmed it (${bridgeAck(r.id)}).` } };
+      await new Promise((res) => setTimeout(res, 1000));
+    }
+    return { test: { ok: false, message: "WhatsApp accepted the message, but the phone did not confirm it within 12 seconds. If the number is switched off or has no internet this is normal; if it keeps happening for numbers that are online, WhatsApp is not delivering from this login." } };
+  }
   if (intent === "connect") await startBridge();
   if (intent === "disconnect") await stopBridge(false);
   if (intent === "logout") {
@@ -34,6 +54,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
 export default function WhatsAppWeb() {
   const s = useLoaderData<typeof loader>();
+  const result = useActionData<typeof action>();
   const busy = useNavigation().state !== "idle";
   const { revalidate } = useRevalidator();
 
@@ -96,6 +117,28 @@ export default function WhatsAppWeb() {
             </Form>
           )}
         </div>
+      </Card>
+      <Card title="Is it really reaching the customers?">
+        <p className="o-p">
+          Last 24 hours: <b>{s.delivery.delivered}</b> confirmed by the customer&apos;s phone, <b>{s.delivery.unconfirmed}</b> sent without a confirmation yet,{" "}
+          <b>{s.delivery.failed}</b> failed.
+        </p>
+        {s.delivery.failed > 0 && (
+          <Banner tone="critical">
+            Failed because: {s.delivery.errors.join(" · ")}
+          </Banner>
+        )}
+        {s.delivery.delivered === 0 && s.delivery.unconfirmed > 3 && (
+          <Banner tone="warning">
+            WhatsApp took the messages but no phone confirmed them. Send a test message to your own number below to see what happens.
+          </Banner>
+        )}
+        <Form method="post" className="o-row" style={{ marginTop: 10 }}>
+          <input type="hidden" name="intent" value="test" />
+          <input name="phone" placeholder="Your mobile number, e.g. 9876543210" inputMode="tel" style={{ width: 280 }} aria-label="Test number" />
+          <button disabled={busy || s.state !== "connected"}>{busy ? "Sending…" : "Send test message"}</button>
+        </Form>
+        {result && "test" in result && result.test && <Banner tone={result.test.ok ? "success" : "critical"}>{result.test.message}</Banner>}
       </Card>
       <Card title="Why does it disconnect?">
         <p className="o-p"><b>{s.summary.verdict}</b></p>
