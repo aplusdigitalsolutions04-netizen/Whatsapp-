@@ -15,6 +15,7 @@ after(async () => {
   const convs = await prisma.conversation.findMany({ where: { shop: SHOP }, select: { id: true } });
   await prisma.message.deleteMany({ where: { conversationId: { in: convs.map((c) => c.id) } } });
   await prisma.productEnquiry.deleteMany({ where: { shop: SHOP } });
+  await prisma.orderConfirmation.deleteMany({ where: { shop: SHOP } });
   await prisma.conversation.deleteMany({ where: { shop: SHOP } });
   await prisma.activityLog.deleteMany({ where: { shop: SHOP } });
   await prisma.$disconnect();
@@ -650,9 +651,11 @@ test("order messages: notifyOrder stores one message per event, never twice, and
   await notifyOrder(SHOP, node); // a second webhook for the same order
   const conv = await prisma.conversation.findFirst({ where: { shop: SHOP, phone: "+919811100001" }, include: { messages: true } });
   const sent = conv?.messages.filter((m) => m.inReplyTo?.startsWith("notify:")) ?? [];
-  assert.equal(sent.length, 1, "one confirmation, not two");
-  assert.ok(sent[0].body.includes("JAZZ") && sent[0].body.includes("#W7002"));
-  assert.equal(sent[0].inReplyTo, "notify:gid://shopify/Order/7002:confirmed");
+  assert.equal(sent.length, 2, "the confirmation and the 'do you want this order?' question, not four");
+  const first = sent.find((m) => m.inReplyTo === "notify:gid://shopify/Order/7002:confirmed");
+  assert.ok(first && first.body.includes("JAZZ") && first.body.includes("#W7002"));
+  assert.ok(sent.find((m) => m.inReplyTo === "notify:gid://shopify/Order/7002:confirm-ask")?.body.includes("Reply YES"));
+  assert.equal((await prisma.orderConfirmation.findMany({ where: { shop: SHOP, orderGid: "gid://shopify/Order/7002" } })).length, 1, "one open question per order");
 
   await prisma.botSettings.upsert({ where: { shop: SHOP }, create: { shop: SHOP, orderMessages: false }, update: { orderMessages: false } });
   await notifyOrder(SHOP, sample({ id: "gid://shopify/Order/7003", name: "#W7003", createdAt: new Date().toISOString(), shippingAddress: { name: "Meera", phone: "+919811100002" } }));
@@ -727,4 +730,73 @@ test("WhatsApp send: survives a reconnect during the typing pause, and tells whe
   const bad = await b.bridgeSendText("+919800000002", "hello");
   assert.deepEqual([bad.ok, bad.error], [false, "This number is not on WhatsApp."]);
   bridge.sock = null; bridge.state = "stopped";
+});
+
+test("order confirmation: YES / NO are read in English, Hindi and Hinglish; real questions are left to the bot", async () => {
+  const { parseYesNo }: any = await loadApp("/app/lib/order-confirm.ts");
+  for (const t of ["yes", "Yes!", "YES", "ok", "haan", "Haan ji", "हाँ", "theek hai", "👍", "confirm"]) assert.equal(parseYesNo(t), "yes", t);
+  for (const t of ["no", "No.", "nahi", "Nahi chahiye", "नहीं", "cancel", "wrong address", "ok but wrong", "❌"]) assert.equal(parseYesNo(t), "no", t);
+  for (const t of ["", "when will it arrive", "what is the price of this printer please", "ok so can you tell me my tracking id now"]) assert.equal(parseYesNo(t), null, t);
+});
+
+test("order confirmation: a notice for a new order adds the question, and it can be switched off", async () => {
+  const { buildOrderNotices }: any = await loadApp("/app/lib/order-notice.ts");
+  const on = buildOrderNotices(sample(), NOW, { askConfirmation: true });
+  assert.deepEqual(on.notices.map((n: any) => n.key), ["confirmed", "confirm-ask"]);
+  assert.match(on.notices[1].text, /Do you want to take this order\?/);
+  assert.deepEqual(buildOrderNotices(sample(), NOW).notices.map((n: any) => n.key), ["confirmed"]);
+  const shippedOrder = sample({ createdAt: ago(60 * 24), fulfillments: [shipped()] });
+  assert.deepEqual(buildOrderNotices(shippedOrder, NOW, { askConfirmation: true }).notices.map((n: any) => n.kind), ["dispatched"], "no question for an order that is already on its way");
+});
+
+test("order confirmation: YES -> number and address -> YES confirms; NO hands the chat to an agent; redelivery does not double-step", async () => {
+  const { handleConfirmationReply }: any = await loadApp("/app/lib/order-confirm.server.ts");
+  const mk = async (phone: string, gid: string, name: string) => {
+    const conv = await prisma.conversation.create({ data: { shop: SHOP, phone, customerName: "Asha" } });
+    await prisma.orderConfirmation.create({ data: { shop: SHOP, orderGid: gid, orderName: name, conversationId: conv.id, phone, customerName: "Asha", address: "12 MG Road, Pune, Maharashtra, 411001" } });
+    return conv.id;
+  };
+  const a = await mk("+919822200001", "gid://shopify/Order/8001", "#W8001");
+  assert.equal(await handleConfirmationReply(SHOP, a, "when will it come?", "in-0"), null, "a question is not an answer");
+  const step1 = await handleConfirmationReply(SHOP, a, "yes", "in-1");
+  assert.match(step1.reply, /Mobile number: \+919822200001/);
+  assert.match(step1.reply, /Address: 12 MG Road, Pune, Maharashtra, 411001/);
+  assert.equal(step1.handoffReason, undefined);
+  assert.equal((await handleConfirmationReply(SHOP, a, "yes", "in-1")).reply, step1.reply, "the same WhatsApp message twice gives the same step");
+  assert.equal((await prisma.orderConfirmation.findFirst({ where: { conversationId: a } }))?.state, "address");
+  const step2 = await handleConfirmationReply(SHOP, a, "Haan", "in-2");
+  assert.match(step2.reply, /order #W8001 is confirmed/);
+  assert.equal((await prisma.orderConfirmation.findFirst({ where: { conversationId: a } }))?.state, "confirmed");
+  assert.equal(await handleConfirmationReply(SHOP, a, "yes", "in-3"), null, "nothing is open any more");
+
+  const b = await mk("+919822200002", "gid://shopify/Order/8002", "#W8002");
+  const no = await handleConfirmationReply(SHOP, b, "No", "in-9");
+  assert.match(no.reply, /connecting you with our team/);
+  assert.match(no.handoffReason, /#W8002/);
+  assert.equal((await prisma.orderConfirmation.findFirst({ where: { conversationId: b } }))?.state, "declined");
+
+  const c = await mk("+919822200003", "gid://shopify/Order/8003", "#W8003");
+  await handleConfirmationReply(SHOP, c, "yes", "in-20");
+  const wrong = await handleConfirmationReply(SHOP, c, "nahi, address galat hai", "in-21");
+  assert.ok(wrong.handoffReason, "a wrong address goes to an agent too");
+});
+
+test("order confirmation: after a NO no dispatch or delivery message is sent for that order", async () => {
+  const { notifyOrder }: any = await loadApp("/app/lib/order-notify.server.ts");
+  const node = sample({ id: "gid://shopify/Order/8101", name: "#W8101", createdAt: ago(60 * 24), shippingAddress: { name: "Ravi", phone: "+919822200101", address1: "5 Park St", city: "Delhi", zip: "110001" }, fulfillments: [shipped()] });
+  const conv = await prisma.conversation.create({ data: { shop: SHOP, phone: "+919822200101" } });
+  await prisma.orderConfirmation.create({ data: { shop: SHOP, orderGid: "gid://shopify/Order/8101", orderName: "#W8101", conversationId: conv.id, phone: "+919822200101", state: "declined" } });
+  await notifyOrder(SHOP, node);
+  assert.equal(await prisma.message.count({ where: { conversationId: conv.id, inReplyTo: { startsWith: "notify:" } } }), 0, "the customer said no: the team handles it");
+});
+
+test("WhatsApp system messages (timer changes, reactions) are ignored, real messages still pass", async () => {
+  const { parseBridgeMessage }: any = await loadApp("/app/lib/bridge-parse.ts");
+  const key = { id: "S1", remoteJid: "919876543210@s.whatsapp.net" };
+  assert.equal(parseBridgeMessage({ key, message: { protocolMessage: { type: 3, ephemeralExpiration: 604800 } } }), null, "disappearing-messages timer");
+  assert.equal(parseBridgeMessage({ key, message: { ephemeralMessage: { message: { protocolMessage: { type: 3 } } } } }), null, "the same, wrapped");
+  assert.equal(parseBridgeMessage({ key, messageStubType: 68, message: null }), null, "a stub notice");
+  assert.equal(parseBridgeMessage({ key, message: { reactionMessage: { text: "👍" } } }), null, "a reaction");
+  assert.equal(parseBridgeMessage({ key, message: { senderKeyDistributionMessage: {}, messageContextInfo: {} } }), null, "key exchange");
+  assert.equal(parseBridgeMessage({ key, message: { conversation: "hi", messageContextInfo: {} } })?.payload.text, "hi");
 });

@@ -8,6 +8,12 @@ type Raw = {
   messageTimestamp?: number | string | { toString(): string };
 };
 
+/** Message kinds that are WhatsApp's own notices or reactions, not something a customer wrote to the shop. */
+export const SYSTEM_TYPES = new Set([
+  "protocolMessage", "senderKeyDistributionMessage", "reactionMessage", "encReactionMessage", "pollUpdateMessage", "keepInChatMessage",
+  "pinInChatMessage", "messageContextInfo", "call", "callLogMesssage", "system", "reaction", "unsupported", "ephemeral", "request_welcome",
+]);
+
 /** Strips WhatsApp's wrapper messages (ephemeral, view-once, document-with-caption). */
 export function unwrapMessage(msg: Record<string, any> | null | undefined): Record<string, any> {
   let m = msg ?? {};
@@ -39,6 +45,10 @@ export function parseBridgeMessage(m: Raw): { jid: string; payload: InboundPaylo
   if (!from) return null;
 
   const msg = unwrapMessage(m.message);
+  // "The message timer was updated", reactions, key exchanges: a stub type or only system parts means nothing to answer.
+  if ((m as any).messageStubType) return null;
+  const parts = Object.keys(msg).filter((k) => k !== "messageContextInfo");
+  if (parts.length > 0 && parts.every((k) => SYSTEM_TYPES.has(k))) return null;
   let text: string =
     msg.conversation ??
     msg.extendedTextMessage?.text ??

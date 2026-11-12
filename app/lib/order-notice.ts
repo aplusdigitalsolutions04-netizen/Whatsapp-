@@ -1,13 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // The messages JAZZ sends to a customer by itself when their order changes: confirmed, dispatched (with tracking), delivered.
 // Pure functions (no network, no database), so they are easy to test. English only, short numbered points.
+import { askOrderText } from "./order-confirm";
 import { formatMoney } from "./money";
 import { paymentType } from "./order-map";
 import { normalizePhone } from "./phone";
 import { clip, shortDate } from "./reply-format";
 import { resolveTrackingUrl } from "./tracking";
 
-export type Notice = { key: string; kind: "confirmed" | "dispatched" | "delivered" | "cancelled"; text: string };
+export type Notice = { key: string; kind: "confirmed" | "confirm_ask" | "dispatched" | "delivered" | "cancelled"; text: string };
 
 const MIN = 60_000;
 /** An order is "new" for this long after it was placed. Older orders never get a "confirmed" message (a full sync must not message old customers). */
@@ -55,7 +56,7 @@ const list = (rows: (string | null)[]) => {
 export function buildOrderNotices(
   o: any,
   now: number = Date.now(),
-  opts: { windowMs?: number; latestOnly?: boolean } = {},
+  opts: { windowMs?: number; latestOnly?: boolean; askConfirmation?: boolean } = {},
 ): { phone: string | null; notices: Notice[] } {
   // Catching up after WhatsApp was offline: every "just now" window grows to windowMs, and with latestOnly an order only gets
   // the message for its newest stage (a delivered order is not told "confirmed" and "dispatched" now).
@@ -103,6 +104,8 @@ export function buildOrderNotices(
         `I will message you again as soon as it is dispatched. 📦\nThank you for shopping with ${brand}! 🙏`,
       ].join("\n\n"),
     });
+    // 1b. the second message: "do you want this order?" (the customer's YES / NO is handled by order-confirm.server.ts)
+    if (opts.askConfirmation) notices.push({ key: "confirm-ask", kind: "confirm_ask", text: askOrderText(orderName) });
   }
 
   const fulfillments: any[] = (o.fulfillments ?? []).filter((f: any) => f?.displayStatus !== "CANCELED");
@@ -148,9 +151,15 @@ export function buildOrderNotices(
     }
   }
   if (opts.latestOnly) {
-    const rank = { confirmed: 1, dispatched: 2, delivered: 3, cancelled: 4 } as const;
+    const rank = { confirmed: 1, confirm_ask: 1, dispatched: 2, delivered: 3, cancelled: 4 } as const;
     const top = Math.max(0, ...notices.map((n) => rank[n.kind]));
     return { phone, notices: notices.filter((n) => rank[n.kind] === top) };
   }
   return { phone, notices };
+}
+
+/** Delivery address of the order as one line (for the confirmation chat). */
+export function orderAddress(o: any): string {
+  const a = o?.shippingAddress ?? {};
+  return [a.address1, a.address2, a.city, a.province, a.zip].filter(Boolean).join(", ");
 }

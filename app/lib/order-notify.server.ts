@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import prisma from "../db.server";
 import { logEvent } from "./log.server";
-import { buildOrderNotices } from "./order-notice";
+import { buildOrderNotices, orderAddress } from "./order-notice";
 import { getSettings } from "./settings.server";
 import { sendAndRecord } from "./whatsapp.server";
 
@@ -16,7 +16,8 @@ export async function notifyOrder(shop: string, node: any, opts: { windowMs?: nu
   try {
     const s = await getSettings(shop);
     if (!s.orderMessages) return;
-    const { phone, notices } = buildOrderNotices(node, Date.now(), opts);
+    const { phone, notices: due } = buildOrderNotices(node, Date.now(), { ...opts, askConfirmation: s.orderConfirmFlow });
+    let notices = due;
     if (!notices.length) return;
     if (!phone) {
       await logEvent({ shop, source: "bot", event: "order_notice_no_phone", detail: `${node?.name}: no valid phone number on the order` });
@@ -29,6 +30,14 @@ export async function notifyOrder(shop: string, node: any, opts: { windowMs?: nu
       create: { shop, phone, customerName: name, lastMessageAt: new Date() },
       update: {},
     });
+    // A customer who answered NO to "do you want this order?" is with an agent now: no automatic shipping messages for it.
+    const confirmation = await prisma.orderConfirmation.findUnique({ where: { shop_orderGid: { shop, orderGid: gid } } });
+    if (confirmation?.state === "declined") notices = notices.filter((n) => n.kind === "confirmed" || n.kind === "cancelled");
+    if (notices.some((n) => n.kind === "confirm_ask") && !confirmation) {
+      await prisma.orderConfirmation
+        .create({ data: { shop, orderGid: gid, orderName: String(node.name ?? ""), conversationId: conv.id, phone, customerName: name, address: orderAddress(node) } })
+        .catch(() => undefined); // created by a concurrent call
+    }
     for (const n of notices) {
       const r = await sendAndRecord({ shop, conversationId: conv.id, to: phone, body: n.text, sender: "bot", inReplyTo: `${PREFIX}${gid}:${n.key}` });
       if (!r.ok && !r.skipped) await logEvent({ shop, source: "bot", level: "error", event: "order_notice_failed", detail: `${node?.name} ${n.kind}: ${r.error}` });

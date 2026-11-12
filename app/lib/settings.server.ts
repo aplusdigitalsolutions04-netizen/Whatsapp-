@@ -14,6 +14,8 @@ export type Settings = {
   savedNumbers: string[];
   /** Automatic order messages (confirmed, dispatched with tracking, delivered). */
   orderMessages: boolean;
+  /** Ask the customer to confirm the order and then the delivery number and address. */
+  orderConfirmFlow: boolean;
 };
 
 export async function getSettings(shop: string): Promise<Settings> {
@@ -28,6 +30,7 @@ export async function getSettings(shop: string): Promise<Settings> {
     templates: mergeTemplates(row?.templates),
     savedNumbers: parseNumberList(row?.savedNumbers),
     orderMessages: row?.orderMessages ?? true,
+    orderConfirmFlow: row?.orderConfirmFlow ?? true,
   };
 }
 
@@ -59,6 +62,7 @@ export async function saveSettings(shop: string, form: FormData) {
     templates: JSON.stringify(templates),
     savedNumbers: parseNumberList(String(form.get("savedNumbers") ?? "")).join("\n"),
     orderMessages: form.get("orderMessages") === "on",
+    orderConfirmFlow: form.get("orderConfirmFlow") === "on",
   };
   await prisma.botSettings.upsert({
     where: { shop },

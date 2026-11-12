@@ -53,6 +53,8 @@ model BotSettings {
   savedNumbers           String   @default("")
   // JAZZ messages the customer by itself when the order is confirmed, dispatched (with tracking) and delivered
   orderMessages          Boolean  @default(true)
+  // after the "confirmed" message JAZZ asks the customer to confirm the order, then the delivery number and address
+  orderConfirmFlow       Boolean  @default(true)
   updatedAt              DateTime @updatedAt
 }
 
@@ -493,4 +495,26 @@ model SeoChange {
   appliedAt    DateTime?
 
   @@index([batchId, status])
+}
+
+// The order confirmation chat of one order: asked -> address -> confirmed, or declined (the customer said no).
+model OrderConfirmation {
+  id             String   @id @default(cuid())
+  shop           String
+  orderGid       String
+  orderName      String
+  conversationId String
+  phone          String
+  customerName   String?
+  address        String   @default("")
+  // "asked" | "address" | "confirmed" | "declined"
+  state          String   @default("asked")
+  // the customer message that caused the last step (so a redelivered message never moves it twice)
+  lastInboundId  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([shop, orderGid])
+  @@index([conversationId, state])
+  @@index([conversationId, lastInboundId])
 }

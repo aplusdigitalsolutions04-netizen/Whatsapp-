@@ -10,6 +10,8 @@ import { productLines, productMessage } from "./product-summary";
 import { rateLimited } from "./rate-limit.server";
 import { clip, compose, numbered, shortDate, titleCase } from "./reply-format";
 import { getSettings, type Settings } from "./settings.server";
+import { SYSTEM_TYPES } from "./bridge-parse";
+import { handleConfirmationReply } from "./order-confirm.server";
 import { applyWakeRule } from "./saved-contacts";
 import { isSavedContact } from "./saved-contacts.server";
 import { findOrderEverywhere, findOrdersEverywhere, getOrdersEverywhere } from "./order-lookup.server";
@@ -493,6 +495,8 @@ export async function acknowledgeWaiting(shop: string, conv: Conv, s: Settings, 
 
 /** Processes one inbound WhatsApp message. Safe to call again for the same message id. */
 export async function handleInbound(shop: string, msg: InboundPayload) {
+  // WhatsApp's own notices (disappearing-message timer, reactions, ...) are not questions: never answer them.
+  if (SYSTEM_TYPES.has(msg.type)) return;
   const phone = normalizePhone(msg.from) ?? `+${msg.from.replace(/\D/g, "")}`;
   const now = new Date();
   const conv = await prisma.conversation.upsert({
@@ -532,6 +536,15 @@ export async function handleInbound(shop: string, msg: InboundPayload) {
   if (conv.mode === "human") {
     // The chat is with a person now. Never leave the customer in silence, though: say once that the team has the request.
     await acknowledgeWaiting(shop, conv, s, msg.id).catch(() => undefined);
+    return;
+  }
+
+  // The customer is answering "do you want this order?" / "is the address correct?"
+  const confirm = await handleConfirmationReply(shop, conv.id, msg.text, msg.id).catch(() => null);
+  if (confirm) {
+    const sent = await sendAndRecord({ shop, conversationId: conv.id, to: phone, body: confirm.reply, sender: "bot", inReplyTo: msg.id });
+    if (confirm.handoffReason) await handoff(shop, conv, confirm.handoffReason);
+    if (!sent.ok) throw new Error(sent.error ?? "send failed");
     return;
   }
 
