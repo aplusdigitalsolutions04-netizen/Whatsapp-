@@ -52,7 +52,16 @@ const list = (rows: (string | null)[]) => {
 };
 
 /** Which messages are due for this order right now. Each one has a stable key, so it is sent only once. */
-export function buildOrderNotices(o: any, now: number = Date.now()): { phone: string | null; notices: Notice[] } {
+export function buildOrderNotices(
+  o: any,
+  now: number = Date.now(),
+  opts: { windowMs?: number; latestOnly?: boolean } = {},
+): { phone: string | null; notices: Notice[] } {
+  // Catching up after WhatsApp was offline: every "just now" window grows to windowMs, and with latestOnly an order only gets
+  // the message for its newest stage (a delivered order is not told "confirmed" and "dispatched" now).
+  const newMs = Math.max(NEW_ORDER_MS, opts.windowMs ?? 0);
+  const shipMs = Math.max(FRESH_SHIPMENT_MS, opts.windowMs ?? 0);
+  const deliveredMs = Math.max(FRESH_DELIVERY_MS, opts.windowMs ?? 0);
   const phone = orderPhone(o);
   const notices: Notice[] = [];
   if (!o) return { phone, notices };
@@ -69,7 +78,7 @@ export function buildOrderNotices(o: any, now: number = Date.now()): { phone: st
 
   // 0. cancelled: one message, only right after the cancellation; a cancelled order gets no other message
   if (o.cancelledAt) {
-    if (now - when(o.cancelledAt) < NEW_ORDER_MS) {
+    if (now - when(o.cancelledAt) < newMs) {
       notices.push({
         key: "cancelled",
         kind: "cancelled",
@@ -84,7 +93,7 @@ export function buildOrderNotices(o: any, now: number = Date.now()): { phone: st
   }
 
   // 1. order confirmed
-  if (when(o.createdAt) && now - when(o.createdAt) < NEW_ORDER_MS) {
+  if (when(o.createdAt) && now - when(o.createdAt) < newMs) {
     notices.push({
       key: "confirmed",
       kind: "confirmed",
@@ -102,7 +111,7 @@ export function buildOrderNotices(o: any, now: number = Date.now()): { phone: st
 
     // 2. dispatched with a tracking id
     const touched = Math.max(when(f.createdAt), when(f.updatedAt));
-    if (touched && now - touched < FRESH_SHIPMENT_MS && f.displayStatus !== "DELIVERED" && !f.deliveredAt) {
+    if (touched && now - touched < shipMs && f.displayStatus !== "DELIVERED" && !f.deliveredAt) {
       for (const t of tracks) {
         const link = resolveTrackingUrl({ company: t.company, number: t.number, url: t.url });
         notices.push({
@@ -125,7 +134,7 @@ export function buildOrderNotices(o: any, now: number = Date.now()): { phone: st
 
     // 3. delivered
     const delivered = f.displayStatus === "DELIVERED" || !!f.deliveredAt;
-    const fresh = f.deliveredAt ? now - when(f.deliveredAt) < FRESH_DELIVERY_MS : now - when(f.updatedAt) < FRESH_SHIPMENT_MS;
+    const fresh = f.deliveredAt ? now - when(f.deliveredAt) < deliveredMs : now - when(f.updatedAt) < shipMs;
     if (delivered && fresh) {
       notices.push({
         key: `delivered:${tracks[0]?.number ?? f.createdAt}`,
@@ -137,6 +146,11 @@ export function buildOrderNotices(o: any, now: number = Date.now()): { phone: st
         ].join("\n\n"),
       });
     }
+  }
+  if (opts.latestOnly) {
+    const rank = { confirmed: 1, dispatched: 2, delivered: 3, cancelled: 4 } as const;
+    const top = Math.max(0, ...notices.map((n) => rank[n.kind]));
+    return { phone, notices: notices.filter((n) => rank[n.kind] === top) };
   }
   return { phone, notices };
 }

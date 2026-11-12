@@ -11,6 +11,7 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys";
 import prisma from "../db.server";
 import { logEvent, redact } from "./log.server";
+import { explainClose } from "./bridge-reasons";
 import { normalizePhone } from "./phone";
 import { rememberContacts } from "./saved-contacts.server";
 import { parseBridgeMessage } from "./bridge-parse";
@@ -35,6 +36,7 @@ type Bridge = {
   lastUpsertAt: number | null; // when WhatsApp last delivered any message event
   received: number;
   connectedAt: number | null;
+  lastClose: { at: number; code?: number; title: string; advice: string } | null;
   manualStop: boolean; // the person pressed Disconnect: do not reconnect by itself
   watchdog: NodeJS.Timeout | null; // gives up on a connection attempt that never answers
   heartbeat: NodeJS.Timeout | null; // keeps the "this copy of the app owns the login" lock fresh
@@ -44,7 +46,7 @@ type Bridge = {
 const g = globalThis as unknown as { __waBridge?: Bridge };
 const bridge: Bridge = (g.__waBridge ??= {
   state: "stopped", qr: null, error: null, number: null, sock: null, jids: new Map(), retries: 0, lastUpsertAt: null, received: 0,
-  connectedAt: null, manualStop: false, watchdog: null, heartbeat: null, reconnect: null,
+  connectedAt: null, lastClose: null, manualStop: false, watchdog: null, heartbeat: null, reconnect: null,
 });
 
 const AUTH_DIR = path.resolve(process.env.WHATSAPP_AUTH_DIR || ".wa-auth");
@@ -118,6 +120,8 @@ export const bridgeStatus = () => ({
   paired: existsSync(path.join(AUTH_DIR, "creds.json")),
   lastUpsertAt: bridge.lastUpsertAt,
   received: bridge.received,
+  lastClose: bridge.lastClose,
+  uptimeSec: Math.round(process.uptime()),
 });
 
 export async function startBridge() {
@@ -156,6 +160,8 @@ export async function startBridge() {
       printQRInTerminal: false,
       syncFullHistory: false,
       markOnlineOnConnect: false,
+      keepAliveIntervalMs: 25_000, // a ping to WhatsApp every 25 s keeps idle connections from being dropped
+      connectTimeoutMs: 60_000,
     });
     bridge.sock = sock;
     sock.ev.on("creds.update", saveCreds);
@@ -180,6 +186,8 @@ export async function startBridge() {
         bridge.connectedAt = Date.now();
         bridge.number = String(sock.user?.id ?? "").split(/[:@]/)[0] || null;
         await logEvent({ source: "whatsapp", event: "bridge_connected", detail: bridge.number });
+        // Messages that could not go out while WhatsApp was offline are sent now (only the ones not sent yet).
+        void import("./order-notify.server").then((m) => m.onWhatsAppConnected()).catch(() => undefined);
       }
       if (u.connection === "close") {
         const code = (u.lastDisconnect?.error as any)?.output?.statusCode;
@@ -191,6 +199,8 @@ export async function startBridge() {
         }
         if (bridge.sock === sock) bridge.sock = null;
         bridge.qr = null;
+        const why = explainClose(code, String((u.lastDisconnect?.error as any)?.message ?? ""));
+        bridge.lastClose = { at: Date.now(), code, ...why };
         if (bridge.manualStop) {
           bridge.state = "stopped"; // the person pressed Disconnect; this close is the result, not a failure
           return;
@@ -217,7 +227,7 @@ export async function startBridge() {
         } else if (code === DisconnectReason.restartRequired) {
           scheduleReconnect("WhatsApp asked for a restart.", true); // normal right after scanning
         } else {
-          scheduleReconnect(`Disconnected (code ${code ?? "?"}).`);
+          scheduleReconnect(`${why.title}${code ? ` (code ${code})` : ""}.`);
           await logEvent({ source: "whatsapp", level: "error", event: "bridge_error", detail: bridge.error });
         }
       }
@@ -357,6 +367,8 @@ export async function bridgeSendText(
 /** Auto-reconnect after a server restart if this device was already paired. */
 export function autostartBridge() {
   if (activeProvider() === "qr" && existsSync(path.join(AUTH_DIR, "creds.json"))) {
+    // Written on every start, so the history on the WhatsApp page shows how often the hosting restarts the app.
+    void logEvent({ source: "whatsapp", event: "bridge_app_started", detail: `pid ${process.pid}` });
     void startBridge();
     startKeepAlive();
   }

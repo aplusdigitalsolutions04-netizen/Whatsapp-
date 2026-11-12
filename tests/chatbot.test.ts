@@ -675,3 +675,31 @@ test("WhatsApp bridge: a second copy of the app waits instead of fighting for th
   writeFileSync(file, JSON.stringify({ pid: 2_000_000, at: Date.now() }));
   assert.equal(lockedByOther(file), false, "a lock whose process is gone is ignored");
 });
+
+test("order messages: catching up after WhatsApp was offline covers 18 hours and sends only the newest stage", async () => {
+  const { buildOrderNotices }: any = await loadApp("/app/lib/order-notice.ts");
+  const H = 60;
+  const order = sample({ createdAt: ago(10 * H), fulfillments: [shipped({ createdAt: ago(5 * H), updatedAt: ago(5 * H) })] });
+  assert.equal(buildOrderNotices(order, NOW).notices.length, 0, "normally a 10-hour-old order is not announced");
+  const all = buildOrderNotices(order, NOW, { windowMs: 18 * H * 60_000 });
+  assert.deepEqual(all.notices.map((n: any) => n.kind), ["confirmed", "dispatched"]);
+  const latest = buildOrderNotices(order, NOW, { windowMs: 18 * H * 60_000, latestOnly: true });
+  assert.deepEqual(latest.notices.map((n: any) => n.kind), ["dispatched"], "a dispatched order is not told 'confirmed' again");
+  const done = sample({ createdAt: ago(12 * H), fulfillments: [shipped({ displayStatus: "DELIVERED", deliveredAt: ago(3 * H), updatedAt: ago(3 * H) })] });
+  assert.deepEqual(buildOrderNotices(done, NOW, { windowMs: 18 * H * 60_000, latestOnly: true }).notices.map((n: any) => n.kind), ["delivered"]);
+  assert.equal(buildOrderNotices(sample({ createdAt: ago(30 * H) }), NOW, { windowMs: 18 * H * 60_000 }).notices.length, 0, "older than 18 hours is still never announced");
+});
+
+test("WhatsApp disconnects are explained in plain words and summarised", async () => {
+  const { explainClose, historyRow, summarizeHistory }: any = await loadApp("/app/lib/bridge-reasons.ts");
+  assert.match(explainClose(440).title, /somewhere else/i);
+  assert.match(explainClose(401).advice, /Scan the QR/i);
+  assert.match(explainClose(undefined, "Error: connect ETIMEDOUT").title, /timed out/i);
+  const row = historyRow({ event: "bridge_closed", detail: "code=428 Connection Closed", createdAt: new Date(NOW) });
+  assert.match(row.title, /Disconnected: WhatsApp closed the connection \(code 428\)/);
+  const restarts = [0, 1, 2].map((i) => historyRow({ event: "bridge_app_started", detail: "pid 1", createdAt: new Date(NOW - i * 3_600_000) }));
+  assert.match(summarizeHistory(restarts, NOW).verdict, /restarted the app 3 times/);
+  assert.match(summarizeHistory([], NOW).verdict, /No disconnects/);
+  const replaced = [historyRow({ event: "bridge_replaced", detail: "x", createdAt: new Date(NOW - 1000) })];
+  assert.match(summarizeHistory(replaced, NOW).verdict, /another place/i);
+});

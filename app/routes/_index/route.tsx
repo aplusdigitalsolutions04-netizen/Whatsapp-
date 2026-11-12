@@ -13,7 +13,14 @@ export const meta: MetaFunction = () => [
   { name: "description", content: "Hi, I'm JAZZ. I answer your customers' order, tracking and product questions in chat 24/7. Plus order sheet, product scrapper, image editor and SEO tools in one Shopify app." },
 ];
 
-export const links: LinksFunction = () => [{ rel: "stylesheet", href: pageStyles }];
+// The tab icon is the ShopPilot / JAZZ logo (SVG for modern browsers, PNG and ICO as fallbacks).
+export const links: LinksFunction = () => [
+  { rel: "stylesheet", href: pageStyles },
+  { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+  { rel: "icon", href: "/favicon-32.png", type: "image/png", sizes: "32x32" },
+  { rel: "shortcut icon", href: "/favicon.ico" },
+  { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);

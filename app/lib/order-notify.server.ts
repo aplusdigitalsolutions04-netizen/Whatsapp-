@@ -12,11 +12,11 @@ const PREFIX = "notify:";
  * Safe to call as often as you like: every message has a fixed key and is stored as "reply to <key>", and the database
  * allows only one message per key, so nothing is ever sent twice. Never throws: an order sync must not fail because of it.
  */
-export async function notifyOrder(shop: string, node: any): Promise<void> {
+export async function notifyOrder(shop: string, node: any, opts: { windowMs?: number; latestOnly?: boolean } = {}): Promise<void> {
   try {
     const s = await getSettings(shop);
     if (!s.orderMessages) return;
-    const { phone, notices } = buildOrderNotices(node);
+    const { phone, notices } = buildOrderNotices(node, Date.now(), opts);
     if (!notices.length) return;
     if (!phone) {
       await logEvent({ shop, source: "bot", event: "order_notice_no_phone", detail: `${node?.name}: no valid phone number on the order` });
@@ -42,9 +42,11 @@ export async function notifyOrder(shop: string, node: any): Promise<void> {
 const g = globalThis as unknown as { __noticeRetry?: { timer: NodeJS.Timeout | null; tries: Map<string, number> } };
 const retry = (g.__noticeRetry ??= { timer: null, tries: new Map() });
 
-/** Messages that could not be sent (for example WhatsApp was offline) are tried again every few minutes for 6 hours. */
-export async function retryFailedNotices() {
-  const since = new Date(Date.now() - 6 * 3_600_000);
+/** Messages that could not be sent (for example WhatsApp was offline) are tried again every few minutes for 18 hours. */
+export const CATCH_UP_MS = 18 * 3_600_000;
+
+export async function retryFailedNotices(windowMs: number = CATCH_UP_MS) {
+  const since = new Date(Date.now() - windowMs);
   const failed = await prisma.message.findMany({
     where: { inReplyTo: { startsWith: PREFIX }, status: "failed", createdAt: { gte: since } },
     include: { conversation: true },
@@ -63,4 +65,62 @@ export function startNoticeRetry() {
   if (retry.timer) return;
   retry.timer = setInterval(() => void retryFailedNotices().catch(() => undefined), 3 * 60_000);
   retry.timer.unref?.();
+}
+
+/**
+ * After WhatsApp comes back: (1) send the order messages that failed while it was offline, (2) look at every order that
+ * changed in the last 18 hours and send the ones that were never sent (the app may have been down, a webhook missed).
+ * A message that was already sent is never sent again, because each one has a fixed key.
+ */
+export async function catchUpNotices(shop: string): Promise<number> {
+  // The very first time this runs (right after the feature is installed) nothing is sent for older orders: the customers of
+  // the last 18 hours were never promised these messages. From then on the catch-up works as described.
+  const started = await prisma.activityLog.findFirst({ where: { shop, event: "order_notice_first_run" }, select: { id: true } });
+  if (!started) {
+    await logEvent({ shop, source: "bot", event: "order_notice_first_run", detail: "order messages start from now" });
+    return 0;
+  }
+  const { gql } = await import("./shopify-data.server");
+  const { ORDER_SHEET_FIELDS } = await import("./order-map");
+  const since = new Date(Date.now() - CATCH_UP_MS).toISOString();
+  let after: string | null = null;
+  let seen = 0;
+  for (let page = 0; page < 4; page++) {
+    const data: any = await gql(
+      shop,
+      `query($after: String, $q: String) { orders(first: 50, after: $after, sortKey: UPDATED_AT, reverse: true, query: $q) { nodes { ${ORDER_SHEET_FIELDS} } pageInfo { hasNextPage endCursor } } }`,
+      { after, q: `updated_at:>=${since}` },
+    );
+    for (const node of data.orders?.nodes ?? []) {
+      seen++;
+      await notifyOrder(shop, node, { windowMs: CATCH_UP_MS, latestOnly: true });
+    }
+    const info = data.orders?.pageInfo;
+    if (!info?.hasNextPage) break;
+    after = info.endCursor;
+  }
+  return seen;
+}
+
+let catching = false;
+
+/** Called by the WhatsApp bridge every time it (re)connects. */
+export async function onWhatsAppConnected(): Promise<void> {
+  if (catching) return;
+  catching = true;
+  try {
+    await new Promise((r) => setTimeout(r, 20_000)); // let the connection settle first
+    retry.tries.clear(); // attempts used up while WhatsApp was offline do not count
+    await retryFailedNotices();
+    const { resolveShop } = await import("./settings.server");
+    const shop = await resolveShop();
+    if (shop) {
+      const n = await catchUpNotices(shop);
+      await logEvent({ shop, source: "bot", event: "order_notice_catch_up", detail: `checked ${n} order(s) from the last 18 hours` });
+    }
+  } catch (e) {
+    await logEvent({ source: "bot", level: "error", event: "order_notice_catch_up_failed", detail: (e as Error).message }).catch(() => undefined);
+  } finally {
+    catching = false;
+  }
 }

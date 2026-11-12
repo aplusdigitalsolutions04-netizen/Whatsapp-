@@ -81,6 +81,73 @@ async function logEvent(args) {
     console.error("logEvent failed", redact(String(e)));
   }
 }
+function explainClose(code2, message = "") {
+  const m = message.toLowerCase();
+  switch (code2) {
+    case 401:
+      return { title: "Logged out by WhatsApp", advice: "The number was removed from Linked devices on the phone, or WhatsApp ended the login. Scan the QR code again." };
+    case 403:
+      return { title: "WhatsApp refused the login", advice: "The number may be restricted. Open WhatsApp on the phone and check for a warning, then try again later." };
+    case 405:
+      return { title: "WhatsApp rejected this connection method", advice: "The WhatsApp library on the server is out of date. This needs an update of the app, not a rescan." };
+    case 408:
+      return { title: "Connection timed out", advice: "The server could not reach WhatsApp in time (slow or blocked internet on the hosting). It reconnects by itself." };
+    case 411:
+      return { title: "Linked-device mismatch", advice: "Unlink the number on this page and scan the QR code again." };
+    case 428:
+      return { title: "WhatsApp closed the connection", advice: "Usually the server was idle, busy or had a short network drop. It reconnects by itself." };
+    case 440:
+      return { title: "Same login opened somewhere else", advice: "Another server or a PC is using this WhatsApp login. Close it there (or unlink and scan again) so only one place stays connected." };
+    case 500:
+      return { title: "Saved login files are damaged", advice: "Unlink the number on this page and scan the QR code again." };
+    case 503:
+      return { title: "WhatsApp is temporarily unavailable", advice: "A short problem on WhatsApp's side. It reconnects by itself." };
+    case 515:
+      return { title: "WhatsApp asked for a restart", advice: "Normal right after scanning the QR code. It reconnects by itself." };
+    default:
+      if (/timed? ?out/.test(m)) return { title: "Connection timed out", advice: "The server could not reach WhatsApp in time. It reconnects by itself." };
+      if (/enotfound|econn|network|socket|fetch failed/.test(m)) return { title: "Network problem on the server", advice: "The hosting lost its internet connection for a moment. It reconnects by itself." };
+      return { title: "Connection dropped", advice: "WhatsApp or the network closed the connection without a reason. It reconnects by itself." };
+  }
+}
+function historyRow(r) {
+  const at = new Date(r.createdAt).toISOString();
+  const d = r.detail ?? "";
+  switch (r.event) {
+    case "bridge_connected":
+      return { at, kind: "connected", title: "Connected", detail: d ? `Number +${d}` : "" };
+    case "bridge_app_started":
+      return { at, kind: "restarted", title: "The app (re)started on the server", detail: "WhatsApp is disconnected for a moment every time the server restarts." };
+    case "bridge_logged_out":
+      return { at, kind: "logged_out", title: "Logged out by WhatsApp", detail: explainClose(401).advice, code: 401 };
+    case "bridge_replaced":
+      return { at, kind: "replaced", title: "Same login opened somewhere else", detail: explainClose(440).advice, code: 440 };
+    case "bridge_closed": {
+      const c = d.match(/code=(\d+)/);
+      const code2 = c ? Number(c[1]) : void 0;
+      const why = explainClose(code2, d);
+      return { at, kind: "disconnected", title: `Disconnected: ${why.title}${code2 ? ` (code ${code2})` : ""}`, detail: why.advice, code: code2 };
+    }
+    default:
+      return null;
+  }
+}
+function summarizeHistory(rows, now = Date.now()) {
+  const recent = rows.filter((r) => now - new Date(r.at).getTime() < 24 * 36e5);
+  const disconnects = recent.filter((r) => r.kind === "disconnected" || r.kind === "replaced" || r.kind === "logged_out").length;
+  const restarts = recent.filter((r) => r.kind === "restarted").length;
+  const byCode = /* @__PURE__ */ new Map();
+  for (const r of recent) if (r.kind === "disconnected" || r.kind === "replaced") byCode.set(String(r.code ?? "?"), (byCode.get(String(r.code ?? "?")) ?? 0) + 1);
+  const top = [...byCode.entries()].sort((a, b) => b[1] - a[1])[0];
+  let verdict;
+  if (!recent.length) verdict = "No disconnects in the last 24 hours.";
+  else if (recent.some((r) => r.kind === "replaced")) verdict = "The same WhatsApp login is open in another place. Close the other copy (another server, or the app on your PC) and press Connect.";
+  else if (restarts >= 3) verdict = `The hosting restarted the app ${restarts} times in 24 hours. Every restart drops WhatsApp for a moment. This is a hosting limit (memory or idle restarts): ask Hostinger support to keep the Node.js app running without restarts.`;
+  else if (top && (top[0] === "408" || top[0] === "428" || top[0] === "?")) verdict = `Most drops are network drops between the server and WhatsApp (${top[1]} in 24 hours). The app reconnects by itself each time.`;
+  else if (top) verdict = `Most common reason in 24 hours: ${explainClose(top[0] === "?" ? void 0 : Number(top[0])).title} (${top[1]} times).`;
+  else verdict = `${disconnects} disconnect(s) in 24 hours.`;
+  return { disconnects, restarts, verdict };
+}
 function normalizePhone(input) {
   if (!input) return null;
   let s = String(input).trim();
@@ -1286,6 +1353,12 @@ async function resolveShop() {
   });
   return (s == null ? void 0 : s.shop) ?? null;
 }
+const settings_server = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  getSettings,
+  resolveShop,
+  saveSettings
+}, Symbol.toStringTag, { value: "Module" }));
 const SAFE_NUMBER = /^[A-Za-z0-9-]{6,30}$/;
 const delhiveryUrl = (number) => `https://www.delhivery.com/track-v2/package/${encodeURIComponent(number)}`;
 function resolveTrackingUrl(t) {
@@ -1747,6 +1820,23 @@ async function testShopifyConnection(shop, fresh = false) {
   testCache.set(shop, { at: Date.now(), value });
   return value;
 }
+const shopifyData_server = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  REQUIRED_SCOPES,
+  ShopifyError,
+  findOrderByNumber,
+  findOrdersByPhone,
+  getOrdersByIds,
+  getProductsByIds,
+  gql,
+  listOrders,
+  listProducts,
+  mapOrder,
+  orderBelongsTo,
+  recommendProducts,
+  searchProducts,
+  testShopifyConnection
+}, Symbol.toStringTag, { value: "Module" }));
 const noteFail = (shop, source, e) => logEvent({ shop, source: "bot", level: "error", event: "order_lookup_failed", detail: `${source}: ${(e == null ? void 0 : e.message) ?? e}` });
 async function both(shop, shopify2, ims, empty) {
   const [a, b] = await Promise.allSettled([shopify2(), ims ? ims() : Promise.resolve(null)]);
@@ -2482,6 +2572,7 @@ const bridge = g$9.__waBridge ?? (g$9.__waBridge = {
   lastUpsertAt: null,
   received: 0,
   connectedAt: null,
+  lastClose: null,
   manualStop: false,
   watchdog: null,
   heartbeat: null,
@@ -2548,7 +2639,9 @@ const bridgeStatus = () => ({
   number: bridge.number,
   paired: existsSync(path.join(AUTH_DIR, "creds.json")),
   lastUpsertAt: bridge.lastUpsertAt,
-  received: bridge.received
+  received: bridge.received,
+  lastClose: bridge.lastClose,
+  uptimeSec: Math.round(process.uptime())
 });
 async function startBridge() {
   var _a2, _b;
@@ -2588,7 +2681,10 @@ async function startBridge() {
       browser: Browsers.macOS("ShopPilot"),
       printQRInTerminal: false,
       syncFullHistory: false,
-      markOnlineOnConnect: false
+      markOnlineOnConnect: false,
+      keepAliveIntervalMs: 25e3,
+      // a ping to WhatsApp every 25 s keeps idle connections from being dropped
+      connectTimeoutMs: 6e4
     });
     bridge.sock = sock;
     sock.ev.on("creds.update", saveCreds);
@@ -2596,7 +2692,7 @@ async function startBridge() {
     sock.ev.on("contacts.update", (l) => rememberContacts(l));
     sock.ev.on("messaging-history.set", (h) => rememberContacts(h == null ? void 0 : h.contacts));
     sock.ev.on("connection.update", async (u) => {
-      var _a3, _b2, _c, _d, _e, _f;
+      var _a3, _b2, _c, _d, _e, _f, _g, _h;
       if (u.qr || u.connection === "open" || u.connection === "close") {
         if (bridge.watchdog) clearTimeout(bridge.watchdog);
         bridge.watchdog = null;
@@ -2612,6 +2708,7 @@ async function startBridge() {
         bridge.connectedAt = Date.now();
         bridge.number = String(((_a3 = sock.user) == null ? void 0 : _a3.id) ?? "").split(/[:@]/)[0] || null;
         await logEvent({ source: "whatsapp", event: "bridge_connected", detail: bridge.number });
+        void Promise.resolve().then(() => orderNotify_server).then((m) => m.onWhatsAppConnected()).catch(() => void 0);
       }
       if (u.connection === "close") {
         const code2 = (_d = (_c = (_b2 = u.lastDisconnect) == null ? void 0 : _b2.error) == null ? void 0 : _c.output) == null ? void 0 : _d.statusCode;
@@ -2622,6 +2719,8 @@ async function startBridge() {
         }
         if (bridge.sock === sock) bridge.sock = null;
         bridge.qr = null;
+        const why = explainClose(code2, String(((_h = (_g = u.lastDisconnect) == null ? void 0 : _g.error) == null ? void 0 : _h.message) ?? ""));
+        bridge.lastClose = { at: Date.now(), code: code2, ...why };
         if (bridge.manualStop) {
           bridge.state = "stopped";
           return;
@@ -2644,7 +2743,7 @@ async function startBridge() {
         } else if (code2 === DisconnectReason.restartRequired) {
           scheduleReconnect("WhatsApp asked for a restart.", true);
         } else {
-          scheduleReconnect(`Disconnected (code ${code2 ?? "?"}).`);
+          scheduleReconnect(`${why.title}${code2 ? ` (code ${code2})` : ""}.`);
           await logEvent({ source: "whatsapp", level: "error", event: "bridge_error", detail: bridge.error });
         }
       }
@@ -2768,6 +2867,7 @@ async function bridgeSendText(toPhone, body) {
 }
 function autostartBridge() {
   if (activeProvider() === "qr" && existsSync(path.join(AUTH_DIR, "creds.json"))) {
+    void logEvent({ source: "whatsapp", event: "bridge_app_started", detail: `pid ${process.pid}` });
     void startBridge();
     startKeepAlive();
   }
@@ -2904,6 +3004,14 @@ function mapShopifyOrder(o) {
     shopifyUpdatedAt: o.updatedAt ? new Date(o.updatedAt) : null
   };
 }
+const orderMap = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  ORDER_SHEET_FIELDS,
+  SHEET_STATUSES,
+  computeStatus,
+  mapShopifyOrder,
+  paymentType
+}, Symbol.toStringTag, { value: "Module" }));
 async function upsertOrder(shop, m) {
   const { shopifyOrderId, ...fields } = m;
   const data = { ...fields, syncedAt: /* @__PURE__ */ new Date() };
@@ -3514,8 +3622,11 @@ const list$1 = (rows) => {
   let n = 0;
   return rows.filter(Boolean).map((r) => r.replace(/^\d+\./, `${++n}.`)).join("\n");
 };
-function buildOrderNotices(o, now = Date.now()) {
+function buildOrderNotices(o, now = Date.now(), opts = {}) {
   var _a2, _b;
+  const newMs = Math.max(NEW_ORDER_MS, opts.windowMs ?? 0);
+  const shipMs = Math.max(FRESH_SHIPMENT_MS, opts.windowMs ?? 0);
+  const deliveredMs = Math.max(FRESH_DELIVERY_MS, opts.windowMs ?? 0);
   const phone = orderPhone(o);
   const notices = [];
   if (!o) return { phone, notices };
@@ -3529,7 +3640,7 @@ function buildOrderNotices(o, now = Date.now()) {
   const payment = pay === "COD" ? "Pay on delivery (COD)" : pay === "Prepaid" ? "Paid" : "Payment pending";
   const brand = "WERY";
   if (o.cancelledAt) {
-    if (now - when$3(o.cancelledAt) < NEW_ORDER_MS) {
+    if (now - when$3(o.cancelledAt) < newMs) {
       notices.push({
         key: "cancelled",
         kind: "cancelled",
@@ -3542,7 +3653,7 @@ function buildOrderNotices(o, now = Date.now()) {
     }
     return { phone, notices };
   }
-  if (when$3(o.createdAt) && now - when$3(o.createdAt) < NEW_ORDER_MS) {
+  if (when$3(o.createdAt) && now - when$3(o.createdAt) < newMs) {
     notices.push({
       key: "confirmed",
       kind: "confirmed",
@@ -3559,7 +3670,7 @@ Thank you for shopping with ${brand}! 🙏`
   for (const f of fulfillments) {
     const tracks = (f.trackingInfo ?? []).filter((t) => t == null ? void 0 : t.number);
     const touched = Math.max(when$3(f.createdAt), when$3(f.updatedAt));
-    if (touched && now - touched < FRESH_SHIPMENT_MS && f.displayStatus !== "DELIVERED" && !f.deliveredAt) {
+    if (touched && now - touched < shipMs && f.displayStatus !== "DELIVERED" && !f.deliveredAt) {
       for (const t of tracks) {
         const link = resolveTrackingUrl({ company: t.company, number: t.number, url: t.url });
         notices.push({
@@ -3580,7 +3691,7 @@ Thank you for shopping with ${brand}! 🙏`
       }
     }
     const delivered = f.displayStatus === "DELIVERED" || !!f.deliveredAt;
-    const fresh = f.deliveredAt ? now - when$3(f.deliveredAt) < FRESH_DELIVERY_MS : now - when$3(f.updatedAt) < FRESH_SHIPMENT_MS;
+    const fresh = f.deliveredAt ? now - when$3(f.deliveredAt) < deliveredMs : now - when$3(f.updatedAt) < shipMs;
     if (delivered && fresh) {
       notices.push({
         key: `delivered:${((_b = tracks[0]) == null ? void 0 : _b.number) ?? f.createdAt}`,
@@ -3594,15 +3705,20 @@ If anything is not right, just reply here and we will help. 💬`
       });
     }
   }
+  if (opts.latestOnly) {
+    const rank = { confirmed: 1, dispatched: 2, delivered: 3, cancelled: 4 };
+    const top = Math.max(0, ...notices.map((n) => rank[n.kind]));
+    return { phone, notices: notices.filter((n) => rank[n.kind] === top) };
+  }
   return { phone, notices };
 }
 const PREFIX = "notify:";
-async function notifyOrder(shop, node) {
+async function notifyOrder(shop, node, opts = {}) {
   var _a2, _b;
   try {
     const s = await getSettings(shop);
     if (!s.orderMessages) return;
-    const { phone, notices } = buildOrderNotices(node);
+    const { phone, notices } = buildOrderNotices(node, Date.now(), opts);
     if (!notices.length) return;
     if (!phone) {
       await logEvent({ shop, source: "bot", event: "order_notice_no_phone", detail: `${node == null ? void 0 : node.name}: no valid phone number on the order` });
@@ -3626,8 +3742,9 @@ async function notifyOrder(shop, node) {
 }
 const g$6 = globalThis;
 const retry = g$6.__noticeRetry ?? (g$6.__noticeRetry = { timer: null, tries: /* @__PURE__ */ new Map() });
-async function retryFailedNotices() {
-  const since = new Date(Date.now() - 6 * 36e5);
+const CATCH_UP_MS = 18 * 36e5;
+async function retryFailedNotices(windowMs = CATCH_UP_MS) {
+  const since = new Date(Date.now() - windowMs);
   const failed = await prisma.message.findMany({
     where: { inReplyTo: { startsWith: PREFIX }, status: "failed", createdAt: { gte: since } },
     include: { conversation: true },
@@ -3647,6 +3764,63 @@ function startNoticeRetry() {
   retry.timer = setInterval(() => void retryFailedNotices().catch(() => void 0), 3 * 6e4);
   (_b = (_a2 = retry.timer).unref) == null ? void 0 : _b.call(_a2);
 }
+async function catchUpNotices(shop) {
+  var _a2, _b;
+  const started = await prisma.activityLog.findFirst({ where: { shop, event: "order_notice_first_run" }, select: { id: true } });
+  if (!started) {
+    await logEvent({ shop, source: "bot", event: "order_notice_first_run", detail: "order messages start from now" });
+    return 0;
+  }
+  const { gql: gql2 } = await Promise.resolve().then(() => shopifyData_server);
+  const { ORDER_SHEET_FIELDS: ORDER_SHEET_FIELDS2 } = await Promise.resolve().then(() => orderMap);
+  const since = new Date(Date.now() - CATCH_UP_MS).toISOString();
+  let after = null;
+  let seen = 0;
+  for (let page = 0; page < 4; page++) {
+    const data = await gql2(
+      shop,
+      `query($after: String, $q: String) { orders(first: 50, after: $after, sortKey: UPDATED_AT, reverse: true, query: $q) { nodes { ${ORDER_SHEET_FIELDS2} } pageInfo { hasNextPage endCursor } } }`,
+      { after, q: `updated_at:>=${since}` }
+    );
+    for (const node of ((_a2 = data.orders) == null ? void 0 : _a2.nodes) ?? []) {
+      seen++;
+      await notifyOrder(shop, node, { windowMs: CATCH_UP_MS, latestOnly: true });
+    }
+    const info = (_b = data.orders) == null ? void 0 : _b.pageInfo;
+    if (!(info == null ? void 0 : info.hasNextPage)) break;
+    after = info.endCursor;
+  }
+  return seen;
+}
+let catching = false;
+async function onWhatsAppConnected() {
+  if (catching) return;
+  catching = true;
+  try {
+    await new Promise((r) => setTimeout(r, 2e4));
+    retry.tries.clear();
+    await retryFailedNotices();
+    const { resolveShop: resolveShop2 } = await Promise.resolve().then(() => settings_server);
+    const shop = await resolveShop2();
+    if (shop) {
+      const n = await catchUpNotices(shop);
+      await logEvent({ shop, source: "bot", event: "order_notice_catch_up", detail: `checked ${n} order(s) from the last 18 hours` });
+    }
+  } catch (e) {
+    await logEvent({ source: "bot", level: "error", event: "order_notice_catch_up_failed", detail: e.message }).catch(() => void 0);
+  } finally {
+    catching = false;
+  }
+}
+const orderNotify_server = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  CATCH_UP_MS,
+  catchUpNotices,
+  notifyOrder,
+  onWhatsAppConnected,
+  retryFailedNotices,
+  startNoticeRetry
+}, Symbol.toStringTag, { value: "Module" }));
 const PAGE$1 = 50;
 const OVERLAP_MS = 10 * 6e4;
 const INTERVAL_MS = 5 * 6e4;
@@ -3932,6 +4106,21 @@ const meta = () => [{
 const links$5 = () => [{
   rel: "stylesheet",
   href: pageStyles
+}, {
+  rel: "icon",
+  href: "/favicon.svg",
+  type: "image/svg+xml"
+}, {
+  rel: "icon",
+  href: "/favicon-32.png",
+  type: "image/png",
+  sizes: "32x32"
+}, {
+  rel: "shortcut icon",
+  href: "/favicon.ico"
+}, {
+  rel: "apple-touch-icon",
+  href: "/apple-touch-icon.png"
 }];
 const loader$r = async ({
   request
@@ -17288,9 +17477,24 @@ const loader = async ({
   request
 }) => {
   await authenticate.admin(request);
+  const rows = await prisma.activityLog.findMany({
+    where: {
+      source: "whatsapp",
+      event: {
+        in: ["bridge_connected", "bridge_closed", "bridge_replaced", "bridge_logged_out", "bridge_app_started"]
+      }
+    },
+    orderBy: {
+      createdAt: "desc"
+    },
+    take: 40
+  });
+  const history = rows.map(historyRow).filter((r) => !!r);
   return {
     ...bridgeStatus(),
-    provider: activeProvider()
+    provider: activeProvider(),
+    history,
+    summary: summarizeHistory(history)
   };
 };
 const action = async ({
@@ -17319,8 +17523,8 @@ const app_whatsappWeb = UNSAFE_withComponentProps(function WhatsAppWeb() {
     revalidate
   } = useRevalidator();
   useEffect(() => {
-    if (s.state !== "starting" && s.state !== "qr") return;
-    const t = setInterval(revalidate, 3e3);
+    if (s.state === "connected") return;
+    const t = setInterval(revalidate, s.state === "starting" || s.state === "qr" ? 3e3 : 6e3);
     return () => clearInterval(t);
   }, [s.state, revalidate]);
   return /* @__PURE__ */ jsxs(Page, {
@@ -17397,6 +17601,49 @@ const app_whatsappWeb = UNSAFE_withComponentProps(function WhatsAppWeb() {
         })]
       })]
     }), /* @__PURE__ */ jsxs(Card, {
+      title: "Why does it disconnect?",
+      children: [/* @__PURE__ */ jsx("p", {
+        className: "o-p",
+        children: /* @__PURE__ */ jsx("b", {
+          children: s.summary.verdict
+        })
+      }), s.lastClose && /* @__PURE__ */ jsxs("p", {
+        className: "o-p",
+        children: ["Last disconnect, ", new Date(s.lastClose.at).toLocaleString(), ": ", /* @__PURE__ */ jsx("b", {
+          children: s.lastClose.title
+        }), s.lastClose.code ? ` (code ${s.lastClose.code})` : "", ". ", s.lastClose.advice]
+      }), /* @__PURE__ */ jsxs("p", {
+        className: "o-muted",
+        children: ["In the last 24 hours: ", s.summary.disconnects, " disconnect", s.summary.disconnects === 1 ? "" : "s", ", ", s.summary.restarts, " app restart", s.summary.restarts === 1 ? "" : "s", ". This copy of the app has been running for ", s.uptimeSec >= 3600 ? `${Math.floor(s.uptimeSec / 3600)} h ${Math.floor(s.uptimeSec % 3600 / 60)} min` : `${Math.floor(s.uptimeSec / 60)} min`, "."]
+      }), s.history.length > 0 && /* @__PURE__ */ jsx("div", {
+        className: "o-scroll",
+        children: /* @__PURE__ */ jsxs("table", {
+          children: [/* @__PURE__ */ jsx("thead", {
+            children: /* @__PURE__ */ jsxs("tr", {
+              children: [/* @__PURE__ */ jsx("th", {
+                children: "When"
+              }), /* @__PURE__ */ jsx("th", {
+                children: "What happened"
+              }), /* @__PURE__ */ jsx("th", {
+                children: "What it means"
+              })]
+            })
+          }), /* @__PURE__ */ jsx("tbody", {
+            children: s.history.map((h, i) => /* @__PURE__ */ jsxs("tr", {
+              children: [/* @__PURE__ */ jsx("td", {
+                children: new Date(h.at).toLocaleString()
+              }), /* @__PURE__ */ jsx("td", {
+                children: /* @__PURE__ */ jsx("b", {
+                  children: h.title
+                })
+              }), /* @__PURE__ */ jsx("td", {
+                children: h.detail
+              })]
+            }, i))
+          })]
+        })
+      })]
+    }), /* @__PURE__ */ jsxs(Card, {
       title: "Good to know",
       children: [/* @__PURE__ */ jsx("p", {
         className: "o-p",
@@ -17418,7 +17665,7 @@ const route34 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePrope
   headers,
   loader
 }, Symbol.toStringTag, { value: "Module" }));
-const serverManifest = { "entry": { "module": "/assets/entry.client-De-QXFzv.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-Bgn1TnLL.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index/route": { "id": "routes/_index/route", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-DtcjqbZK.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/health": { "id": "routes/health", "parentId": "root", "path": "health", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/health-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.cancelled": { "id": "routes/webhooks.orders.cancelled", "parentId": "root", "path": "webhooks/orders/cancelled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.cancelled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.create": { "id": "routes/webhooks.orders.create", "parentId": "root", "path": "webhooks/orders/create", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.create-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.updated": { "id": "routes/webhooks.orders.updated", "parentId": "root", "path": "webhooks/orders/updated", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.updated-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.products.update": { "id": "routes/webhooks.products.update", "parentId": "root", "path": "webhooks/products/update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.products.update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.avatar.$id": { "id": "routes/api.avatar.$id", "parentId": "root", "path": "api/avatar/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.avatar._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.finder.$": { "id": "routes/api.finder.$", "parentId": "root", "path": "api/finder/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.finder._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.image-editor.$": { "id": "routes/api.image-editor.$", "parentId": "root", "path": "api/image-editor/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.image-editor._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.media.$id": { "id": "routes/api.media.$id", "parentId": "root", "path": "api/media/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.media._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.send": { "id": "routes/api.send", "parentId": "root", "path": "api/send", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.send-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.seo.$": { "id": "routes/api.seo.$", "parentId": "root", "path": "api/seo/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.seo._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.webhooks.whatsapp": { "id": "routes/api.webhooks.whatsapp", "parentId": "root", "path": "api/webhooks/whatsapp", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.webhooks.whatsapp-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-B1XOFBU8.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/wand-sparkles-BdPk82tl.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/sparkles-xFG9LRwy.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-DtrZvsik.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/wand-sparkles-BdPk82tl.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/circle-check-CgxXrolP.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.conversations": { "id": "routes/app.conversations", "parentId": "routes/app", "path": "conversations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.conversations-BNXOjWJh.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.enquiries": { "id": "routes/app.enquiries", "parentId": "routes/app", "path": "enquiries", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.enquiries-COB6tued.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-bulk": { "id": "routes/app.image-bulk", "parentId": "routes/app", "path": "image-bulk", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-bulk-DqWooGbZ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-editor": { "id": "routes/app.image-editor", "parentId": "routes/app", "path": "image-editor", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-editor-BnCa-ubo.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BgNR0BkF.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js", "/assets/x-DIQ7-F4l.js", "/assets/chevron-down-DgceB_EA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-products": { "id": "routes/app.image-products", "parentId": "routes/app", "path": "image-products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-products-Nq2XpDHu.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BgNR0BkF.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js", "/assets/chevron-down-DgceB_EA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.integrations": { "id": "routes/app.integrations", "parentId": "routes/app", "path": "integrations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.integrations-C5bXxipA.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.logs": { "id": "routes/app.logs", "parentId": "routes/app", "path": "logs", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.logs-lqPVshDm.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.order-sheet": { "id": "routes/app.order-sheet", "parentId": "routes/app", "path": "order-sheet", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.order-sheet-AP8WeaL_.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/x-DIQ7-F4l.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.orders": { "id": "routes/app.orders", "parentId": "routes/app", "path": "orders", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.orders-Dn87TNmU.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.product-scrapper": { "id": "routes/app.product-scrapper", "parentId": "routes/app", "path": "product-scrapper", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.product-scrapper-CpJb0ZY2.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/search-Brt88N_W.js", "/assets/trash-B5HXC6TW.js", "/assets/download-2kZZwBYa.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.products": { "id": "routes/app.products", "parentId": "routes/app", "path": "products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.products-bWC2Cbow.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.quick-replies": { "id": "routes/app.quick-replies", "parentId": "routes/app", "path": "quick-replies", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.quick-replies-C0KLsZI0.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.seo": { "id": "routes/app.seo", "parentId": "routes/app", "path": "seo", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.seo-eZqunjrD.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/scan-search-B8PBngg6.js", "/assets/circle-check-CgxXrolP.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/chevron-down-DgceB_EA.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/rotate-ccw-B15igVXZ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.settings": { "id": "routes/app.settings", "parentId": "routes/app", "path": "settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.settings-DQ5ijkaN.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.waiting": { "id": "routes/app.waiting", "parentId": "routes/app", "path": "waiting", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/app.waiting-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.whatsapp-web": { "id": "routes/app.whatsapp-web", "parentId": "routes/app", "path": "whatsapp-web", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.whatsapp-web-DhdWs8pe.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-84a0b2f3.js", "version": "84a0b2f3", "sri": void 0 };
+const serverManifest = { "entry": { "module": "/assets/entry.client-De-QXFzv.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-Bgn1TnLL.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index/route": { "id": "routes/_index/route", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-CbXaqBCC.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/health": { "id": "routes/health", "parentId": "root", "path": "health", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/health-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.cancelled": { "id": "routes/webhooks.orders.cancelled", "parentId": "root", "path": "webhooks/orders/cancelled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.cancelled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.create": { "id": "routes/webhooks.orders.create", "parentId": "root", "path": "webhooks/orders/create", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.create-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.updated": { "id": "routes/webhooks.orders.updated", "parentId": "root", "path": "webhooks/orders/updated", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.updated-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.products.update": { "id": "routes/webhooks.products.update", "parentId": "root", "path": "webhooks/products/update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.products.update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.avatar.$id": { "id": "routes/api.avatar.$id", "parentId": "root", "path": "api/avatar/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.avatar._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.finder.$": { "id": "routes/api.finder.$", "parentId": "root", "path": "api/finder/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.finder._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.image-editor.$": { "id": "routes/api.image-editor.$", "parentId": "root", "path": "api/image-editor/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.image-editor._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.media.$id": { "id": "routes/api.media.$id", "parentId": "root", "path": "api/media/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.media._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.send": { "id": "routes/api.send", "parentId": "root", "path": "api/send", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.send-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.seo.$": { "id": "routes/api.seo.$", "parentId": "root", "path": "api/seo/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.seo._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.webhooks.whatsapp": { "id": "routes/api.webhooks.whatsapp", "parentId": "root", "path": "api/webhooks/whatsapp", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.webhooks.whatsapp-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-B1XOFBU8.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/wand-sparkles-BdPk82tl.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/sparkles-xFG9LRwy.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-DtrZvsik.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/wand-sparkles-BdPk82tl.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/circle-check-CgxXrolP.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.conversations": { "id": "routes/app.conversations", "parentId": "routes/app", "path": "conversations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.conversations-BNXOjWJh.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.enquiries": { "id": "routes/app.enquiries", "parentId": "routes/app", "path": "enquiries", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.enquiries-COB6tued.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-bulk": { "id": "routes/app.image-bulk", "parentId": "routes/app", "path": "image-bulk", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-bulk-DqWooGbZ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-editor": { "id": "routes/app.image-editor", "parentId": "routes/app", "path": "image-editor", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-editor-BnCa-ubo.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BgNR0BkF.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js", "/assets/x-DIQ7-F4l.js", "/assets/chevron-down-DgceB_EA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-products": { "id": "routes/app.image-products", "parentId": "routes/app", "path": "image-products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-products-Nq2XpDHu.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BgNR0BkF.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js", "/assets/chevron-down-DgceB_EA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.integrations": { "id": "routes/app.integrations", "parentId": "routes/app", "path": "integrations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.integrations-C5bXxipA.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.logs": { "id": "routes/app.logs", "parentId": "routes/app", "path": "logs", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.logs-lqPVshDm.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.order-sheet": { "id": "routes/app.order-sheet", "parentId": "routes/app", "path": "order-sheet", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.order-sheet-AP8WeaL_.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/x-DIQ7-F4l.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.orders": { "id": "routes/app.orders", "parentId": "routes/app", "path": "orders", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.orders-Dn87TNmU.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.product-scrapper": { "id": "routes/app.product-scrapper", "parentId": "routes/app", "path": "product-scrapper", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.product-scrapper-CpJb0ZY2.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/search-Brt88N_W.js", "/assets/trash-B5HXC6TW.js", "/assets/download-2kZZwBYa.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.products": { "id": "routes/app.products", "parentId": "routes/app", "path": "products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.products-bWC2Cbow.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.quick-replies": { "id": "routes/app.quick-replies", "parentId": "routes/app", "path": "quick-replies", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.quick-replies-C0KLsZI0.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.seo": { "id": "routes/app.seo", "parentId": "routes/app", "path": "seo", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.seo-eZqunjrD.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/scan-search-B8PBngg6.js", "/assets/circle-check-CgxXrolP.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/chevron-down-DgceB_EA.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/rotate-ccw-B15igVXZ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.settings": { "id": "routes/app.settings", "parentId": "routes/app", "path": "settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.settings-DQ5ijkaN.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.waiting": { "id": "routes/app.waiting", "parentId": "routes/app", "path": "waiting", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/app.waiting-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.whatsapp-web": { "id": "routes/app.whatsapp-web", "parentId": "routes/app", "path": "whatsapp-web", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.whatsapp-web-BZ7eaH69.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-bd7232ac.js", "version": "bd7232ac", "sri": void 0 };
 const assetsBuildDirectory = "build/client";
 const basename = "/";
 const future = { "unstable_optimizeDeps": false, "v8_passThroughRequests": false, "v8_trailingSlashAwareDataRequests": false, "unstable_previewServerPrerendering": false, "v8_middleware": false, "v8_splitRouteModules": false, "v8_viteEnvironmentApi": false };

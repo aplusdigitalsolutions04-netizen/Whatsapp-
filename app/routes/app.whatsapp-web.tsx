@@ -4,12 +4,20 @@ import { Form, useLoaderData, useNavigation, useRevalidator } from "react-router
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { activeProvider, bridgeStatus, startBridge, stopBridge } from "../lib/bridge.server";
+import prisma from "../db.server";
+import { historyRow, summarizeHistory, type HistoryRow } from "../lib/bridge-reasons";
 import { logEvent } from "../lib/log.server";
 import { Banner, Card, Page } from "../components/ui";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
-  return { ...bridgeStatus(), provider: activeProvider() };
+  const rows = await prisma.activityLog.findMany({
+    where: { source: "whatsapp", event: { in: ["bridge_connected", "bridge_closed", "bridge_replaced", "bridge_logged_out", "bridge_app_started"] } },
+    orderBy: { createdAt: "desc" },
+    take: 40,
+  });
+  const history = rows.map(historyRow).filter((r): r is HistoryRow => !!r);
+  return { ...bridgeStatus(), provider: activeProvider(), history, summary: summarizeHistory(history) };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -31,8 +39,8 @@ export default function WhatsAppWeb() {
 
   // Poll while a QR code or connection is pending so the page updates on scan.
   useEffect(() => {
-    if (s.state !== "starting" && s.state !== "qr") return;
-    const t = setInterval(revalidate, 3000);
+    if (s.state === "connected") return;
+    const t = setInterval(revalidate, s.state === "starting" || s.state === "qr" ? 3000 : 6000);
     return () => clearInterval(t);
   }, [s.state, revalidate]);
 
@@ -88,6 +96,35 @@ export default function WhatsAppWeb() {
             </Form>
           )}
         </div>
+      </Card>
+      <Card title="Why does it disconnect?">
+        <p className="o-p"><b>{s.summary.verdict}</b></p>
+        {s.lastClose && (
+          <p className="o-p">
+            Last disconnect, {new Date(s.lastClose.at).toLocaleString()}: <b>{s.lastClose.title}</b>
+            {s.lastClose.code ? ` (code ${s.lastClose.code})` : ""}. {s.lastClose.advice}
+          </p>
+        )}
+        <p className="o-muted">
+          In the last 24 hours: {s.summary.disconnects} disconnect{s.summary.disconnects === 1 ? "" : "s"}, {s.summary.restarts} app restart{s.summary.restarts === 1 ? "" : "s"}.
+          This copy of the app has been running for {s.uptimeSec >= 3600 ? `${Math.floor(s.uptimeSec / 3600)} h ${Math.floor((s.uptimeSec % 3600) / 60)} min` : `${Math.floor(s.uptimeSec / 60)} min`}.
+        </p>
+        {s.history.length > 0 && (
+          <div className="o-scroll">
+            <table>
+              <thead><tr><th>When</th><th>What happened</th><th>What it means</th></tr></thead>
+              <tbody>
+                {s.history.map((h, i) => (
+                  <tr key={i}>
+                    <td>{new Date(h.at).toLocaleString()}</td>
+                    <td><b>{h.title}</b></td>
+                    <td>{h.detail}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
       <Card title="Good to know">
         <p className="o-p">
