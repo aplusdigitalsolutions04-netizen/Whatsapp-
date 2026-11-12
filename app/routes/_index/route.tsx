@@ -234,6 +234,7 @@ export default function App() {
         <span className={`${styles.blob} ${styles.b1}`} />
         <span className={`${styles.blob} ${styles.b2}`} />
         <span className={`${styles.blob} ${styles.b3}`} />
+        <span className={`${styles.blob} ${styles.b4}`} />
         <span className={styles.grid} />
       </div>
 
