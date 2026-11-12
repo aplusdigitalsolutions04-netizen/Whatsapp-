@@ -31,11 +31,25 @@ if (existsSync(path.join(root, ".env"))) {
 }
 
 const env = process.env;
+// Day, week and month boundaries (Order Update sheet, dashboard "today") follow the server's clock zone. Hosting servers
+// run in UTC, which would put an order placed after 6:30 pm UTC (midnight in India) on the wrong day. Override with TZ=...
+env.TZ ||= "Asia/Kolkata";
 env.NODE_ENV ||= "production";
 env.PORT ||= "3000";
 env.SCOPES ||= "read_orders,read_customers,read_products,write_products,write_files";
 if (!env.SHOPIFY_APP_URL && env.DOMAIN) env.SHOPIFY_APP_URL = `https://${env.DOMAIN}`;
 if (env.SHOPIFY_APP_URL) env.SHOPIFY_APP_URL = env.SHOPIFY_APP_URL.replace(/\/+$/, "");
+// DATA_DIR keeps everything that must survive a redeploy (database, WhatsApp login, photos) in ONE folder outside the app folder.
+if (env.DATA_DIR) {
+  const d = path.resolve(env.DATA_DIR);
+  mkdirSync(d, { recursive: true });
+  env.DATABASE_URL ||= `file:${path.join(d, "shoppilot.sqlite").replaceAll("\\", "/")}`;
+  env.WHATSAPP_AUTH_DIR ||= path.join(d, "wa-auth");
+  env.WHATSAPP_MEDIA_DIR ||= path.join(d, "wa-media");
+  env.FINDER_MEDIA_DIR ||= path.join(d, "finder-media");
+  env.IMAGE_EDITOR_DIR ||= path.join(d, "image-editor");
+  console.log(`[start] DATA_DIR is ${d}`);
+}
 if (!env.DATABASE_URL) {
   const dir = path.join(root, "storage");
   mkdirSync(dir, { recursive: true });

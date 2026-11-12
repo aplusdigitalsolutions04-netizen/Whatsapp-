@@ -5,6 +5,7 @@ import path from "node:path";
 import prisma from "../../db.server";
 import { logEvent } from "../log.server";
 import { gql } from "../shopify-data.server";
+import { explainShopifyError } from "../shopify-errors";
 import { buildIndex, matchCatalog, type CatalogItem } from "./match";
 import { linkKey, makeSku, num } from "./parse";
 import { runScrape, type ScrapedProduct } from "./scrapers.server";
@@ -209,7 +210,7 @@ async function execute(shop: string, id: string, p: StartParams, flag: { stop: b
     await prisma.finderRun.update({ where: { id }, data: { status: flag.stop ? "stopped" : "done", finishedAt: new Date() } });
   } catch (e) {
     if (isGone(e)) return; // the search was deleted while it ran
-    const msg = (e as Error).message;
+    const msg = explainShopifyError((e as Error).message);
     lines.push(`Error: ${msg}`);
     await flush(true);
     await prisma.finderRun.update({ where: { id }, data: { status: "error", error: msg.slice(0, 300), finishedAt: new Date() } }).catch(() => undefined);

@@ -6,6 +6,7 @@ import { upsertOrder } from "./order-store.server";
 import { resolveShop } from "./settings.server";
 import { scheduleSheetPush } from "./google-sheets.server";
 import { gql } from "./shopify-data.server";
+import { explainShopifyError } from "./shopify-errors";
 import { endTask, startTask, updateTask } from "./progress.server";
 
 const PAGE = 50;
@@ -103,13 +104,14 @@ export async function runSync(shop: string, mode: "auto" | "full" = "auto"): Pro
     return r;
   } catch (e) {
     // The sync cursor is not advanced, so the next run re-reads the same window; stored rows stay untouched.
-    const msg = (e as Error).message;
+    const raw = (e as Error).message;
+    const msg = explainShopifyError(raw);
     await prisma.orderSyncState.upsert({
       where: { shop },
       create: { shop, lastError: msg.slice(0, 300) },
       update: { lastError: msg.slice(0, 300) },
     });
-    await logEvent({ shop, source: "shopify", level: "error", event: "order_sync_error", detail: msg });
+    await logEvent({ shop, source: "shopify", level: "error", event: "order_sync_error", detail: raw });
     endTask(shop, "sync", msg.slice(0, 200));
     return null;
   } finally {

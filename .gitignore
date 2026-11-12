@@ -34,3 +34,10 @@ database.sqlite
 .image-editor
 !.env.example
 /storage
+
+# local databases and runtime data must never be committed
+*.sqlite
+*.sqlite-journal
+/prisma/storage/
+.wa-auth/
+.finder-media/

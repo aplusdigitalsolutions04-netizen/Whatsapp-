@@ -17,5 +17,9 @@ export function explainShopifyError(raw: string): string {
     return `A permission is missing for the app (${msg.replace(/\s+/g, " ").slice(0, 160)}). Re-install the app and accept all permissions.`;
   }
   if (/throttl|429/i.test(msg)) return "Shopify is busy right now (rate limit). Try again in a minute.";
+  const code = msg.match(/networkStatusCode"?\s*[:=]\s*(\d{3})/)?.[1] ?? msg.match(/\((\d{3}) [A-Za-z ]+\) from Shopify/)?.[1];
+  if (code === "404") return "Shopify could not find this store. Check that the app is installed on the right store, then open ShopPilot once from Shopify Admin > Apps.";
+  if (code && Number(code) >= 500) return `Shopify had a problem on its side (error ${code}). Try again in a few minutes.`;
+  if (code) return `Shopify answered with an error (${code}). Open ShopPilot once from Shopify Admin > Apps and try again.`;
   return msg.replace(/\s+/g, " ").slice(0, 240) || "Shopify did not answer.";
 }

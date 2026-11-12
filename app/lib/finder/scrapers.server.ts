@@ -85,9 +85,14 @@ export async function scrapeShopify(site: string, category: string, brand: strin
 }
 
 // ---------------------------------------------------------------------------
-// Browser based: Amazon.in, Flipkart and any other site (uses the Chrome/Edge already on this PC)
+// Amazon.in, Flipkart and any other site. Uses a real browser (Chrome/Edge) when the server has one; hosting servers
+// usually do not, so it falls back to plain web requests (some sites block those with a robot check).
 // ---------------------------------------------------------------------------
+type Loaded = { html: string; title: string };
+type PageSource = { kind: "browser" | "http"; load: (url: string, scroll?: boolean) => Promise<Loaded>; close: () => Promise<void> };
+
 async function launchBrowser() {
+  if (process.env.FINDER_NO_BROWSER === "1") return null;
   const { chromium } = await import("playwright-core");
   for (const channel of ["chrome", "msedge"]) {
     try {
@@ -99,8 +104,57 @@ async function launchBrowser() {
   try {
     return await chromium.launch({ headless: true }); // Playwright's own Chromium, if it was installed
   } catch {
-    throw new Error("No browser found. Install Google Chrome or Microsoft Edge on this computer to scrape Amazon/Flipkart/other sites.");
+    return null;
   }
+}
+
+async function browserSource(browser: NonNullable<Awaited<ReturnType<typeof launchBrowser>>>): Promise<PageSource> {
+  const page = await (await browser.newContext({ userAgent: UA, locale: "en-IN" })).newPage();
+  return {
+    kind: "browser",
+    async load(url, scroll) {
+      assertPublicUrl(url);
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 });
+      await page.waitForTimeout(scroll ? 2500 : 1500);
+      if (scroll) {
+        for (let i = 0; i < 6; i++) {
+          await page.mouse.wheel(0, 2500);
+          await page.waitForTimeout(400);
+        }
+      }
+      return { html: await page.content(), title: await page.title() };
+    },
+    close: () => browser.close().catch(() => undefined),
+  };
+}
+
+/** Plain HTTP page loader. Every redirect target is checked too, so a page can never send us to a private address. */
+function httpSource(): PageSource {
+  return {
+    kind: "http",
+    async load(start) {
+      let url = start;
+      for (let hop = 0; hop < 5; hop++) {
+        assertPublicUrl(url);
+        const res = await fetch(url, {
+          headers: { "user-agent": UA, "accept-language": "en-IN,en;q=0.9", accept: "text/html,application/xhtml+xml,*/*;q=0.8" },
+          redirect: "manual",
+          signal: AbortSignal.timeout(30_000),
+        });
+        const next = res.headers.get("location");
+        if (res.status >= 300 && res.status < 400 && next) {
+          url = new URL(next, url).toString();
+          continue;
+        }
+        const html = await res.text();
+        const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/\s+/g, " ").trim() ?? "";
+        if (res.status === 403 || res.status === 429 || res.status === 503) return { html: "robot check", title: `HTTP ${res.status}` };
+        return { html, title };
+      }
+      throw new Error("Too many redirects.");
+    },
+    close: async () => undefined,
+  };
 }
 
 const BLOCKED = /captcha|robot check|enter the characters|are you a human|access denied|unusual traffic/i;
@@ -108,22 +162,20 @@ const BLOCKED = /captcha|robot check|enter the characters|are you a human|access
 export async function scrapeBrowser(searchUrl: string, brand: string, limit: number, pages: number, ctx: Ctx) {
   assertPublicUrl(searchUrl.replace("{query}", "x").replace("{page}", "1"));
   const browser = await launchBrowser();
+  const source = browser ? await browserSource(browser) : httpSource();
+  if (source.kind === "http") ctx.log("No browser on this server, so pages are read with plain web requests. Amazon and Flipkart often block this; the Shopify store option always works.");
   try {
-    const page = await (await browser.newContext({ userAgent: UA, locale: "en-IN" })).newPage();
     const candidates: Candidate[] = [];
     const seen = new Set<string>();
+    let blocked = false;
     for (let n = 1; n <= pages && !ctx.stopped(); n++) {
       let url = searchUrl.replace("{page}", String(n));
       if (n > 1 && !searchUrl.includes("{page}")) url += `${url.includes("?") ? "&" : "?"}page=${n}`;
       ctx.log(`Loading search page ${n}`);
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 });
-      await page.waitForTimeout(2500);
-      for (let i = 0; i < 6; i++) {
-        await page.mouse.wheel(0, 2500);
-        await page.waitForTimeout(400);
-      }
-      const html = await page.content();
-      if (BLOCKED.test((await page.title()) + " " + html.slice(0, 3000))) {
+      const { html, title } = await source.load(url, true);
+      // A tiny page instead of results is the site's bot check (Amazon answers servers with a ~1 KB script page).
+      if (BLOCKED.test(title + " " + html.slice(0, 3000)) || (source.kind === "http" && html.length < 5000)) {
+        blocked = true;
         ctx.log("The website showed a robot check, so it stopped. Try again later, or use another website.");
         break;
       }
@@ -140,6 +192,15 @@ export async function scrapeBrowser(searchUrl: string, brand: string, limit: num
       ctx.log(`Search page ${n}: ${added} new candidates`);
       if (added === 0 || candidates.length >= limit * 5) break;
     }
+    if (!candidates.length) {
+      throw new Error(
+        blocked
+          ? "The website blocked this server with a robot check. Amazon and Flipkart often block hosting servers: use the Shopify store option, or run the scrapper on a computer with Google Chrome."
+          : source.kind === "http"
+            ? "No products could be read without a browser. This site needs a real browser: use the Shopify store option, or run the scrapper on a computer with Google Chrome."
+            : "No products were found on that search page.",
+      );
+    }
 
     let found = 0;
     for (let i = 0; i < candidates.length && found < limit && !ctx.stopped(); i++) {
@@ -148,9 +209,7 @@ export async function scrapeBrowser(searchUrl: string, brand: string, limit: num
       ctx.log(`Checking ${i + 1}/${candidates.length}: ${c.title.slice(0, 60)}`);
       let d;
       try {
-        await page.goto(c.link, { waitUntil: "domcontentloaded", timeout: 60_000 });
-        await page.waitForTimeout(1500);
-        d = parseDetail(await page.content(), c.link);
+        d = parseDetail((await source.load(c.link)).html, c.link);
       } catch (e) {
         ctx.log(`Skipped (page error): ${String((e as Error).message).slice(0, 80)}`);
         continue;
@@ -160,7 +219,7 @@ export async function scrapeBrowser(searchUrl: string, brand: string, limit: num
       await sleep(300);
     }
   } finally {
-    await browser.close().catch(() => undefined);
+    await source.close();
   }
 }
 

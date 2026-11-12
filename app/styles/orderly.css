@@ -420,6 +420,7 @@
 .pbar.indet .pbar-fill { position: absolute; width: 38%; animation: pbar-slide 1.3s ease-in-out infinite, pbar-stripes 0.9s linear infinite; }
 .pbar.ok .pbar-fill { background: linear-gradient(90deg, #7fb48a, #4f9a63); }
 .pbar.bad .pbar-fill { background: linear-gradient(90deg, #d98b82, #c4584d); }
+.pbar.bad .pbar-label { white-space: normal; overflow: visible; }
 .pbar-detail { font-size: 12px; color: var(--taupe); }
 .pbar-box { padding: 12px 14px; margin: 0 0 12px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); display: grid; gap: 12px; }
 @keyframes pbar-stripes { to { background-position: 32px 0, 0 0; } }

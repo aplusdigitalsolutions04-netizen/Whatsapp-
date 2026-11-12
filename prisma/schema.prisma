@@ -387,6 +387,7 @@ model ImageItem {
 
   @@index([jobId, status])
   @@index([shop, finishedAt])
+  @@index([shop, mediaId])
 }
 
 // How many worker processes the batch runner may use (changeable while a batch runs).

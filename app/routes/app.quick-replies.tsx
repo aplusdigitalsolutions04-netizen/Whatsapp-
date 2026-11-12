@@ -5,6 +5,7 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
+import { logEvent } from "../lib/log.server";
 import { Badge, Card, Page } from "../components/ui";
 
 const SITE = "https://wery.in";
@@ -29,8 +30,10 @@ const STARTERS = [
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
-  if ((await prisma.faq.count({ where: { shop } })) === 0) {
+  // The two starter entries are added once. Without this check they came back every time the list was emptied.
+  if ((await prisma.faq.count({ where: { shop } })) === 0 && !(await prisma.activityLog.findFirst({ where: { shop, event: "faq_starters_added" }, select: { id: true } }))) {
     await prisma.faq.createMany({ data: STARTERS.map((f) => ({ ...f, shop })) });
+    await logEvent({ shop, source: "admin", event: "faq_starters_added" });
   }
   const faqs = await prisma.faq.findMany({ where: { shop }, orderBy: { createdAt: "asc" } });
   return { faqs };

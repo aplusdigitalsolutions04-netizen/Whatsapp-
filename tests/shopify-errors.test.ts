@@ -12,3 +12,11 @@ test("Shopify failures are explained in plain words with the exact place to fix 
   assert.equal(explainShopifyError("Something odd   happened"), "Something odd happened");
   assert.equal(explainShopifyError(""), "Shopify did not answer.");
 });
+
+test("Shopify HTTP errors are turned into plain sentences, not raw JSON", () => {
+  const raw404 = 'Received an error response (404 Not Found) from Shopify:\n{\n  "networkStatusCode": 404,\n  "message": "GraphQL Client: Not Found"\n}';
+  assert.match(explainShopifyError(raw404), /could not find this store/i);
+  assert.ok(!/networkStatusCode/.test(explainShopifyError(raw404)));
+  assert.match(explainShopifyError('{"networkStatusCode": 503}'), /problem on its side/i);
+  assert.match(explainShopifyError('{"networkStatusCode": 418}'), /error \(418\)/);
+});
