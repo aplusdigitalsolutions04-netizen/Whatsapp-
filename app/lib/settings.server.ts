@@ -1,4 +1,5 @@
 import prisma from "../db.server";
+import { parseNumberList } from "./saved-contacts";
 import { mergeTemplates, type Templates } from "./templates";
 
 export type Settings = {
@@ -9,6 +10,8 @@ export type Settings = {
   maxRecommendations: number;
   recommendationRule: "productType" | "tag";
   templates: Templates;
+  /** Personal numbers (+91...) the bot ignores unless the message starts with ! # or $. */
+  savedNumbers: string[];
 };
 
 export async function getSettings(shop: string): Promise<Settings> {
@@ -21,6 +24,7 @@ export async function getSettings(shop: string): Promise<Settings> {
     maxRecommendations: row?.maxRecommendations ?? 3,
     recommendationRule: row?.recommendationRule === "tag" ? "tag" : "productType",
     templates: mergeTemplates(row?.templates),
+    savedNumbers: parseNumberList(row?.savedNumbers),
   };
 }
 
@@ -50,6 +54,7 @@ export async function saveSettings(shop: string, form: FormData) {
     maxRecommendations: clamp(Number(form.get("maxRecommendations")), 1, 5),
     recommendationRule: form.get("recommendationRule") === "tag" ? "tag" : "productType",
     templates: JSON.stringify(templates),
+    savedNumbers: parseNumberList(String(form.get("savedNumbers") ?? "")).join("\n"),
   };
   await prisma.botSettings.upsert({
     where: { shop },

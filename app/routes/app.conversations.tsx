@@ -237,7 +237,7 @@ export default function Conversations() {
               <option value="open">Open</option>
               <option value="closed">Closed</option>
               <option value="human">Agent</option>
-              <option value="bot">Bot</option>
+              <option value="bot">JAZZ</option>
             </select>
             <button type="submit">Go</button>
           </Form>
@@ -275,7 +275,7 @@ export default function Conversations() {
                 <Avatar src={selected.avatar} label={selected.name ?? selected.phone} />
                 <div className="wa-head-main">
                   <b>{selected.name ?? selected.phone}</b>
-                  <small>{selected.name ? `${selected.phone} · ` : ""}{selected.mode === "human" ? `Agent mode${selected.handoffReason ? ` (${selected.handoffReason})` : ""}` : "Bot is replying"}</small>
+                  <small>{selected.name ? `${selected.phone} · ` : ""}{selected.mode === "human" ? `Agent mode${selected.handoffReason ? ` (${selected.handoffReason})` : ""}` : "JAZZ is replying"}</small>
                 </div>
                 <div className="wa-actions">
                   {([selected.mode === "human" ? "return" : "takeover", "reset", "close"] as const).map((i) => (
@@ -304,7 +304,7 @@ export default function Conversations() {
                     <Fragment key={m.id}>
                       {showDay && <div className="wa-day"><span>{day}</span></div>}
                       <div className={`wa-msg ${cls}`}>
-                        {m.direction === "out" && <span className="wa-who">{m.sender === "agent" ? "Agent" : "🤖 Bot"}</span>}
+                        {m.direction === "out" && <span className="wa-who">{m.sender === "agent" ? "Agent" : "🤖 JAZZ"}</span>}
                         {m.media && <MediaView m={m.media} />}
                         {m.body && <div className="wa-text"><RichText text={m.body} /></div>}
                         <span className="wa-meta">

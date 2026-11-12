@@ -26,9 +26,9 @@ const OWNER = "+919876543210";
 const OTHER = "+919811111111";
 const order = (name: string, over: Record<string, unknown> = {}) => ({
   id: `gid://shopify/Order/${name.replace(/\D/g, "")}`, name, createdAt: "2026-11-09T10:00:00Z", cancelled: false, closed: false,
-  financialStatus: "PAID", fulfillmentStatus: "FULFILLED", total: "INR 1499.00", statusUrl: null, customerName: "Asha", phones: [OWNER],
+  financialStatus: "PAID", fulfillmentStatus: "FULFILLED", total: "₹1,499", statusUrl: null, customerName: "Asha", phones: [OWNER],
   items: [{ title: "HP LaserJet 1008w", quantity: 1, sku: null }],
-  tracking: [{ company: "Delhivery", number: "DL123456789", url: null, resolvedUrl: "https://www.delhivery.com/track/package/DL123456789", status: "IN_TRANSIT", estimatedDeliveryAt: "2026-11-14T00:00:00Z" }],
+  tracking: [{ company: "Delhivery", number: "DL123456789", url: null, resolvedUrl: "https://www.delhivery.com/track-v2/package/DL123456789", status: "IN_TRANSIT", estimatedDeliveryAt: "2026-11-14T00:00:00Z" }],
   ...over,
 });
 const ORDERS = [
@@ -37,7 +37,7 @@ const ORDERS = [
   order("#W1217", {
     createdAt: "2026-11-07T09:00:00Z",
     tracking: [
-      { company: "Delhivery", number: "DL111111111", url: null, resolvedUrl: "https://www.delhivery.com/track/package/DL111111111", status: "DELIVERED", estimatedDeliveryAt: null },
+      { company: "Delhivery", number: "DL111111111", url: null, resolvedUrl: "https://www.delhivery.com/track-v2/package/DL111111111", status: "DELIVERED", estimatedDeliveryAt: null },
       { company: "Blue Dart", number: "BD222222222", url: "https://bluedart.example/track/BD222222222", resolvedUrl: "https://bluedart.example/track/BD222222222", status: "IN_TRANSIT", estimatedDeliveryAt: "2026-11-15T00:00:00Z" },
     ],
   }),
@@ -201,7 +201,7 @@ test("Order lookup by #W1219, W1219 and lowercase: shows every tracking field fr
     assert.match(r.text, /4\. Fulfillment Status: Fulfilled/, text);
     assert.match(r.text, /Courier: Delhivery/, text);
     assert.match(r.text, /Tracking ID: DL123456789/, text);
-    assert.match(r.text, /Tracking Link: https:\/\/www\.delhivery\.com\/track\/package\/DL123456789/, text);
+    assert.match(r.text, /Tracking Link: https:\/\/www\.delhivery\.com\/track-v2\/package\/DL123456789/, text);
     assert.match(r.text, /Expected Delivery: 14 Nov 2026/, text);
     assert.ok(!/gid:\/\//.test(r.text), "no internal Shopify ids");
   }
@@ -365,7 +365,7 @@ test("Welcome menu: numbered options; 2/3 check orders, 1/4 ask for a product, 5
   const chat = await newChat();
   const hi = await say(chat, "Hi");
   assert.equal(hi.text, DEFAULT_TEMPLATES.greeting);
-  for (const line of ["Welcome to WERY!", "1. Find a Product", "2. Check Order Status", "3. Track My Shipment", "4. Product Information", "5. Talk to Our Support Team", "Please reply with a number or type your question."]) {
+  for (const line of ["Hi, I'm JAZZ!", "1. Find a Product", "2. Check Order Status", "3. Track My Shipment", "4. Product Information", "5. Talk to Our Support Team", "Please reply with a number or type your question."]) {
     assert.ok(hi.text.includes(line), line);
   }
   assert.equal(hi.conv.state, "awaiting_menu");
@@ -550,4 +550,39 @@ test("Unknown words fall back to a short numbered help message", async () => {
 test("Saved (custom) templates still win over the new defaults; empty ones fall back", () => {
   assert.equal(mergeTemplates('{"greeting":"Hello from my store"}').greeting, "Hello from my store");
   assert.equal(mergeTemplates('{"verifyOrderPhone":" "}').verifyOrderPhone, DEFAULT_TEMPLATES.verifyOrderPhone);
+});
+
+test("prices are written with the rupee sign, never INR", async () => {
+  const { formatMoney }: any = await loadApp("/app/lib/money.ts");
+  assert.equal(formatMoney("1499.00", "INR"), "₹1,499");
+  assert.equal(formatMoney(2499.5, "INR"), "₹2,499.50");
+  assert.equal(formatMoney("125000", "INR"), "₹1,25,000");
+  assert.equal(formatMoney("10", "USD"), "$10.00");
+  assert.equal(formatMoney(null, "INR"), "");
+  const r = await say(await newChat(), "track my order #W1219");
+  assert.match(r.text, /Total: ₹1,499/);
+  assert.ok(!/INR/.test(r.text));
+});
+
+test("saved contacts: silent unless the message starts with ! # or $", async () => {
+  const { applyWakeRule, parseNumberList, inList }: any = await loadApp("/app/lib/saved-contacts.ts");
+  assert.deepEqual(applyWakeRule("hello", false), { reply: true, text: "hello" });
+  assert.deepEqual(applyWakeRule("hello", true), { reply: false, text: "hello" });
+  assert.deepEqual(applyWakeRule("#W1219", true), { reply: true, text: "W1219" });
+  assert.deepEqual(applyWakeRule("  ! track my order", true), { reply: true, text: "track my order" });
+  assert.deepEqual(applyWakeRule("$ price of shoes", true), { reply: true, text: "price of shoes" });
+  assert.deepEqual(applyWakeRule("!", true), { reply: true, text: "hi" });
+  const list = parseNumberList("+91 98765 43210\n9812345678, junk\n09876543210");
+  assert.deepEqual(list, ["+919876543210", "+919812345678"]);
+  assert.ok(inList("919812345678", list));
+  assert.ok(!inList("+919000000000", list));
+});
+
+test("Delhivery shipments get the direct link with the tracking id", async () => {
+  const data: any = await loadApp("/app/lib/shopify-data.server.ts");
+  const mapped = data.mapOrder({ id: "gid://shopify/Order/1", name: "#W1219", createdAt: "2026-11-09T10:00:00Z",
+    currentTotalPriceSet: { shopMoney: { amount: "1499.00", currencyCode: "INR" } },
+    fulfillments: [{ status: "SUCCESS", displayStatus: "IN_TRANSIT", trackingInfo: [{ company: "Delhivery", number: "DL123456789", url: "https://www.delhivery.com/?tracking-id=DL123456789" }] }] });
+  assert.equal(mapped.total, "₹1,499");
+  assert.equal(mapped.tracking[0].resolvedUrl, "https://www.delhivery.com/track-v2/package/DL123456789");
 });

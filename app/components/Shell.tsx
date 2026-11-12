@@ -77,8 +77,8 @@ export function Shell({ data, children }: { data: ShellData; children: ReactNode
     <div className={`orderly shell${collapsed ? " is-collapsed" : ""}${mobileOpen ? " is-open" : ""}`}>
       <aside className="sb" aria-label="Main navigation">
         <div className="sb-brand">
-          <span className="sb-logo">O</span>
-          <span className="sb-name">Orderly</span>
+          <span className="sb-logo">S</span>
+          <span className="sb-name">ShopPilot</span>
           <button className="sb-collapse" onClick={toggle} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
             {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
           </button>
@@ -116,7 +116,7 @@ export function Shell({ data, children }: { data: ShellData; children: ReactNode
             {mobileOpen ? <X size={18} /> : <Menu size={18} />}
           </button>
           <nav className="tb-crumbs" aria-label="Breadcrumb">
-            <Link to="/app">Orderly</Link>
+            <Link to="/app">ShopPilot</Link>
             {page && (
               <>
                 <span>/</span>

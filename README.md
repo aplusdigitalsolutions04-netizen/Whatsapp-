@@ -1,4 +1,4 @@
-# ShopPilot (Orderly)
+# ShopPilot
 
 A Shopify app for a WhatsApp-first store: a customer-service bot, live inbox, order sheet, product sourcing, image editor and SEO tools in one embedded admin app.
 

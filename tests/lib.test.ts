@@ -33,11 +33,20 @@ test("intent detection", () => {
   assert.equal(parseSelection("two", 3), null);
 });
 
-test("tracking url: Shopify url wins, Delhivery fallback validated", () => {
-  assert.equal(resolveTrackingUrl({ url: "https://x.example/t/1", number: "1", company: "Delhivery" }), "https://x.example/t/1");
+test("tracking url: Delhivery opens with the id filled in, other couriers keep the Shopify url", () => {
+  assert.equal(resolveTrackingUrl({ url: "https://x.example/t/1", number: "1", company: "Bluedart" }), "https://x.example/t/1");
+  // Delhivery: always the direct page with the tracking id in the address (even when Shopify sent its own url).
+  assert.equal(
+    resolveTrackingUrl({ url: "https://x.example/t/1", number: "1234567890123", company: "Delhivery Surface" }),
+    "https://www.delhivery.com/track-v2/package/1234567890123",
+  );
   assert.equal(
     resolveTrackingUrl({ number: "1234567890123", company: "Delhivery" }),
-    "https://www.delhivery.com/track/package/1234567890123",
+    "https://www.delhivery.com/track-v2/package/1234567890123",
+  );
+  assert.equal(
+    resolveTrackingUrl({ url: "https://www.delhivery.com/?tracking-id=1234567890123", number: "1234567890123" }),
+    "https://www.delhivery.com/track-v2/package/1234567890123",
   );
   assert.equal(resolveTrackingUrl({ number: "1234567890123", company: "Other" }), null);
   assert.equal(resolveTrackingUrl({ number: "bad number!", company: "Delhivery" }), null);

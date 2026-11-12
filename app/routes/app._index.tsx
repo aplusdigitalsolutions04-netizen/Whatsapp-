@@ -506,7 +506,7 @@ export default function Dashboard() {
       </Card>
 
       <details className="db-guide">
-        <summary>What each part of Orderly does</summary>
+        <summary>What each part of ShopPilot does</summary>
         <div className="db-guide-grid">
           {GUIDE.map((g) => {
             const Icon = g.icon;

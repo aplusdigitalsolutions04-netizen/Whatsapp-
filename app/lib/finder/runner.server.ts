@@ -6,7 +6,7 @@ import prisma from "../../db.server";
 import { logEvent } from "../log.server";
 import { gql } from "../shopify-data.server";
 import { buildIndex, matchCatalog, type CatalogItem } from "./match";
-import { linkKey, num } from "./parse";
+import { linkKey, makeSku, num } from "./parse";
 import { runScrape, type ScrapedProduct } from "./scrapers.server";
 
 export const FINDER_DIR = path.resolve(process.env.FINDER_MEDIA_DIR || ".finder-media");
@@ -31,8 +31,6 @@ export async function markInterrupted(shop: string) {
 /** Prisma: parent row missing (P2003) or record to update not found (P2025). */
 const isGone = (e: unknown) => ["P2003", "P2025"].includes((e as { code?: string })?.code ?? "");
 
-// eslint-disable-next-line no-control-regex
-const safeName = (t: string) => t.replace(/[<>:"/\\|?*\x00-\x1f]/g, " ").replace(/\s+/g, " ").trim().replace(/^[. ]+|[. ]+$/g, "").slice(0, 70).trim() || "product";
 
 const EXT: Record<string, string> = { "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif", "image/avif": ".avif" };
 
@@ -189,12 +187,15 @@ async function execute(shop: string, id: string, p: StartParams, flag: { stop: b
         return false;
       }
 
-      let folder = safeName(prod.title);
-      for (let n = 2; usedFolders.has(folder.toLowerCase()); n++) folder = `${safeName(prod.title)} (${n})`;
-      usedFolders.add(folder.toLowerCase());
-      log(`New product, downloading images: ${prod.title.slice(0, 50)}`);
+      // The SKU (BRAND-MODEL) is also the name of the image folder: HP-126snw/1.jpg, 2.jpg ...
+      const baseSku = makeSku(prod.brand, prod.title, prod.model);
+      let sku = baseSku;
+      for (let n = 2; usedFolders.has(sku.toLowerCase()); n++) sku = `${baseSku}-${n}`;
+      usedFolders.add(sku.toLowerCase());
+      const folder = sku;
+      log(`New product ${sku}, downloading images: ${prod.title.slice(0, 50)}`);
       const files = await downloadImages(prod.images, path.join(runDir, folder), prod.link);
-      if (!(await save({ ...base, isNew: true, imageCount: files.length, folder, thumb: files[0] ? `${folder}/${files[0]}` : "" }))) return false;
+      if (!(await save({ ...base, isNew: true, sku, description: (prod.description ?? "").slice(0, 5000), imageCount: files.length, folder, thumb: files[0] ? `${folder}/${files[0]}` : "" }))) return false;
       return true;
     };
 

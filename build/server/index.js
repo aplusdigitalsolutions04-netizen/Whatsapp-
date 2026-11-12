@@ -12,11 +12,13 @@ import "@shopify/shopify-app-react-router/adapters/node";
 import { shopifyApp, AppDistribution, ApiVersion, LoginErrorType, boundary } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import { PrismaClient } from "@prisma/client";
-import { mkdirSync, writeFileSync, existsSync, rmSync, readFileSync, readdirSync, statSync, copyFileSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, writeFileSync, rmSync, readdirSync, statSync, copyFileSync } from "node:fs";
 import path from "node:path";
 import QRCode from "qrcode";
 import makeWASocket, { useMultiFileAuthState, fetchLatestBaileysVersion, Browsers, DisconnectReason, downloadMediaMessage } from "@whiskeysockets/baileys";
 import { randomBytes, timingSafeEqual, createHmac, createDecipheriv, scryptSync, createCipheriv, createSign, createHash, randomUUID } from "node:crypto";
+import { useRef, useEffect, useState, Fragment as Fragment$1, useCallback } from "react";
+import { Sparkles, Check, Truck, BellRing, ShieldCheck, Bot, MessagesSquare, PackageSearch, ClipboardList, ScanSearch, WandSparkles, SearchCheck, Download, Zap, Languages, ArrowRight, X, ChevronsRight, ChevronsLeft, Menu, LayoutDashboard, Smartphone, Plug, ScrollText, ShoppingBag, AlertTriangle, CheckCircle2, Users, Phone, ArrowUpRight, ArrowDownRight, Minus, ImagePlus, Store, FileArchive, Play, RotateCcw, ChevronDown, Camera, Scissors, Minimize2, Eraser, Crop, Palette, FileImage, Cpu, UploadCloud, FolderPlus, Square, Trash2, Search, CloudUpload, Undo2, Sheet, ExternalLink, Plus, RefreshCw, ImageOff, FileUp } from "lucide-react";
 import { readFile } from "node:fs/promises";
 import { zipSync, ZipPassThrough, Zip, unzipSync } from "fflate";
 import * as cheerio from "cheerio";
@@ -24,8 +26,6 @@ import { isIP } from "node:net";
 import { fork } from "node:child_process";
 import os from "node:os";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
-import { useState, useRef, useEffect, Fragment as Fragment$1, useCallback } from "react";
-import { BellRing, X, ChevronsRight, ChevronsLeft, Menu, LayoutDashboard, MessagesSquare, PackageSearch, ClipboardList, ScanSearch, WandSparkles, SearchCheck, Zap, Sparkles, Smartphone, Plug, ScrollText, Bot, ShoppingBag, AlertTriangle, CheckCircle2, ArrowRight, Users, Phone, ArrowUpRight, ArrowDownRight, Minus, ImagePlus, Store, FileArchive, Play, RotateCcw, ChevronDown, Camera, Scissors, Minimize2, Check, Eraser, Crop, Palette, FileImage, Cpu, UploadCloud, FolderPlus, Square, Download, Trash2, Search, CloudUpload, Undo2, Sheet, ExternalLink, Plus, RefreshCw, ImageOff, FileUp } from "lucide-react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 if (process.env.NODE_ENV !== "production") {
   if (!global.prismaGlobal) {
@@ -114,6 +114,77 @@ function samePhone(a, b) {
   const x = normalizePhone(a);
   const y = normalizePhone(b);
   return !!x && !!y && x === y;
+}
+const WAKE_CHARS = ["!", "#", "$"];
+function applyWakeRule(text2, isSaved) {
+  if (!isSaved) return { reply: true, text: text2 };
+  const t = text2.trim();
+  const first = t.charAt(0);
+  if (first && WAKE_CHARS.includes(first)) return { reply: true, text: t.slice(1).trim() || "hi" };
+  return { reply: false, text: text2 };
+}
+function parseNumberList(raw) {
+  const out = /* @__PURE__ */ new Set();
+  for (const part of String(raw ?? "").split(/[\n,;]+/)) {
+    const p = normalizePhone(part.trim());
+    if (p) out.add(p);
+  }
+  return [...out];
+}
+const inList = (phone2, list) => list.some((n) => samePhone(n, phone2));
+const FILE = path.join(path.resolve(process.env.WHATSAPP_AUTH_DIR || ".wa-auth"), "saved-contacts.json");
+const g$8 = globalThis;
+function load() {
+  if (g$8.__savedContacts) return g$8.__savedContacts;
+  const set = /* @__PURE__ */ new Set();
+  try {
+    if (existsSync(FILE)) for (const n of JSON.parse(readFileSync(FILE, "utf8"))) set.add(n);
+  } catch {
+  }
+  g$8.__savedContacts = set;
+  return set;
+}
+let timer = null;
+function persistSoon() {
+  if (timer) return;
+  timer = setTimeout(() => {
+    timer = null;
+    try {
+      mkdirSync(path.dirname(FILE), { recursive: true });
+      writeFileSync(FILE, JSON.stringify([...load()]));
+    } catch {
+    }
+  }, 3e3);
+}
+function contactNumber(c) {
+  for (const raw of [c == null ? void 0 : c.phoneNumber, c == null ? void 0 : c.id]) {
+    const s = String(raw ?? "");
+    if (s && !s.endsWith("@lid") && !s.endsWith("@g.us") && !s.includes("broadcast")) {
+      const n = normalizePhone(`+${s.split("@")[0].split(":")[0].replace(/\D/g, "")}`);
+      if (n) return n;
+    }
+  }
+  return null;
+}
+function rememberContacts(list) {
+  if (!Array.isArray(list)) return;
+  const set = load();
+  let changed = false;
+  for (const c of list) {
+    const n = contactNumber(c);
+    if (!n) continue;
+    if ((c == null ? void 0 : c.name) && !set.has(n)) {
+      set.add(n);
+      changed = true;
+    } else if (c && "name" in c && !c.name && set.has(n)) {
+      set.delete(n);
+      changed = true;
+    }
+  }
+  if (changed) persistSoon();
+}
+function isSavedContact(phone2, manual) {
+  return inList(phone2, manual) || load().has(normalizePhone(phone2) ?? phone2);
 }
 function unwrapMessage(msg2) {
   var _a2, _b, _c, _d, _e;
@@ -216,13 +287,13 @@ function saveMedia(buffer, mime) {
   const m = baseMime(mime);
   if (buffer.length > MAX_MEDIA_BYTES) throw new Error("File is larger than 16 MB");
   mkdirSync(MEDIA_DIR, { recursive: true });
-  const file = `${randomBytes(12).toString("hex")}.${EXT$2[m] ?? "bin"}`;
-  writeFileSync(path.join(MEDIA_DIR, file), buffer);
-  return { file, mime: m };
+  const file2 = `${randomBytes(12).toString("hex")}.${EXT$2[m] ?? "bin"}`;
+  writeFileSync(path.join(MEDIA_DIR, file2), buffer);
+  return { file: file2, mime: m };
 }
-function mediaFilePath(file) {
-  if (!/^[a-f0-9]{24}\.[a-z0-9]{1,5}$/.test(file)) return null;
-  const p = path.join(MEDIA_DIR, file);
+function mediaFilePath(file2) {
+  if (!/^[a-f0-9]{24}\.[a-z0-9]{1,5}$/.test(file2)) return null;
+  const p = path.join(MEDIA_DIR, file2);
   return existsSync(p) ? p : null;
 }
 function key$2() {
@@ -273,9 +344,9 @@ function encryptSecret(plain) {
   const data = Buffer.concat([c.update(plain, "utf8"), c.final()]);
   return [iv, c.getAuthTag(), data].map((b) => b.toString("base64")).join(".");
 }
-function decryptSecret(blob) {
+function decryptSecret(blob2) {
   try {
-    const [iv, tag, data] = blob.split(".").map((p) => Buffer.from(p, "base64"));
+    const [iv, tag, data] = blob2.split(".").map((p) => Buffer.from(p, "base64"));
     const d = createDecipheriv("aes-256-gcm", key$1(), iv);
     d.setAuthTag(tag);
     return Buffer.concat([d.update(data), d.final()]).toString("utf8");
@@ -368,7 +439,7 @@ async function aiFallbackReply(args) {
   const cfg = await getAiConfig(args.shop);
   if (!cfg.enabled) return null;
   const system = [
-    "You are the WhatsApp support assistant of an online store.",
+    "You are JAZZ, the WhatsApp support assistant of an online store. Prices are in Indian rupees: write them with the ₹ symbol (for example ₹1,499), never as INR or Rs.",
     "Answer ONLY using the STORE FACTS below. Never invent prices, stock, policies, delivery dates or order details.",
     "You have no access to customer orders: if asked about a specific order or tracking, tell them to send their order number (like #W1219) or their registered mobile number.",
     `If the facts do not answer the question, or the customer is upset or asks for a person, reply with exactly ${HANDOFF_MARK}.`,
@@ -440,18 +511,18 @@ let cached = null;
 function buildIndex$1(faqs) {
   const phrases = /* @__PURE__ */ new Map();
   const byToken = /* @__PURE__ */ new Map();
-  for (const faq of faqs) {
-    if (!faq.enabled) continue;
-    for (const k of splitKeywords(faq.keywords)) {
-      if (k.split(" ").length <= MAX_WORDS && !phrases.has(k)) phrases.set(k, faq);
+  for (const faq2 of faqs) {
+    if (!faq2.enabled) continue;
+    for (const k of splitKeywords(faq2.keywords)) {
+      if (k.split(" ").length <= MAX_WORDS && !phrases.has(k)) phrases.set(k, faq2);
     }
-    for (const line of (faq.questions ?? "").split("\n")) {
+    for (const line of (faq2.questions ?? "").split("\n")) {
       const tokens2 = contentTokens(line);
       if (tokens2.length < 2) continue;
-      const q = { faq, tokens: tokens2 };
+      const q = { faq: faq2, tokens: tokens2 };
       for (const t of tokens2) {
-        const list2 = byToken.get(t);
-        if (list2) list2.push(q);
+        const list = byToken.get(t);
+        if (list) list.push(q);
         else byToken.set(t, [q]);
       }
     }
@@ -464,14 +535,14 @@ const signature = (faqs) => faqs.map(
 function matchFaq(text2, faqs) {
   const sig = signature(faqs);
   if (!cached || cached.sig !== sig) cached = { ...buildIndex$1(faqs), sig };
-  const index2 = cached;
+  const index = cached;
   const words = tokenize(text2);
   let best = null;
   for (let i = 0; i < words.length; i++) {
     let phrase = "";
     for (let j = i; j < Math.min(words.length, i + MAX_WORDS); j++) {
       phrase = phrase ? `${phrase} ${words[j]}` : words[j];
-      const hit = index2.phrases.get(phrase);
+      const hit = index.phrases.get(phrase);
       if (hit && (!best || phrase.length > best.len)) best = { faq: hit, len: phrase.length };
     }
   }
@@ -479,7 +550,7 @@ function matchFaq(text2, faqs) {
   const msg2 = contentTokens(text2);
   if (msg2.length < 2 || msg2.length > 14) return null;
   const hits2 = /* @__PURE__ */ new Map();
-  for (const t of msg2) for (const q of index2.byToken.get(t) ?? []) hits2.set(q, (hits2.get(q) ?? 0) + 1);
+  for (const t of msg2) for (const q of index.byToken.get(t) ?? []) hits2.set(q, (hits2.get(q) ?? 0) + 1);
   let top = null;
   for (const [q, matched] of hits2) {
     const coverage = matched / q.tokens.length;
@@ -539,16 +610,16 @@ function detectIntent(raw) {
   const trackWords = /\b(track|tracking|shipment|shipped|courier|delivery|delivered|dispatch|dispatched|parcel|awb|where is my|kahan|kahaan|kab aayega|kab tak|pahunchega)\b/.test(t) || HI_TRACK.test(t);
   const orderWords = /\b(order|status|invoice|payment)\b/.test(t) || HI_ORDER.test(t);
   const orderNumber = marked ?? (trackWords || orderWords ? (_a2 = findLooseOrderRef(text2)) == null ? void 0 : _a2.key : void 0);
-  const phone = findPhoneInText(text2) ?? void 0;
+  const phone2 = findPhoneInText(text2) ?? void 0;
   const withRefs = (base) => ({
     ...base,
     orderNumber,
-    ...phone && !orderNumber ? { phone } : {}
+    ...phone2 && !orderNumber ? { phone: phone2 } : {}
   });
   if (trackWords) return withRefs({ type: "tracking" });
   if (orderWords || orderNumber) return withRefs({ type: "order" });
-  if (phone && !/[\p{L}\p{M}]{4,}/u.test(text2.replace(/\b(my|number|is|mobile|phone|no|mera|meri|hai|registered)\b/gi, ""))) {
-    return { type: "order", phone };
+  if (phone2 && !/[\p{L}\p{M}]{4,}/u.test(text2.replace(/\b(my|number|is|mobile|phone|no|mera|meri|hai|registered)\b/gi, ""))) {
+    return { type: "order", phone: phone2 };
   }
   const bare = parseOrderRef(text2);
   if (bare && bare.prefix.length === 1) return { type: "order", orderNumber: bare.key, weak: true };
@@ -693,7 +764,7 @@ function clip$1(text2, max) {
 function numbered(items, start = 1) {
   return items.filter((x) => typeof x === "string" && x.trim().length > 0).map((x, i) => `${start + i}. ${x}`).join("\n");
 }
-function compose(parts) {
+function compose$1(parts) {
   const body = parts.points ? numbered(parts.points) : "";
   return [parts.intro, body, parts.note, parts.next].map((s) => (s ?? "").trim()).filter(Boolean).join("\n\n");
 }
@@ -743,7 +814,7 @@ function warrantyOf(lines) {
 const COMBO_WORDS = /\b(combo|bundle|kit|set of|pack of|with free|offer pack)\b/i;
 const INCLUDED_HDR = /^(?:what(?:'s|\s+is|\s+are)?\s+)?(?:included|in\s+the\s+box|in\s+the\s+pack(?:age)?|package\s+(?:contents|includes?|contains)|box\s+contents|(?:combo|bundle|kit|set|pack)\s+(?:includes?|contains|contents|details)|you\s+(?:will\s+)?get|includes?|contains|containing|contents)\b[\s:：-]*(.*)$/i;
 const OPTIONAL_HDR = /^(?:optional(?:\s+accessor(?:y|ies))?|not\s+included|excluded|sold\s+separately|available\s+separately|extra\s+accessor(?:y|ies)|add[- ]?ons?)\b[\s:：-]*(.*)$/i;
-const UNIT = "pcs?|pieces?|packs?|nos?|units?|sets?|pairs?|reams?|rolls?";
+const UNIT$1 = "pcs?|pieces?|packs?|nos?|units?|sets?|pairs?|reams?|rolls?";
 const NOT_QTY_NEXT = /^(gb|tb|mb|kb|inch|in|mp|w|v|mah|hz|ghz|mm|cm|kg|g|ml|l)\b/i;
 const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 function qtyLabel(n, unit, L) {
@@ -766,10 +837,10 @@ function parseComboItem(raw) {
   if (m = s.match(/^(\d{1,3})\s*(?:x|×|\*)\s*(.+)$/i)) {
     qty = { n: Number(m[1]) };
     s = m[2];
-  } else if (m = s.match(new RegExp(`^(\\d{1,3})\\s*(${UNIT})\\b\\.?\\s*(?:of\\s+)?(.+)$`, "i"))) {
+  } else if (m = s.match(new RegExp(`^(\\d{1,3})\\s*(${UNIT$1})\\b\\.?\\s*(?:of\\s+)?(.+)$`, "i"))) {
     qty = { n: Number(m[1]), unit: m[2] };
     s = m[3];
-  } else if (m = s.match(new RegExp(`^(.+?)\\s*[-–:(]\\s*(\\d{1,3})\\s*(${UNIT})?\\)?$`, "i"))) {
+  } else if (m = s.match(new RegExp(`^(.+?)\\s*[-–:(]\\s*(\\d{1,3})\\s*(${UNIT$1})?\\)?$`, "i"))) {
     qty = { n: Number(m[2]), unit: m[3] };
     s = m[1];
   } else if (m = s.match(/^(.+?)\s*(?:x|×|\*)\s*(\d{1,3})$/i)) {
@@ -802,33 +873,33 @@ function extractCombo(p, labels) {
     if (forceOptional || it.optional) optional.push(it.name);
     else if (!items.some((x) => x.name.toLowerCase() === it.name.toLowerCase())) items.push({ name: it.name, qty: label2 });
   };
-  let section = "none";
+  let section2 = "none";
   let count = 0;
   for (const l of lines) {
     const opt = l.text.match(OPTIONAL_HDR);
     const inc = l.text.match(INCLUDED_HDR);
     if (opt) {
-      section = "opt";
+      section2 = "opt";
       count = 0;
       for (const part of splitInline(opt[1])) add(part, true);
       continue;
     }
     if (inc && l.text.length <= 140) {
-      section = "inc";
+      section2 = "inc";
       count = 0;
       for (const part of splitInline(inc[1])) add(part, false);
       continue;
     }
-    if (section === "none") continue;
+    if (section2 === "none") continue;
     const looksLikeSentence = l.text.length > 90 || /[.!?]\s+\S/.test(l.text);
     const spec = l.text.match(SPEC);
-    const quantityRow = !!spec && new RegExp(`^\\d{1,3}\\s*(?:${UNIT})?$`, "i").test(spec[2].trim());
+    const quantityRow = !!spec && new RegExp(`^\\d{1,3}\\s*(?:${UNIT$1})?$`, "i").test(spec[2].trim());
     if (l.blankBefore && count > 0 && !l.bullet || !l.bullet && !!spec && !quantityRow && !/^\d/.test(l.text) || looksLikeSentence) {
-      section = "none";
+      section2 = "none";
       continue;
     }
     count++;
-    add(l.text, section === "opt");
+    add(l.text, section2 === "opt");
   }
   let main = "";
   const parts = p.title.split(/\s\+\s|\s*\+\s*|\swith\s(?:free\s)?|\s&\s/i).map((x) => x.trim()).filter(Boolean);
@@ -882,7 +953,7 @@ function productPoints(p) {
   return { points: [...bestSpecs, ...bestFeatures], warranty };
 }
 function productMessage(p, L) {
-  const head = `🛍️ *${p.title}*`;
+  const head2 = `🛍️ *${p.title}*`;
   const combo = isComboProduct(p) ? extractCombo(p, L) : null;
   const priceLine = (label2) => p.price ? `${label2}: ${p.price}${p.compareAtPrice ? ` (~${p.compareAtPrice}~${p.discountPercent ? `, ${L.save} ${p.discountPercent}%` : ""})` : ""}` : null;
   if (isComboProduct(p)) {
@@ -892,21 +963,21 @@ function productMessage(p, L) {
         ...combo.included.map((i) => `${i.name}: ${i.qty ?? L.included}`)
       ];
       const note = combo.optional.length ? `${L.optional}: ${combo.optional.join(", ")}` : void 0;
-      const body3 = compose({
+      const body3 = compose$1({
         intro: L.comboIntro,
         points: rows2,
         note: [note, priceLine(L.comboPrice), p.url ? `${L.viewCombo}: ${p.url}` : null].filter(Boolean).join("\n")
       });
-      return { head, body: body3, text: `${head}
+      return { head: head2, body: body3, text: `${head2}
 
 ${body3}` };
     }
-    const body2 = compose({
+    const body2 = compose$1({
       intro: L.comboUnclear,
       note: [priceLine(L.comboPrice), p.url ? `${L.viewCombo}: ${p.url}` : null].filter(Boolean).join("\n"),
       next: L.askTeam
     });
-    return { head, body: body2, text: `${head}
+    return { head: head2, body: body2, text: `${head2}
 
 ${body2}` };
   }
@@ -915,13 +986,13 @@ ${body2}` };
   const options = named.length > 1 ? `${L.options}: ${clip$1(named.map((v) => v.title).join(", "), 100)}` : null;
   const rows = [...points, warranty ? `${L.warranty}: ${warranty}` : null, options, priceLine(L.price), p.available === false ? null : p.available ? `${L.stock}: ${L.inStock}` : null];
   const hasInfo = points.length > 0;
-  const body = compose({
+  const body = compose$1({
     intro: hasInfo ? L.details : L.noDetails,
     points: rows,
     note: p.url ? `${L.viewProduct}: ${p.url}` : void 0,
     next: hasInfo ? void 0 : L.askTeam
   });
-  return { head, body, text: `${head}
+  return { head: head2, body, text: `${head2}
 
 ${body}` };
 }
@@ -941,7 +1012,7 @@ function rateLimited(key2, max, windowMs) {
   return recent.length > max;
 }
 const DEFAULT_TEMPLATES = {
-  greeting: "Welcome to WERY! 👋\nHow can I help you today?\n\n1. Find a Product\n2. Check Order Status\n3. Track My Shipment\n4. Product Information\n5. Talk to Our Support Team\n\nPlease reply with a number or type your question.",
+  greeting: "Hi, I'm JAZZ! 👋 Welcome to WERY.\nHow can I help you today?\n\n1. Find a Product\n2. Check Order Status\n3. Track My Shipment\n4. Product Information\n5. Talk to Our Support Team\n\nPlease reply with a number or type your question.",
   askOrderNumber: "I couldn't find an order linked to this WhatsApp number. 😕\n\nPlease send either:\n\n1. Your Order Number (Example: #W1219)\n2. Your registered mobile number",
   askOrderDetails: "Sure! 😊 How would you like to check your order?\n\n1. Use this WhatsApp number\n2. Send your Order Number (Example: #W1219)\n3. Send your registered mobile number\n\nReply with 1, 2 or 3.",
   typeOrderNumber: "Please type your Order Number. 📦\n\nExample: #W1219",
@@ -1008,7 +1079,7 @@ const EDITABLE_TEMPLATES = [
   "mediaReceived"
 ];
 const TEMPLATES_HI = {
-  greeting: "WERY में आपका स्वागत है! 👋\nमैं आपकी कैसे मदद करूँ?\n\n1. प्रोडक्ट खोजें\n2. ऑर्डर की स्थिति देखें\n3. मेरा शिपमेंट ट्रैक करें\n4. प्रोडक्ट की जानकारी\n5. सपोर्ट टीम से बात करें\n\nकृपया संख्या लिखकर भेजें या अपना सवाल लिखें।",
+  greeting: "नमस्ते, मैं JAZZ हूँ! 👋 WERY में आपका स्वागत है।\nमैं आपकी कैसे मदद करूँ?\n\n1. प्रोडक्ट खोजें\n2. ऑर्डर की स्थिति देखें\n3. मेरा शिपमेंट ट्रैक करें\n4. प्रोडक्ट की जानकारी\n5. सपोर्ट टीम से बात करें\n\nकृपया संख्या लिखकर भेजें या अपना सवाल लिखें।",
   askOrderNumber: "इस WhatsApp नंबर से जुड़ा कोई ऑर्डर नहीं मिला। 😕\n\nकृपया इनमें से एक भेजें:\n\n1. आपका ऑर्डर नंबर (जैसे #W1219)\n2. आपका रजिस्टर्ड मोबाइल नंबर",
   askOrderDetails: "ज़रूर! 😊 आप ऑर्डर कैसे देखना चाहेंगे?\n\n1. इसी WhatsApp नंबर से\n2. अपना ऑर्डर नंबर भेजें (जैसे #W1219)\n3. अपना रजिस्टर्ड मोबाइल नंबर भेजें\n\nकृपया 1, 2 या 3 लिखें।",
   typeOrderNumber: "कृपया अपना ऑर्डर नंबर लिखें। 📦\n\nजैसे: #W1219",
@@ -1169,7 +1240,8 @@ async function getSettings(shop) {
     recommendationsEnabled: (row == null ? void 0 : row.recommendationsEnabled) ?? true,
     maxRecommendations: (row == null ? void 0 : row.maxRecommendations) ?? 3,
     recommendationRule: (row == null ? void 0 : row.recommendationRule) === "tag" ? "tag" : "productType",
-    templates: mergeTemplates(row == null ? void 0 : row.templates)
+    templates: mergeTemplates(row == null ? void 0 : row.templates),
+    savedNumbers: parseNumberList(row == null ? void 0 : row.savedNumbers)
   };
 }
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, Math.round(Number.isFinite(n) ? n : lo)));
@@ -1194,7 +1266,8 @@ async function saveSettings(shop, form2) {
     recommendationsEnabled: form2.get("recommendationsEnabled") === "on",
     maxRecommendations: clamp(Number(form2.get("maxRecommendations")), 1, 5),
     recommendationRule: form2.get("recommendationRule") === "tag" ? "tag" : "productType",
-    templates: JSON.stringify(templates)
+    templates: JSON.stringify(templates),
+    savedNumbers: parseNumberList(String(form2.get("savedNumbers") ?? "")).join("\n")
   };
   await prisma.botSettings.upsert({
     where: { shop },
@@ -1211,7 +1284,10 @@ async function resolveShop() {
   return (s == null ? void 0 : s.shop) ?? null;
 }
 const SAFE_NUMBER = /^[A-Za-z0-9-]{6,30}$/;
+const delhiveryUrl = (number) => `https://www.delhivery.com/track-v2/package/${encodeURIComponent(number)}`;
 function resolveTrackingUrl(t) {
+  const isDelhivery = /delhivery/i.test(t.company ?? "") || /(^|\.)delhivery\.com/i.test(hostOf(t.url));
+  if (isDelhivery && t.number && SAFE_NUMBER.test(t.number)) return delhiveryUrl(t.number);
   if (t.url) {
     try {
       const u = new URL(t.url);
@@ -1219,10 +1295,14 @@ function resolveTrackingUrl(t) {
     } catch {
     }
   }
-  if (t.number && SAFE_NUMBER.test(t.number) && /delhivery/i.test(t.company ?? "")) {
-    return `https://www.delhivery.com/track/package/${encodeURIComponent(t.number)}`;
-  }
   return null;
+}
+function hostOf(url) {
+  try {
+    return url ? new URL(url).hostname : "";
+  } catch {
+    return "";
+  }
 }
 function imsConfig(env = process.env) {
   const base = (env.IMS_BASE_URL ?? "").trim();
@@ -1290,7 +1370,21 @@ function mergeOrders(shopify2, ims) {
   const extra = ims.filter((o) => !have.has(digits$1(o.name)));
   return [...shopify2.map((o) => ({ ...o, source: o.source ?? "shopify" })), ...extra];
 }
-const ownedBy = (orders, phone) => orders.filter((o) => o.phones.some((p) => samePhone(p, phone)));
+const ownedBy = (orders, phone2) => orders.filter((o) => o.phones.some((p) => samePhone(p, phone2)));
+function formatMoney(amount, currency) {
+  const n = Number(amount);
+  if (amount == null || amount === "" || !Number.isFinite(n)) return "";
+  const cur = String(currency ?? "").toUpperCase();
+  if (!cur || cur === "INR") {
+    const whole = Math.abs(n - Math.round(n)) < 5e-3;
+    return `₹${n.toLocaleString("en-IN", { minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: 2 })}`;
+  }
+  try {
+    return new Intl.NumberFormat("en-IN", { style: "currency", currency: cur, maximumFractionDigits: 2 }).format(n);
+  } catch {
+    return `${cur} ${n}`;
+  }
+}
 function explainShopifyError(raw) {
   const msg2 = String(raw ?? "");
   if (/protected customer data|not approved to access|ACCESS_DENIED|access denied/i.test(msg2)) {
@@ -1376,7 +1470,7 @@ function mapOrder(o) {
     closed: !!o.closedAt,
     financialStatus: o.displayFinancialStatus ?? null,
     fulfillmentStatus: o.displayFulfillmentStatus ?? null,
-    total: money2 ? `${money2.currencyCode} ${money2.amount}` : null,
+    total: money2 ? formatMoney(money2.amount, money2.currencyCode) || null : null,
     statusUrl: o.statusPageUrl ?? null,
     customerName: [(_b = o.customer) == null ? void 0 : _b.firstName, (_c = o.customer) == null ? void 0 : _c.lastName].filter(Boolean).join(" ") || null,
     phones: [o.phone, (_d = o.customer) == null ? void 0 : _d.phone, (_f = (_e = o.customer) == null ? void 0 : _e.defaultPhoneNumber) == null ? void 0 : _f.phoneNumber, (_g = o.shippingAddress) == null ? void 0 : _g.phone, (_h = o.billingAddress) == null ? void 0 : _h.phone].filter(Boolean),
@@ -1482,10 +1576,10 @@ async function getOrdersByIds(shop, ids) {
 async function listOrders(shop, opts) {
   var _a2, _b, _c;
   const q = (_a2 = opts.search) == null ? void 0 : _a2.trim();
-  const phone = normalizePhone(q ?? "");
+  const phone2 = normalizePhone(q ?? "");
   let query = "";
   if (q) {
-    if (phone) query = `phone:${phoneSearchVariants(phone)[0]}`;
+    if (phone2) query = `phone:${phoneSearchVariants(phone2)[0]}`;
     else if (parseOrderRef(q)) query = `name:${parseOrderRef(q).name}`;
     else query = esc(q);
   }
@@ -1508,11 +1602,7 @@ const PRODUCT_FIELDS = `
   variants(first: 5) { nodes { sku title price } }
 `;
 function money$3(amount, currency) {
-  try {
-    return new Intl.NumberFormat("en-IN", { style: "currency", currency, maximumFractionDigits: 2 }).format(Number(amount));
-  } catch {
-    return `${currency} ${amount}`;
-  }
+  return formatMoney(amount, currency);
 }
 function mapProduct(p) {
   var _a2, _b, _c, _d, _e, _f, _g;
@@ -1662,12 +1752,12 @@ async function both(shop, shopify2, ims, empty) {
   if (!found && (sFail || iFail)) throw sFail ? a.reason : b.reason;
   return { shopify: sv, ims: iv };
 }
-async function findOrdersEverywhere(shop, phone) {
+async function findOrdersEverywhere(shop, phone2) {
   const cfg = imsConfig();
-  const r = await both(shop, () => findOrdersByPhone(shop, phone), cfg ? () => imsLookup(cfg, { phone }) : null, (v) => v.length === 0);
-  return ownedBy(mergeOrders(r.shopify ?? [], r.ims ?? []), phone);
+  const r = await both(shop, () => findOrdersByPhone(shop, phone2), cfg ? () => imsLookup(cfg, { phone: phone2 }) : null, (v) => v.length === 0);
+  return ownedBy(mergeOrders(r.shopify ?? [], r.ims ?? []), phone2);
 }
-async function findOrderEverywhere(shop, number, phone) {
+async function findOrderEverywhere(shop, number, phone2) {
   const cfg = imsConfig();
   const r = await both(
     shop,
@@ -1678,7 +1768,7 @@ async function findOrderEverywhere(shop, number, phone) {
     cfg ? () => imsLookup(cfg, { order: number }) : null,
     (v) => v.length === 0
   );
-  return ownedBy(mergeOrders(r.shopify ?? [], r.ims ?? []), phone)[0] ?? null;
+  return ownedBy(mergeOrders(r.shopify ?? [], r.ims ?? []), phone2)[0] ?? null;
 }
 async function getOrdersEverywhere(shop, ids) {
   const shopifyIds = ids.filter((i) => !i.startsWith("ims:"));
@@ -1835,7 +1925,7 @@ function formatOrder(o, lang = "en") {
   const orderStatus = o.cancelled ? L.cancelled : o.closed ? L.closed : L.active;
   const items = o.items.map((i) => `${i.title} × ${i.quantity}`).join(", ");
   const blocks = [
-    compose({
+    compose$1({
       intro: L.intro,
       points: [
         `${L.orderNo}: ${o.name}`,
@@ -1853,7 +1943,7 @@ function formatOrder(o, lang = "en") {
       const many = o.tracking.length > 1;
       const shipments = o.tracking.map((t, i) => {
         const delivered = t.status === "DELIVERED";
-        return compose({
+        return compose$1({
           intro: many ? `${L.shipment} ${i + 1}:` : void 0,
           points: [
             t.company && `${L.courier}: ${t.company}`,
@@ -1881,7 +1971,7 @@ function productList(items, lang = "en") {
   const L = labelsFor(lang);
   const rows = items.map((p) => `*${p.title}*${p.price ? `
    ${L.price}: ${p.price}` : ""}${p.compareAtPrice ? ` (~${p.compareAtPrice}~)` : ""}`);
-  return compose({ intro: L.found, points: rows, next: L.pickProduct(items.length) });
+  return compose$1({ intro: L.found, points: rows, next: L.pickProduct(items.length) });
 }
 async function update(conv, data) {
   Object.assign(conv, data);
@@ -1944,12 +2034,12 @@ async function orderOverview(shop, conv, s, deps, lang) {
   if (orders.length === 1) return deliverOrder(shop, conv, orders[0], s);
   const shown = orders.slice(0, 5);
   await update(conv, { state: "awaiting_order_selection", pendingOrders: JSON.stringify(shown.map((o) => o.source === "ims" ? `ims:${o.name}` : o.id)) });
-  const list2 = numbered(
+  const list = numbered(
     shown.map((o) => `${o.name} — ${o.cancelled ? L.cancelled : (lang === "hi" ? statusHi(o.fulfillmentStatus) : null) ?? (titleCase(o.fulfillmentStatus) || L.unknownStatus)} (${shortDate(o.createdAt, L.locale) ?? "—"})`)
   );
   return `${t.chooseOrder}
 
-${list2}`;
+${list}`;
 }
 async function phoneFlow(shop, conv, typed, s, deps, lang) {
   const sender = normalizePhone(conv.phone);
@@ -1989,11 +2079,11 @@ async function decideReply(shop, conv, msg2, s, fixedLang, deps = defaultDeps) {
       pending = JSON.parse(conv.pendingOrders || "{}");
     } catch {
     }
-    const phone = findPhoneInText(text2);
+    const phone2 = findPhoneInText(text2);
     const marked = findMarkedOrderRef(text2);
-    const ref = marked && !refIsPhone(marked) ? marked : findLooseOrderRef(text2) ?? (phone ? null : parseOrderRef(text2));
+    const ref = marked && !refIsPhone(marked) ? marked : findLooseOrderRef(text2) ?? (phone2 ? null : parseOrderRef(text2));
     let checked;
-    if (pending.order && phone) checked = await deps.findOrder(shop, pending.order, phone);
+    if (pending.order && phone2) checked = await deps.findOrder(shop, pending.order, phone2);
     else if (pending.phone && ref) checked = await deps.findOrder(shop, ref.key, pending.phone);
     if (checked) return deliverOrder(shop, conv, checked, s);
     if (checked === null) {
@@ -2078,8 +2168,8 @@ ${LABELS[ui].pick(ids.length)}`;
     }
     const marked = findMarkedOrderRef(text2);
     if (marked && !refIsPhone(marked)) return orderByNumberFlow(shop, conv, marked.key, s, deps);
-    const phone = findPhoneInText(text2);
-    if (phone) return phoneFlow(shop, conv, phone, s, deps, lang);
+    const phone2 = findPhoneInText(text2);
+    if (phone2) return phoneFlow(shop, conv, phone2, s, deps, lang);
     const ref = findLooseOrderRef(text2) ?? parseOrderRef(text2);
     if (ref) return orderByNumberFlow(shop, conv, ref.key, s, deps);
   }
@@ -2183,11 +2273,11 @@ async function acknowledgeWaiting(shop, conv, s, inboundId, send = sendAndRecord
 }
 async function handleInbound(shop, msg2) {
   var _a2, _b, _c, _d;
-  const phone = normalizePhone(msg2.from) ?? `+${msg2.from.replace(/\D/g, "")}`;
+  const phone2 = normalizePhone(msg2.from) ?? `+${msg2.from.replace(/\D/g, "")}`;
   const now = /* @__PURE__ */ new Date();
   const conv = await prisma.conversation.upsert({
-    where: { shop_phone: { shop, phone } },
-    create: { shop, phone, customerName: msg2.name ?? null, lastInboundAt: now, lastMessageAt: now },
+    where: { shop_phone: { shop, phone: phone2 } },
+    create: { shop, phone: phone2, customerName: msg2.name ?? null, lastInboundAt: now, lastMessageAt: now },
     update: {
       lastInboundAt: now,
       lastMessageAt: now,
@@ -2211,6 +2301,9 @@ async function handleInbound(shop, msg2) {
   }).catch(() => void 0);
   const s = await getSettings(shop);
   if (!s.enabled) return;
+  const wake = applyWakeRule(msg2.text, isSavedContact(phone2, s.savedNumbers));
+  if (!wake.reply) return;
+  if (wake.text !== msg2.text) msg2 = { ...msg2, text: wake.text };
   if (conv.mode === "human") {
     await acknowledgeWaiting(shop, conv, s, msg2.id).catch(() => void 0);
     return;
@@ -2222,12 +2315,12 @@ async function handleInbound(shop, msg2) {
   let work = msg2;
   if (rawText && (detected === "other" || detected === null && conv.lang.startsWith("x:"))) {
     if (detected === "other") {
-      const t = rateLimited(`tr:${phone}`, 60, 36e5) ? null : await translateToEnglish(shop, rawText);
+      const t = rateLimited(`tr:${phone2}`, 60, 36e5) ? null : await translateToEnglish(shop, rawText);
       if (!t) {
         const body = `${s.templates.unsupportedLanguage}
 
 ${TEMPLATES_HI.unsupportedLanguage}`;
-        const sent2 = await sendAndRecord({ shop, conversationId: conv.id, to: phone, body, sender: "bot", inReplyTo: key2 });
+        const sent2 = await sendAndRecord({ shop, conversationId: conv.id, to: phone2, body, sender: "bot", inReplyTo: key2 });
         if (!sent2.ok) throw new Error(sent2.error ?? "send failed");
         return;
       }
@@ -2244,7 +2337,7 @@ ${TEMPLATES_HI.unsupportedLanguage}`;
     decided = await decideReply(shop, view, work, s, pivot ? "en" : void 0);
   } catch (e) {
     await logEvent({ shop, source: "bot", level: "error", event: "lookup_failed", detail: String(e.message) });
-    await sendAndRecord({ shop, conversationId: conv.id, to: phone, body: tpl(view, s).lookupError, sender: "bot", inReplyTo: `${msg2.id}:err` });
+    await sendAndRecord({ shop, conversationId: conv.id, to: phone2, body: tpl(view, s).lookupError, sender: "bot", inReplyTo: `${msg2.id}:err` });
     throw e;
   }
   const out = typeof decided === "string" ? { text: decided } : decided;
@@ -2256,7 +2349,7 @@ ${TEMPLATES_HI.unsupportedLanguage}`;
       const img = await sendAndRecord({
         shop,
         conversationId: conv.id,
-        to: phone,
+        to: phone2,
         body: out.image.caption,
         sender: "bot",
         inReplyTo: `${key2}:img`,
@@ -2266,7 +2359,7 @@ ${TEMPLATES_HI.unsupportedLanguage}`;
     }
   }
   if (pivot) text2 = await translateReply(shop, text2, pivot) ?? text2;
-  const sent = await sendAndRecord({ shop, conversationId: conv.id, to: phone, body: text2, sender: "bot", inReplyTo: key2 });
+  const sent = await sendAndRecord({ shop, conversationId: conv.id, to: phone2, body: text2, sender: "bot", inReplyTo: key2 });
   if (!sent.ok) throw new Error(sent.error ?? "send failed");
 }
 async function fetchProductImage(url) {
@@ -2406,13 +2499,16 @@ async function startBridge() {
     const sock = makeWASocket({
       auth: state2,
       version,
-      browser: Browsers.macOS("Orderly"),
+      browser: Browsers.macOS("ShopPilot"),
       printQRInTerminal: false,
       syncFullHistory: false,
       markOnlineOnConnect: false
     });
     bridge.sock = sock;
     sock.ev.on("creds.update", saveCreds);
+    sock.ev.on("contacts.upsert", (l) => rememberContacts(l));
+    sock.ev.on("contacts.update", (l) => rememberContacts(l));
+    sock.ev.on("messaging-history.set", (h) => rememberContacts(h == null ? void 0 : h.contacts));
     sock.ev.on("connection.update", async (u) => {
       var _a2, _b, _c, _d, _e, _f;
       if (u.qr) {
@@ -2467,8 +2563,8 @@ async function startBridge() {
         const accept = type === "notify" || type === "append" && ageSec < 180;
         if (!accept || !parsed) {
           if (!((_c = m == null ? void 0 : m.key) == null ? void 0 : _c.fromMe)) {
-            const why = `${type}; age=${Math.round(ageSec)}s; jid=${String(((_d = m == null ? void 0 : m.key) == null ? void 0 : _d.remoteJid) ?? "").split("@")[1] ?? "?"}; content=${Object.keys((m == null ? void 0 : m.message) ?? {}).join(",") || "none"}`;
-            await logEvent({ source: "whatsapp", event: "bridge_message_ignored", detail: why });
+            const why2 = `${type}; age=${Math.round(ageSec)}s; jid=${String(((_d = m == null ? void 0 : m.key) == null ? void 0 : _d.remoteJid) ?? "").split("@")[1] ?? "?"}; content=${Object.keys((m == null ? void 0 : m.message) ?? {}).join(",") || "none"}`;
+            await logEvent({ source: "whatsapp", event: "bridge_message_ignored", detail: why2 });
           }
           continue;
         }
@@ -2498,10 +2594,10 @@ async function startBridge() {
 async function refreshAvatar(from, jid) {
   var _a2;
   try {
-    const phone = normalizePhone(from) ?? `+${from.replace(/\D/g, "")}`;
-    const conv = await prisma.conversation.findFirst({ where: { phone }, select: { id: true, avatarAt: true } });
+    const phone2 = normalizePhone(from) ?? `+${from.replace(/\D/g, "")}`;
+    const conv = await prisma.conversation.findFirst({ where: { phone: phone2 }, select: { id: true, avatarAt: true } });
     if (!conv || conv.avatarAt && Date.now() - conv.avatarAt.getTime() < 24 * 36e5) return;
-    let file = null;
+    let file2 = null;
     for (const j of [jid, `${from.replace(/\D/g, "")}@s.whatsapp.net`]) {
       const url = await ((_a2 = bridge.sock) == null ? void 0 : _a2.profilePictureUrl(j, "image").catch(() => void 0));
       if (!url) continue;
@@ -2509,11 +2605,11 @@ async function refreshAvatar(from, jid) {
       if (!res.ok) continue;
       const buf = Buffer.from(await res.arrayBuffer());
       if (buf.length > 0 && buf.length <= MAX_MEDIA_BYTES) {
-        file = saveMedia(buf, "image/jpeg").file;
+        file2 = saveMedia(buf, "image/jpeg").file;
         break;
       }
     }
-    await prisma.conversation.update({ where: { id: conv.id }, data: { avatarAt: /* @__PURE__ */ new Date(), ...file ? { avatarFile: file } : {} } });
+    await prisma.conversation.update({ where: { id: conv.id }, data: { avatarAt: /* @__PURE__ */ new Date(), ...file2 ? { avatarFile: file2 } : {} } });
   } catch {
   }
 }
@@ -2572,11 +2668,11 @@ async function bridgeSendMedia(toPhone, media, caption) {
   const jid = bridge.jids.get(digits2) ?? `${digits2}@s.whatsapp.net`;
   const buffer = readFileSync(filePath);
   const text2 = caption.trim() || void 0;
-  const content2 = media.kind === "image" ? { image: buffer, caption: text2, mimetype: media.mime } : media.kind === "video" ? { video: buffer, caption: text2, mimetype: media.mime } : media.kind === "audio" ? { audio: buffer, mimetype: media.mime } : { document: buffer, caption: text2, mimetype: media.mime, fileName: media.name ?? media.file };
+  const content = media.kind === "image" ? { image: buffer, caption: text2, mimetype: media.mime } : media.kind === "video" ? { video: buffer, caption: text2, mimetype: media.mime } : media.kind === "audio" ? { audio: buffer, mimetype: media.mime } : { document: buffer, caption: text2, mimetype: media.mime, fileName: media.name ?? media.file };
   try {
     const sock = await liveSock(1e4);
     if (!sock) return { ok: false, error: NOT_CONNECTED };
-    const res = await sock.sendMessage(jid, content2);
+    const res = await sock.sendMessage(jid, content);
     return { ok: true, id: ((_a2 = res == null ? void 0 : res.key) == null ? void 0 : _a2.id) ?? `qr-${Date.now()}` };
   } catch (e) {
     return { ok: false, error: redact(e.message) };
@@ -2837,35 +2933,35 @@ const SHEET_HEADERS = [
 ];
 const REMARKS_COL = "W";
 const day$1 = (d) => d ? d.toISOString().slice(0, 10) : "";
-const text$1 = (s) => s ?? "";
+const text = (s) => s ?? "";
 function rowToValues(r) {
   return [
     day$1(r.callDate),
-    text$1(r.employeeName),
-    text$1(r.orderName),
+    text(r.employeeName),
+    text(r.orderName),
     day$1(r.orderDate),
-    text$1(r.customerName),
-    text$1(r.productName),
+    text(r.customerName),
+    text(r.productName),
     r.qty ?? 0,
     r.amount ?? "",
-    text$1(r.paymentType),
-    text$1(r.primaryMobile),
-    text$1(r.altMobile ?? r.altMobileShopify),
-    text$1(r.fullAddress),
-    text$1(r.landmark),
-    text$1(r.city),
-    text$1(r.state),
-    text$1(r.pinCode),
-    text$1(r.addressConfirmed),
-    text$1(r.codConfirmed),
-    text$1(r.deliveryAvailable),
-    text$1(r.customerWants),
-    text$1(r.callStatus),
-    text$1(r.finalDecision),
-    r.isManual ? r.status : text$1(r.remarks),
-    text$1(r.employeeRemark),
+    text(r.paymentType),
+    text(r.primaryMobile),
+    text(r.altMobile ?? r.altMobileShopify),
+    text(r.fullAddress),
+    text(r.landmark),
+    text(r.city),
+    text(r.state),
+    text(r.pinCode),
+    text(r.addressConfirmed),
+    text(r.codConfirmed),
+    text(r.deliveryAvailable),
+    text(r.customerWants),
+    text(r.callStatus),
+    text(r.finalDecision),
+    r.isManual ? r.status : text(r.remarks),
+    text(r.employeeRemark),
     day$1(r.dispatchDate ?? r.dispatchDateShopify),
-    text$1(r.awb ?? r.trackingNo),
+    text(r.awb ?? r.trackingNo),
     r.deliveryCharges ?? r.shippingCharge ?? ""
   ];
 }
@@ -2928,7 +3024,7 @@ function appsScriptCode(token) {
   const colors = JSON.stringify([...COUNTER_COLORS]);
   const formulas = JSON.stringify(counterFormulas());
   return [
-    "// Orderly: receives orders from your app and writes them into this sheet.",
+    "// ShopPilot: receives orders from your app and writes them into this sheet.",
     "// Layout: all-time counters in rows 1-2 (A:E), last-7-days counters in rows 1-3 (G onward), headers in row 4, orders from row 5.",
     `var TOKEN = '${token}';`,
     `var LABELS = ${labels};`,
@@ -3043,7 +3139,7 @@ async function accessToken(email, privateKey) {
   const hit = mem.tokens.get(email);
   if (hit && hit.exp > Date.now() + 6e4) return hit.token;
   const now = Math.floor(Date.now() / 1e3);
-  const head = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const head2 = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const claim = b64url(JSON.stringify({
     iss: email,
     scope: "https://www.googleapis.com/auth/spreadsheets",
@@ -3051,11 +3147,11 @@ async function accessToken(email, privateKey) {
     iat: now,
     exp: now + 3600
   }));
-  const sig = createSign("RSA-SHA256").update(`${head}.${claim}`).sign(privateKey);
+  const sig = createSign("RSA-SHA256").update(`${head2}.${claim}`).sign(privateKey);
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: `${head}.${claim}.${b64url(sig)}` }),
+    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: `${head2}.${claim}.${b64url(sig)}` }),
     signal: AbortSignal.timeout(15e3)
   });
   const j = await res.json().catch(() => ({}));
@@ -3114,8 +3210,8 @@ const rgb = (hex) => ({
 });
 async function ensureTabs(token, id2) {
   var _a2;
-  const meta = await api$2(token, `${id2}?fields=properties.title,sheets(properties,conditionalFormats)`);
-  const tabs = (meta.sheets ?? []).map((s) => ({ ...s.properties, rules: (s.conditionalFormats ?? []).length }));
+  const meta2 = await api$2(token, `${id2}?fields=properties.title,sheets(properties,conditionalFormats)`);
+  const tabs = (meta2.sheets ?? []).map((s) => ({ ...s.properties, rules: (s.conditionalFormats ?? []).length }));
   let data = tabs.find((t) => t.title === TAB);
   if (!data) {
     const r = await api$2(token, `${id2}:batchUpdate`, {
@@ -3124,7 +3220,7 @@ async function ensureTabs(token, id2) {
     });
     data = { ...r.replies[0].addSheet.properties, rules: 0 };
   }
-  return { title: String(((_a2 = meta.properties) == null ? void 0 : _a2.title) ?? ""), dataId: data.sheetId, rules: data.rules };
+  return { title: String(((_a2 = meta2.properties) == null ? void 0 : _a2.title) ?? ""), dataId: data.sheetId, rules: data.rules };
 }
 async function format(token, id2, dataId, oldRules) {
   const rules = [
@@ -3146,8 +3242,8 @@ async function format(token, id2, dataId, oldRules) {
         { repeatCell: { range: { sheetId: dataId, startRowIndex: 1, endRowIndex: 2, endColumnIndex: 5 }, cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 18, foregroundColor: rgb("#38291F") }, horizontalAlignment: "LEFT" } }, fields: "userEnteredFormat(textFormat,horizontalAlignment)" } },
         ...COUNTER_COLORS.map((c, i) => ({ repeatCell: { range: { sheetId: dataId, startRowIndex: 0, endRowIndex: 2, startColumnIndex: i, endColumnIndex: i + 1 }, cell: { userEnteredFormat: { backgroundColor: rgb(c) } }, fields: "userEnteredFormat.backgroundColor" } })),
         { repeatCell: { range: { sheetId: dataId, startRowIndex: HEADER_ROW - 1, endRowIndex: HEADER_ROW }, cell: { userEnteredFormat: { backgroundColor: rgb("#EDE5D8"), textFormat: { bold: true, foregroundColor: rgb("#38291F") } } }, fields: "userEnteredFormat(backgroundColor,textFormat)" } },
-        ...rules.map(([re, color], index2) => ({
-          addConditionalFormatRule: { index: index2, rule: { ranges: [range], booleanRule: { condition: { type: "CUSTOM_FORMULA", values: [{ userEnteredValue: `=REGEXMATCH($${REMARKS_COL}${FIRST_DATA_ROW},"${re}")` }] }, format: { backgroundColor: rgb(color) } } } }
+        ...rules.map(([re, color], index) => ({
+          addConditionalFormatRule: { index, rule: { ranges: [range], booleanRule: { condition: { type: "CUSTOM_FORMULA", values: [{ userEnteredValue: `=REGEXMATCH($${REMARKS_COL}${FIRST_DATA_ROW},"${re}")` }] }, format: { backgroundColor: rgb(color) } } } }
         })),
         // 7-day counters: merged date label, small names, big numbers, same colours as the all-time cards
         ...Array.from({ length: WEEKLY_WEEKS }, (_, w) => {
@@ -3445,26 +3541,181 @@ function loginErrorMessage(loginErrors) {
   }
   return {};
 }
-const index = "_index_1hqgz_1";
-const heading = "_heading_1hqgz_21";
-const text = "_text_1hqgz_23";
-const content = "_content_1hqgz_43";
-const form = "_form_1hqgz_53";
-const label$1 = "_label_1hqgz_69";
-const input = "_input_1hqgz_85";
-const button = "_button_1hqgz_93";
-const list = "_list_1hqgz_101";
+const page = "_page_pz6r0_3";
+const bg = "_bg_pz6r0_27";
+const blob = "_blob_pz6r0_28";
+const drift = "_drift_pz6r0_1";
+const b1 = "_b1_pz6r0_29";
+const b2 = "_b2_pz6r0_30";
+const b3 = "_b3_pz6r0_31";
+const grid = "_grid_pz6r0_32";
+const nav = "_nav_pz6r0_42";
+const brand = "_brand_pz6r0_49";
+const logo = "_logo_pz6r0_50";
+const navLinks = "_navLinks_pz6r0_54";
+const navCta = "_navCta_pz6r0_57";
+const footer = "_footer_pz6r0_60";
+const hero = "_hero_pz6r0_63";
+const pill = "_pill_pz6r0_67";
+const title = "_title_pz6r0_71";
+const gradient = "_gradient_pz6r0_72";
+const shine = "_shine_pz6r0_1";
+const lead = "_lead_pz6r0_77";
+const startBox = "_startBox_pz6r0_78";
+const trust = "_trust_pz6r0_79";
+const rise = "_rise_pz6r0_83";
+const form = "_form_pz6r0_87";
+const formRow = "_formRow_pz6r0_88";
+const input = "_input_pz6r0_93";
+const button = "_button_pz6r0_97";
+const hint = "_hint_pz6r0_107";
+const phoneWrap = "_phoneWrap_pz6r0_111";
+const pulse = "_pulse_pz6r0_1";
+const phone = "_phone_pz6r0_111";
+const bob = "_bob_pz6r0_1";
+const phoneTop = "_phoneTop_pz6r0_123";
+const avatar = "_avatar_pz6r0_126";
+const online = "_online_pz6r0_127";
+const blink = "_blink_pz6r0_1";
+const chat = "_chat_pz6r0_129";
+const bubble = "_bubble_pz6r0_133";
+const pop = "_pop_pz6r0_1";
+const me = "_me_pz6r0_135";
+const bot = "_bot_pz6r0_136";
+const dots = "_dots_pz6r0_138";
+const dot = "_dot_pz6r0_138";
+const compose = "_compose_pz6r0_143";
+const floaty = "_floaty_pz6r0_145";
+const floatY = "_floatY_pz6r0_1";
+const f1 = "_f1_pz6r0_151";
+const f2 = "_f2_pz6r0_152";
+const f3 = "_f3_pz6r0_153";
+const stats = "_stats_pz6r0_157";
+const stat = "_stat_pz6r0_157";
+const section = "_section_pz6r0_165";
+const head = "_head_pz6r0_166";
+const kicker = "_kicker_pz6r0_167";
+const splitText = "_splitText_pz6r0_168";
+const cta = "_cta_pz6r0_168";
+const cards = "_cards_pz6r0_171";
+const card = "_card_pz6r0_171";
+const green = "_green_pz6r0_183";
+const teal = "_teal_pz6r0_183";
+const amber = "_amber_pz6r0_183";
+const sky = "_sky_pz6r0_183";
+const violet = "_violet_pz6r0_184";
+const rose = "_rose_pz6r0_184";
+const icon = "_icon_pz6r0_185";
+const split = "_split_pz6r0_168";
+const reverse = "_reverse_pz6r0_199";
+const ticks = "_ticks_pz6r0_201";
+const flow = "_flow_pz6r0_205";
+const flowStep = "_flowStep_pz6r0_207";
+const step$1 = "_step_pz6r0_226";
+const files = "_files_pz6r0_214";
+const file = "_file_pz6r0_214";
+const csv = "_csv_pz6r0_216";
+const rowIn = "_rowIn_pz6r0_1";
+const tree = "_tree_pz6r0_222";
+const indent = "_indent_pz6r0_223";
+const steps = "_steps_pz6r0_226";
+const stepNo = "_stepNo_pz6r0_228";
+const why = "_why_pz6r0_235";
+const whyItem = "_whyItem_pz6r0_236";
+const faq = "_faq_pz6r0_242";
+const ready = "_ready_pz6r0_265";
 const styles$2 = {
-  index,
-  heading,
-  text,
-  content,
+  page,
+  bg,
+  blob,
+  drift,
+  b1,
+  b2,
+  b3,
+  grid,
+  nav,
+  brand,
+  logo,
+  navLinks,
+  navCta,
+  footer,
+  hero,
+  pill,
+  title,
+  gradient,
+  shine,
+  lead,
+  startBox,
+  trust,
+  rise,
   form,
-  label: label$1,
+  formRow,
   input,
   button,
-  list
+  hint,
+  phoneWrap,
+  pulse,
+  phone,
+  bob,
+  phoneTop,
+  avatar,
+  online,
+  blink,
+  chat,
+  bubble,
+  pop,
+  me,
+  bot,
+  dots,
+  dot,
+  compose,
+  floaty,
+  floatY,
+  f1,
+  f2,
+  f3,
+  stats,
+  stat,
+  section,
+  head,
+  kicker,
+  splitText,
+  cta,
+  cards,
+  card,
+  green,
+  teal,
+  amber,
+  sky,
+  violet,
+  rose,
+  icon,
+  split,
+  reverse,
+  ticks,
+  flow,
+  flowStep,
+  step: step$1,
+  files,
+  file,
+  csv,
+  rowIn,
+  tree,
+  indent,
+  steps,
+  stepNo,
+  why,
+  whyItem,
+  faq,
+  ready,
+  "in": "_in_pz6r0_93"
 };
+const meta = () => [{
+  title: "ShopPilot: WhatsApp bot, order updates and store tools for Shopify"
+}, {
+  name: "description",
+  content: "JAZZ answers your customers on WhatsApp 24/7: order status, Delhivery tracking and product questions. Plus order sheet, product scrapper, image editor and SEO tools in one Shopify app."
+}];
 const loader$r = async ({
   request
 }) => {
@@ -3484,65 +3735,720 @@ const action$i = async ({
     errors
   };
 };
+const FEATURES = [{
+  icon: Bot,
+  tone: "green",
+  title: "JAZZ, your WhatsApp bot",
+  text: "Answers customers in short numbered steps, in English, Hindi and Hinglish.",
+  points: ["Order status with order number + registered phone check", "Delhivery tracking ID and a link that opens pre-filled", "Product search, price in ₹, combo contents"]
+}, {
+  icon: MessagesSquare,
+  tone: "teal",
+  title: "Live Inbox",
+  text: "Take over any chat in one click when a customer needs a person.",
+  points: ["Photos, files and quick replies", "JAZZ goes quiet while an agent talks", "Every message stays in one place"]
+}, {
+  icon: BellRing,
+  tone: "amber",
+  title: "Support alerts",
+  text: "When a customer asks for the support team, you see it instantly.",
+  points: ["Animated pop-up with sound", "Banner on the dashboard", "Customer is told help is coming"]
+}, {
+  icon: PackageSearch,
+  tone: "sky",
+  title: "Product enquiries",
+  text: "See which products customers ask for that you do not sell yet.",
+  points: ["Every enquiry saved with the customer", "Spot demand before competitors", "One list, easy to act on"]
+}, {
+  icon: ClipboardList,
+  tone: "violet",
+  title: "Order Update sheet",
+  text: "Your orders and a Google Sheet stay in sync, by day, week, month and year.",
+  points: ["Colour-coded by status", "Team fills dispatch, AWB and COD details", "Add manual orders too"]
+}, {
+  icon: ScanSearch,
+  tone: "rose",
+  title: "Product Scrapper",
+  text: "Find new products from other sites and skip the ones you already sell.",
+  points: ["CSV: name, description, link and SKU", "SKU as BRAND-MODEL, like HP-126snw", "ZIP with one image folder per SKU (1, 2, 3...)"]
+}, {
+  icon: WandSparkles,
+  tone: "green",
+  title: "Image Editor",
+  text: "Clean up product photos in bulk and push them back to Shopify.",
+  points: ["Background removal and resize", "Bulk jobs with progress", "Undo whenever you want"]
+}, {
+  icon: SearchCheck,
+  tone: "teal",
+  title: "SEO fixer",
+  text: "Score every product, then fix titles, descriptions and image alt text in bulk.",
+  points: ["Clear score per product", "Fix through a CSV, review before applying", "Undo any batch"]
+}];
+const STEPS = [{
+  n: "1",
+  title: "Install on your store",
+  text: "Enter your Shopify store address and approve the app. No coding, no passwords to create."
+}, {
+  n: "2",
+  title: "Link WhatsApp",
+  text: "Scan one QR code. JAZZ starts answering the same minute."
+}, {
+  n: "3",
+  title: "Relax, then step in",
+  text: "JAZZ handles the routine questions. Your team gets an alert when a person is needed."
+}];
+const FAQ = [{
+  q: "Will JAZZ reply to my friends and family?",
+  a: "No. Numbers saved in your phone are ignored. A saved contact can still talk to JAZZ by starting the message with !, # or $ (for example #W1219)."
+}, {
+  q: "Is my customers' order data safe?",
+  a: "Order details are shared only when the customer's order number and registered phone number match. Nothing else is revealed."
+}, {
+  q: "Which languages does JAZZ speak?",
+  a: "English, Hindi and Hinglish out of the box. Messages in other languages are translated, answered, and translated back."
+}, {
+  q: "How does Delhivery tracking work?",
+  a: "JAZZ sends the courier, the tracking ID and a Delhivery link. The link opens Delhivery with the tracking ID already filled in."
+}, {
+  q: "Can a person take over a chat?",
+  a: "Yes. Open the Live Inbox, reply as an agent, and JAZZ stays quiet until you hand the chat back."
+}];
+const DEMO = [{
+  who: "me",
+  lines: "Hi"
+}, {
+  who: "bot",
+  lines: /* @__PURE__ */ jsxs(Fragment, {
+    children: ["Hi, I'm JAZZ! 👋 Welcome to WERY.", /* @__PURE__ */ jsx("br", {}), "How can I help you today?", /* @__PURE__ */ jsx("br", {}), /* @__PURE__ */ jsx("br", {}), "1. Find a Product", /* @__PURE__ */ jsx("br", {}), "2. Check Order Status", /* @__PURE__ */ jsx("br", {}), "3. Track My Shipment"]
+  })
+}, {
+  who: "me",
+  lines: "#W1219"
+}, {
+  who: "bot",
+  lines: /* @__PURE__ */ jsxs(Fragment, {
+    children: ["Your order details: 📦", /* @__PURE__ */ jsx("br", {}), "1. Order Number: #W1219", /* @__PURE__ */ jsx("br", {}), "2. Fulfillment: Fulfilled", /* @__PURE__ */ jsx("br", {}), "3. Total: ₹1,499", /* @__PURE__ */ jsx("br", {}), /* @__PURE__ */ jsx("br", {}), "Tracking 🚚", /* @__PURE__ */ jsx("br", {}), "1. Courier: Delhivery", /* @__PURE__ */ jsx("br", {}), "2. Tracking ID: DL123456789", /* @__PURE__ */ jsx("br", {}), "3. Link: ", /* @__PURE__ */ jsx("u", {
+      children: "delhivery.com/track-v2/package/DL123456789"
+    })]
+  })
+}];
+function useDemo() {
+  const [shown, setShown] = useState(DEMO.length);
+  const [typing, setTyping] = useState(false);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let dead = false;
+    const timers = [];
+    const at = (ms, fn) => timers.push(window.setTimeout(() => !dead && fn(), ms));
+    const play = () => {
+      setShown(0);
+      setTyping(false);
+      at(700, () => setShown(1));
+      at(1300, () => setTyping(true));
+      at(2700, () => {
+        setTyping(false);
+        setShown(2);
+      });
+      at(5200, () => setShown(3));
+      at(5800, () => setTyping(true));
+      at(7400, () => {
+        setTyping(false);
+        setShown(4);
+      });
+      at(13500, play);
+    };
+    play();
+    return () => {
+      dead = true;
+      timers.forEach(clearTimeout);
+    };
+  }, []);
+  return {
+    shown,
+    typing
+  };
+}
+function useReveal(root2) {
+  useEffect(() => {
+    const el = root2.current;
+    if (!el) return;
+    const items = Array.from(el.querySelectorAll("[data-reveal]"));
+    const show = (n) => n.classList.add(styles$2.in);
+    const vh = window.innerHeight;
+    items.forEach((n) => n.getBoundingClientRect().top < vh * 0.95 && show(n));
+    el.classList.add(styles$2.ready);
+    const io = new IntersectionObserver((entries) => entries.forEach((e) => {
+      if (e.isIntersecting) {
+        show(e.target);
+        io.unobserve(e.target);
+      }
+    }), {
+      threshold: 0.12
+    });
+    items.forEach((n) => !n.classList.contains(styles$2.in) && io.observe(n));
+    return () => io.disconnect();
+  }, [root2]);
+}
+function Counter({
+  to,
+  suffix = ""
+}) {
+  const [v, setV] = useState(to);
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    setV(0);
+    const io = new IntersectionObserver(([e]) => {
+      if (!e.isIntersecting) return;
+      io.disconnect();
+      const start = performance.now();
+      const tick = (t) => {
+        const p = Math.min(1, (t - start) / 1200);
+        setV(Math.round(to * (1 - Math.pow(1 - p, 3))));
+        if (p < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [to]);
+  return /* @__PURE__ */ jsxs("span", {
+    ref,
+    children: [v, suffix]
+  });
+}
+function LoginForm({
+  errors,
+  id: id2
+}) {
+  return /* @__PURE__ */ jsxs(Form, {
+    className: styles$2.form,
+    method: "post",
+    children: [/* @__PURE__ */ jsxs("div", {
+      className: styles$2.formRow,
+      children: [/* @__PURE__ */ jsx("input", {
+        id: id2,
+        className: styles$2.input,
+        type: "text",
+        name: "shop",
+        placeholder: "your-store.myshopify.com",
+        "aria-label": "Shop domain",
+        autoComplete: "off",
+        spellCheck: false
+      }), /* @__PURE__ */ jsxs("button", {
+        className: styles$2.button,
+        type: "submit",
+        children: ["Start with Shopify ", /* @__PURE__ */ jsx(ArrowRight, {
+          size: 16
+        })]
+      })]
+    }), /* @__PURE__ */ jsx("span", {
+      className: styles$2.hint,
+      role: (errors == null ? void 0 : errors.shop) ? "alert" : void 0,
+      "data-error": (errors == null ? void 0 : errors.shop) ? "1" : void 0,
+      children: (errors == null ? void 0 : errors.shop) ?? "Enter your store address, for example my-shop.myshopify.com"
+    })]
+  });
+}
 const route = UNSAFE_withComponentProps(function App2() {
   const {
     showForm
   } = useLoaderData();
   const actionData = useActionData();
   const errors = actionData == null ? void 0 : actionData.errors;
-  return /* @__PURE__ */ jsx("div", {
-    className: styles$2.index,
-    children: /* @__PURE__ */ jsxs("div", {
-      className: styles$2.content,
-      children: [/* @__PURE__ */ jsx("h1", {
-        className: styles$2.heading,
-        children: "Orderly"
-      }), /* @__PURE__ */ jsx("p", {
-        className: styles$2.text,
-        children: "WhatsApp bot, order updates and store tools for your Shopify store."
-      }), showForm && /* @__PURE__ */ jsxs(Form, {
-        className: styles$2.form,
-        method: "post",
-        children: [/* @__PURE__ */ jsxs("label", {
-          className: styles$2.label,
-          children: [/* @__PURE__ */ jsx("span", {
-            children: "Shop domain"
-          }), /* @__PURE__ */ jsx("input", {
-            className: styles$2.input,
-            type: "text",
-            name: "shop"
-          }), /* @__PURE__ */ jsx("span", {
-            children: (errors == null ? void 0 : errors.shop) ?? "e.g: my-shop-domain.myshopify.com"
-          })]
-        }), /* @__PURE__ */ jsx("button", {
-          className: styles$2.button,
-          type: "submit",
-          children: "Log in"
+  const root2 = useRef(null);
+  useReveal(root2);
+  const {
+    shown,
+    typing
+  } = useDemo();
+  return /* @__PURE__ */ jsxs("div", {
+    className: styles$2.page,
+    ref: root2,
+    children: [/* @__PURE__ */ jsxs("div", {
+      className: styles$2.bg,
+      "aria-hidden": "true",
+      children: [/* @__PURE__ */ jsx("span", {
+        className: `${styles$2.blob} ${styles$2.b1}`
+      }), /* @__PURE__ */ jsx("span", {
+        className: `${styles$2.blob} ${styles$2.b2}`
+      }), /* @__PURE__ */ jsx("span", {
+        className: `${styles$2.blob} ${styles$2.b3}`
+      }), /* @__PURE__ */ jsx("span", {
+        className: styles$2.grid
+      })]
+    }), /* @__PURE__ */ jsxs("header", {
+      className: styles$2.nav,
+      children: [/* @__PURE__ */ jsxs("a", {
+        className: styles$2.brand,
+        href: "#top",
+        "aria-label": "ShopPilot home",
+        children: [/* @__PURE__ */ jsx("span", {
+          className: styles$2.logo,
+          children: "S"
+        }), "ShopPilot"]
+      }), /* @__PURE__ */ jsxs("nav", {
+        className: styles$2.navLinks,
+        "aria-label": "Sections",
+        children: [/* @__PURE__ */ jsx("a", {
+          href: "#features",
+          children: "Features"
+        }), /* @__PURE__ */ jsx("a", {
+          href: "#how",
+          children: "How it works"
+        }), /* @__PURE__ */ jsx("a", {
+          href: "#faq",
+          children: "FAQ"
         })]
-      }), /* @__PURE__ */ jsxs("ul", {
-        className: styles$2.list,
-        children: [/* @__PURE__ */ jsxs("li", {
-          children: [/* @__PURE__ */ jsx("strong", {
-            children: "WhatsApp bot"
-          }), ". Answers order, tracking and product questions from customers automatically and hands over to you when needed."]
-        }), /* @__PURE__ */ jsxs("li", {
-          children: [/* @__PURE__ */ jsx("strong", {
-            children: "Order Update"
-          }), ". Keeps your orders and Google Sheet in sync by day, week, month and year."]
-        }), /* @__PURE__ */ jsxs("li", {
-          children: [/* @__PURE__ */ jsx("strong", {
-            children: "Store tools"
-          }), ". Product Scrapper, Image Editor and SEO checks in one place."]
+      }), /* @__PURE__ */ jsx("a", {
+        className: styles$2.navCta,
+        href: "#start",
+        children: "Log in"
+      })]
+    }), /* @__PURE__ */ jsxs("main", {
+      id: "top",
+      children: [/* @__PURE__ */ jsxs("section", {
+        className: styles$2.hero,
+        children: [/* @__PURE__ */ jsxs("div", {
+          className: styles$2.heroText,
+          children: [/* @__PURE__ */ jsxs("span", {
+            className: `${styles$2.pill} ${styles$2.rise}`,
+            children: [/* @__PURE__ */ jsx(Sparkles, {
+              size: 14
+            }), " Built for Shopify stores in India"]
+          }), /* @__PURE__ */ jsxs("h1", {
+            className: `${styles$2.title} ${styles$2.rise}`,
+            style: {
+              animationDelay: "80ms"
+            },
+            children: ["Your store's ", /* @__PURE__ */ jsx("span", {
+              className: styles$2.gradient,
+              children: "co-pilot"
+            }), " on WhatsApp"]
+          }), /* @__PURE__ */ jsx("p", {
+            className: `${styles$2.lead} ${styles$2.rise}`,
+            style: {
+              animationDelay: "160ms"
+            },
+            children: "JAZZ answers order, tracking and product questions 24/7. Your team gets the Order Update sheet, Product Scrapper, Image Editor and SEO fixer in the same app."
+          }), /* @__PURE__ */ jsx("div", {
+            id: "start",
+            className: `${styles$2.rise} ${styles$2.startBox}`,
+            style: {
+              animationDelay: "240ms"
+            },
+            children: showForm && /* @__PURE__ */ jsx(LoginForm, {
+              errors,
+              id: "shop-hero"
+            })
+          }), /* @__PURE__ */ jsxs("ul", {
+            className: `${styles$2.trust} ${styles$2.rise}`,
+            style: {
+              animationDelay: "320ms"
+            },
+            children: [/* @__PURE__ */ jsxs("li", {
+              children: [/* @__PURE__ */ jsx(Check, {
+                size: 14
+              }), " Works in English, Hindi and Hinglish"]
+            }), /* @__PURE__ */ jsxs("li", {
+              children: [/* @__PURE__ */ jsx(Check, {
+                size: 14
+              }), " Order details only after phone match"]
+            }), /* @__PURE__ */ jsxs("li", {
+              children: [/* @__PURE__ */ jsx(Check, {
+                size: 14
+              }), " Human takeover any time"]
+            })]
+          })]
+        }), /* @__PURE__ */ jsxs("div", {
+          className: `${styles$2.phoneWrap} ${styles$2.rise}`,
+          style: {
+            animationDelay: "200ms"
+          },
+          children: [/* @__PURE__ */ jsxs("div", {
+            className: styles$2.phone,
+            role: "img",
+            "aria-label": "Demo chat: a customer tracks order W1219 and JAZZ replies with the Delhivery tracking link",
+            children: [/* @__PURE__ */ jsxs("div", {
+              className: styles$2.phoneTop,
+              children: [/* @__PURE__ */ jsx("span", {
+                className: styles$2.avatar,
+                children: "J"
+              }), /* @__PURE__ */ jsxs("div", {
+                children: [/* @__PURE__ */ jsx("b", {
+                  children: "JAZZ"
+                }), /* @__PURE__ */ jsxs("small", {
+                  children: [/* @__PURE__ */ jsx("i", {
+                    className: styles$2.online
+                  }), " online"]
+                })]
+              })]
+            }), /* @__PURE__ */ jsxs("div", {
+              className: styles$2.chat,
+              children: [DEMO.slice(0, shown).map((m, i) => /* @__PURE__ */ jsx("div", {
+                className: `${styles$2.bubble} ${m.who === "me" ? styles$2.me : styles$2.bot}`,
+                children: m.lines
+              }, i)), typing && /* @__PURE__ */ jsxs("div", {
+                className: `${styles$2.bubble} ${styles$2.bot} ${styles$2.dots}`,
+                "aria-hidden": "true",
+                children: [/* @__PURE__ */ jsx("i", {}), /* @__PURE__ */ jsx("i", {}), /* @__PURE__ */ jsx("i", {})]
+              })]
+            }), /* @__PURE__ */ jsx("div", {
+              className: styles$2.compose,
+              children: "Type a message"
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: `${styles$2.floaty} ${styles$2.f1}`,
+            children: [/* @__PURE__ */ jsx(Truck, {
+              size: 16
+            }), " Delhivery link, pre-filled"]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: `${styles$2.floaty} ${styles$2.f2}`,
+            children: [/* @__PURE__ */ jsx(BellRing, {
+              size: 16
+            }), " Support request alert"]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: `${styles$2.floaty} ${styles$2.f3}`,
+            children: [/* @__PURE__ */ jsx(ShieldCheck, {
+              size: 16
+            }), " Phone-verified orders"]
+          })]
+        })]
+      }), /* @__PURE__ */ jsxs("section", {
+        className: styles$2.stats,
+        "aria-label": "At a glance",
+        children: [/* @__PURE__ */ jsxs("div", {
+          "data-reveal": true,
+          className: styles$2.stat,
+          children: [/* @__PURE__ */ jsx("b", {
+            children: "24/7"
+          }), /* @__PURE__ */ jsx("span", {
+            children: "replies, even at 3 a.m."
+          })]
+        }), /* @__PURE__ */ jsxs("div", {
+          "data-reveal": true,
+          className: styles$2.stat,
+          children: [/* @__PURE__ */ jsx("b", {
+            children: /* @__PURE__ */ jsx(Counter, {
+              to: 8
+            })
+          }), /* @__PURE__ */ jsx("span", {
+            children: "tools in one Shopify app"
+          })]
+        }), /* @__PURE__ */ jsxs("div", {
+          "data-reveal": true,
+          className: styles$2.stat,
+          children: [/* @__PURE__ */ jsx("b", {
+            children: /* @__PURE__ */ jsx(Counter, {
+              to: 3
+            })
+          }), /* @__PURE__ */ jsx("span", {
+            children: "languages out of the box"
+          })]
+        }), /* @__PURE__ */ jsxs("div", {
+          "data-reveal": true,
+          className: styles$2.stat,
+          children: [/* @__PURE__ */ jsx("b", {
+            children: /* @__PURE__ */ jsx(Counter, {
+              to: 1
+            })
+          }), /* @__PURE__ */ jsx("span", {
+            children: "QR scan to go live"
+          })]
+        })]
+      }), /* @__PURE__ */ jsxs("section", {
+        id: "features",
+        className: styles$2.section,
+        children: [/* @__PURE__ */ jsxs("div", {
+          "data-reveal": true,
+          className: styles$2.head,
+          children: [/* @__PURE__ */ jsx("span", {
+            className: styles$2.kicker,
+            children: "Everything in one place"
+          }), /* @__PURE__ */ jsx("h2", {
+            children: "One app. Eight tools. Zero juggling."
+          }), /* @__PURE__ */ jsx("p", {
+            children: "Support, order tracking, catalogue work and SEO, built to save your team hours every day."
+          })]
+        }), /* @__PURE__ */ jsx("div", {
+          className: styles$2.cards,
+          children: FEATURES.map((f, i) => /* @__PURE__ */ jsxs("article", {
+            "data-reveal": true,
+            className: `${styles$2.card} ${styles$2[f.tone]}`,
+            style: {
+              transitionDelay: `${i % 4 * 70}ms`
+            },
+            children: [/* @__PURE__ */ jsx("span", {
+              className: styles$2.icon,
+              children: /* @__PURE__ */ jsx(f.icon, {
+                size: 20
+              })
+            }), /* @__PURE__ */ jsx("h3", {
+              children: f.title
+            }), /* @__PURE__ */ jsx("p", {
+              children: f.text
+            }), /* @__PURE__ */ jsx("ul", {
+              children: f.points.map((p) => /* @__PURE__ */ jsxs("li", {
+                children: [/* @__PURE__ */ jsx(Check, {
+                  size: 13
+                }), p]
+              }, p))
+            })]
+          }, f.title))
+        })]
+      }), /* @__PURE__ */ jsx("section", {
+        className: styles$2.section,
+        children: /* @__PURE__ */ jsxs("div", {
+          className: styles$2.split,
+          children: [/* @__PURE__ */ jsxs("div", {
+            "data-reveal": true,
+            className: styles$2.splitText,
+            children: [/* @__PURE__ */ jsx("span", {
+              className: styles$2.kicker,
+              children: "Order tracking that closes the loop"
+            }), /* @__PURE__ */ jsx("h2", {
+              children: '"Where is my order?" answered in seconds'
+            }), /* @__PURE__ */ jsx("p", {
+              children: "The customer sends the order number. JAZZ checks it against the registered phone, then replies with the status, courier, tracking ID and a link that opens Delhivery with the ID already typed in."
+            }), /* @__PURE__ */ jsxs("ul", {
+              className: styles$2.ticks,
+              children: [/* @__PURE__ */ jsxs("li", {
+                children: [/* @__PURE__ */ jsx(Check, {
+                  size: 16
+                }), " Prices always in ₹"]
+              }), /* @__PURE__ */ jsxs("li", {
+                children: [/* @__PURE__ */ jsx(Check, {
+                  size: 16
+                }), " Short numbered replies, no walls of text"]
+              }), /* @__PURE__ */ jsxs("li", {
+                children: [/* @__PURE__ */ jsx(Check, {
+                  size: 16
+                }), " Works with #W1219, W1219 or a registered phone number"]
+              })]
+            })]
+          }), /* @__PURE__ */ jsx("div", {
+            "data-reveal": true,
+            className: styles$2.flow,
+            "aria-hidden": "true",
+            children: ["Customer sends #W1219", "JAZZ verifies the phone", "Order + Delhivery link sent"].map((t, i) => /* @__PURE__ */ jsxs("div", {
+              className: styles$2.flowStep,
+              style: {
+                animationDelay: `${i * 1.1}s`
+              },
+              children: [/* @__PURE__ */ jsx("span", {
+                children: i + 1
+              }), t]
+            }, t))
+          })]
+        })
+      }), /* @__PURE__ */ jsx("section", {
+        className: styles$2.section,
+        children: /* @__PURE__ */ jsxs("div", {
+          className: `${styles$2.split} ${styles$2.reverse}`,
+          children: [/* @__PURE__ */ jsxs("div", {
+            "data-reveal": true,
+            className: styles$2.files,
+            "aria-hidden": "true",
+            children: [/* @__PURE__ */ jsxs("div", {
+              className: styles$2.file,
+              children: [/* @__PURE__ */ jsx(Download, {
+                size: 15
+              }), " products.csv"]
+            }), /* @__PURE__ */ jsxs("div", {
+              className: styles$2.csv,
+              children: [/* @__PURE__ */ jsxs("div", {
+                children: [/* @__PURE__ */ jsx("b", {
+                  children: "SKU"
+                }), /* @__PURE__ */ jsx("b", {
+                  children: "Product Name"
+                })]
+              }), /* @__PURE__ */ jsxs("div", {
+                children: [/* @__PURE__ */ jsx("span", {
+                  children: "HP-126snw"
+                }), /* @__PURE__ */ jsx("span", {
+                  children: "HP Laser MFP 126snw"
+                })]
+              }), /* @__PURE__ */ jsxs("div", {
+                children: [/* @__PURE__ */ jsx("span", {
+                  children: "DELL-3520"
+                }), /* @__PURE__ */ jsx("span", {
+                  children: "Dell Inspiron 3520"
+                })]
+              }), /* @__PURE__ */ jsxs("div", {
+                children: [/* @__PURE__ */ jsx("span", {
+                  children: "SONY-WH1000XM5"
+                }), /* @__PURE__ */ jsx("span", {
+                  children: "Sony WH-1000XM5"
+                })]
+              })]
+            }), /* @__PURE__ */ jsxs("div", {
+              className: styles$2.file,
+              children: [/* @__PURE__ */ jsx(Download, {
+                size: 15
+              }), " images.zip"]
+            }), /* @__PURE__ */ jsxs("div", {
+              className: styles$2.tree,
+              children: [/* @__PURE__ */ jsx("span", {
+                children: "HP-126snw/"
+              }), /* @__PURE__ */ jsx("span", {
+                className: styles$2.indent,
+                children: "1.jpg  2.jpg  3.jpg"
+              }), /* @__PURE__ */ jsx("span", {
+                children: "DELL-3520/"
+              }), /* @__PURE__ */ jsx("span", {
+                className: styles$2.indent,
+                children: "1.jpg  2.jpg"
+              })]
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            "data-reveal": true,
+            className: styles$2.splitText,
+            children: [/* @__PURE__ */ jsx("span", {
+              className: styles$2.kicker,
+              children: "Product Scrapper"
+            }), /* @__PURE__ */ jsx("h2", {
+              children: "Add new products without the copy-paste"
+            }), /* @__PURE__ */ jsx("p", {
+              children: "Search other sites, skip what is already in your store, and download a ready sheet: product name, description, link and a clean SKU in the BRAND-MODEL format. Images come as a ZIP with one folder per SKU, numbered 1, 2, 3."
+            }), /* @__PURE__ */ jsxs("ul", {
+              className: styles$2.ticks,
+              children: [/* @__PURE__ */ jsxs("li", {
+                children: [/* @__PURE__ */ jsx(Check, {
+                  size: 16
+                }), " Already-in-store products are skipped"]
+              }), /* @__PURE__ */ jsxs("li", {
+                children: [/* @__PURE__ */ jsx(Check, {
+                  size: 16
+                }), " SKU matches the image folder name"]
+              }), /* @__PURE__ */ jsxs("li", {
+                children: [/* @__PURE__ */ jsx(Check, {
+                  size: 16
+                }), " Works with Shopify stores, Amazon, Flipkart and more"]
+              })]
+            })]
+          })]
+        })
+      }), /* @__PURE__ */ jsxs("section", {
+        id: "how",
+        className: styles$2.section,
+        children: [/* @__PURE__ */ jsxs("div", {
+          "data-reveal": true,
+          className: styles$2.head,
+          children: [/* @__PURE__ */ jsx("span", {
+            className: styles$2.kicker,
+            children: "Live in minutes"
+          }), /* @__PURE__ */ jsx("h2", {
+            children: "How it works"
+          })]
+        }), /* @__PURE__ */ jsx("ol", {
+          className: styles$2.steps,
+          children: STEPS.map((s, i) => /* @__PURE__ */ jsxs("li", {
+            "data-reveal": true,
+            style: {
+              transitionDelay: `${i * 100}ms`
+            },
+            children: [/* @__PURE__ */ jsx("span", {
+              className: styles$2.stepNo,
+              children: s.n
+            }), /* @__PURE__ */ jsx("h3", {
+              children: s.title
+            }), /* @__PURE__ */ jsx("p", {
+              children: s.text
+            })]
+          }, s.n))
+        })]
+      }), /* @__PURE__ */ jsx("section", {
+        className: styles$2.section,
+        children: /* @__PURE__ */ jsx("div", {
+          className: styles$2.why,
+          children: [{
+            i: Zap,
+            t: "Fast to set up",
+            d: "One QR scan and the bot is working."
+          }, {
+            i: ShieldCheck,
+            t: "Privacy first",
+            d: "Orders are shown only to the verified customer."
+          }, {
+            i: Languages,
+            t: "Speaks your customers' language",
+            d: "English, Hindi, Hinglish and translation for the rest."
+          }].map((w, i) => /* @__PURE__ */ jsxs("div", {
+            "data-reveal": true,
+            className: styles$2.whyItem,
+            style: {
+              transitionDelay: `${i * 80}ms`
+            },
+            children: [/* @__PURE__ */ jsx(w.i, {
+              size: 22
+            }), /* @__PURE__ */ jsxs("div", {
+              children: [/* @__PURE__ */ jsx("b", {
+                children: w.t
+              }), /* @__PURE__ */ jsx("span", {
+                children: w.d
+              })]
+            })]
+          }, w.t))
+        })
+      }), /* @__PURE__ */ jsxs("section", {
+        id: "faq",
+        className: styles$2.section,
+        children: [/* @__PURE__ */ jsxs("div", {
+          "data-reveal": true,
+          className: styles$2.head,
+          children: [/* @__PURE__ */ jsx("span", {
+            className: styles$2.kicker,
+            children: "Good to know"
+          }), /* @__PURE__ */ jsx("h2", {
+            children: "Questions, answered"
+          })]
+        }), /* @__PURE__ */ jsx("div", {
+          className: styles$2.faq,
+          children: FAQ.map((f, i) => /* @__PURE__ */ jsxs("details", {
+            "data-reveal": true,
+            style: {
+              transitionDelay: `${i * 60}ms`
+            },
+            children: [/* @__PURE__ */ jsx("summary", {
+              children: f.q
+            }), /* @__PURE__ */ jsx("p", {
+              children: f.a
+            })]
+          }, f.q))
+        })]
+      }), /* @__PURE__ */ jsxs("section", {
+        className: styles$2.cta,
+        "data-reveal": true,
+        children: [/* @__PURE__ */ jsx("h2", {
+          children: "Let JAZZ take the first reply"
+        }), /* @__PURE__ */ jsx("p", {
+          children: "Connect your store and see it answer a real order question."
+        }), showForm && /* @__PURE__ */ jsx(LoginForm, {
+          errors,
+          id: "shop-cta"
         })]
       })]
-    })
+    }), /* @__PURE__ */ jsxs("footer", {
+      className: styles$2.footer,
+      children: [/* @__PURE__ */ jsxs("span", {
+        className: styles$2.brand,
+        children: [/* @__PURE__ */ jsx("span", {
+          className: styles$2.logo,
+          children: "S"
+        }), " ShopPilot"]
+      }), /* @__PURE__ */ jsx("span", {
+        children: "WhatsApp bot, order updates and store tools for your Shopify store."
+      })]
+    })]
   });
 });
 const route1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$i,
   default: route,
-  loader: loader$r
+  loader: loader$r,
+  meta
 }, Symbol.toStringTag, { value: "Module" }));
 function assetCount() {
   const dir = path.join(process.cwd(), "build", "client", "assets");
@@ -3735,11 +4641,11 @@ const loader$o = async ({
       avatarFile: true
     }
   });
-  const file = (conv == null ? void 0 : conv.avatarFile) ? mediaFilePath(conv.avatarFile) : null;
-  if (!file) return new Response("Not found", {
+  const file2 = (conv == null ? void 0 : conv.avatarFile) ? mediaFilePath(conv.avatarFile) : null;
+  if (!file2) return new Response("Not found", {
     status: 404
   });
-  return new Response(new Uint8Array(await readFile(file)), {
+  return new Response(new Uint8Array(await readFile(file2)), {
     headers: {
       "Content-Type": "image/jpeg",
       "X-Content-Type-Options": "nosniff",
@@ -3756,6 +4662,34 @@ const PRODUCT_HINT = /\/(p|dp|product|products|item|pd|buy)\//i;
 const OUT_OF_STOCK = /out of stock|sold out|currently unavailable|notify me when available/i;
 const CURRENCY = { INR: "₹", USD: "$", EUR: "€", GBP: "£", AUD: "A$", CAD: "C$" };
 const norm = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+function htmlToPlain(html) {
+  const raw = String(html ?? "");
+  if (!raw.trim()) return "";
+  const $ = cheerio.load(`<div id="r">${raw}</div>`);
+  $("script, style").remove();
+  $("br").replaceWith("\n");
+  $("p, div, li, h1, h2, h3, h4, h5, h6, tr").each((_, el) => {
+    $(el).append("\n");
+  });
+  return $("#r").text().replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ").replace(/ ?\n ?/g, "\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 5e3);
+}
+const UNIT = /^\d+(\.\d+)?(gb|tb|mb|kb|inch|in|hz|mah|w|mp|kg|g|ml|l|cm|mm|ghz|v|gen|pcs|pack|bit)$/i;
+const NOT_MODEL = /^(hd|fhd|uhd|4k|5g|4g|3g|wifi|usb|led|lcd|oled|ssd|hdd|ram|rom|pro|max|plus|mini|ultra)$/i;
+function modelFromTitle(title2, brand2) {
+  const b = norm(brand2);
+  const tokens2 = String(title2 ?? "").split(/[\s,()/|]+/).map((t) => t.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, "")).filter(Boolean);
+  const mixed = tokens2.filter((t) => /[A-Za-z]/.test(t) && /\d/.test(t) && t.length >= 3 && t.length <= 24 && !UNIT.test(t) && norm(t) !== b);
+  if (mixed.length) return mixed[0];
+  const words = tokens2.filter((t) => !NOT_MODEL.test(t) && norm(t) !== b && /^[A-Za-z0-9-]+$/.test(t));
+  return words.slice(0, 2).join("-");
+}
+function makeSku(brand2, title2, model = "") {
+  const clean = (t) => t.replace(/[^A-Za-z0-9-]+/g, "").replace(/^-+|-+$/g, "");
+  let b = clean(String(brand2 ?? "").trim().split(/\s+/)[0] ?? "").toUpperCase();
+  if (!b) b = clean(String(title2 ?? "").trim().split(/\s+/)[0] ?? "").toUpperCase();
+  const m = clean(String(model ?? "").trim().replace(/\s+/g, "-")) || clean(modelFromTitle(title2, brand2 || b));
+  return [b || "ITEM", m].filter(Boolean).join("-");
+}
 function num(s) {
   const m = String(s ?? "").match(/\d[\d,]*\.?\d*/);
   return m ? Number(m[0].replace(/,/g, "")) : null;
@@ -3837,10 +4771,10 @@ function listingGeneric(html, base) {
       return;
     }
     if (!PRODUCT_HINT.test(path2)) return;
-    const title = $(el).attr("title") || $(el).text().replace(/\s+/g, " ").trim() || $(el).find("img").attr("alt") || "";
-    if (title.length < 8) return;
+    const title2 = $(el).attr("title") || $(el).text().replace(/\s+/g, " ").trim() || $(el).find("img").attr("alt") || "";
+    if (title2.length < 8) return;
     seen.add(link);
-    out.push({ title, link });
+    out.push({ title: title2, link });
   });
   return out;
 }
@@ -3854,16 +4788,18 @@ function strikePrice($) {
   return "";
 }
 function parseDetail(html, url) {
-  var _a2;
+  var _a2, _b;
   const $ = cheerio.load(html);
   const host = new URL(url).hostname;
-  const d = { title: "", brand: "", price: "", comparePrice: "", inStock: null, images: [] };
+  const d = { title: "", brand: "", price: "", comparePrice: "", inStock: null, images: [], description: "", model: "" };
   const ld = jsonLdProducts($);
   if (ld.length) {
     let p = ld[0];
     if (p.hasVariant) p = { ...p, ...Array.isArray(p.hasVariant) ? p.hasVariant[0] : p.hasVariant };
     d.title = p.name ?? "";
-    d.brand = typeof p.brand === "object" ? ((_a2 = p.brand) == null ? void 0 : _a2.name) ?? "" : p.brand ?? "";
+    d.description = htmlToPlain(p.description);
+    d.model = String(((_a2 = p.model) == null ? void 0 : _a2.name) ?? p.model ?? p.mpn ?? "").trim();
+    d.brand = typeof p.brand === "object" ? ((_b = p.brand) == null ? void 0 : _b.name) ?? "" : p.brand ?? "";
     const imgs = Array.isArray(p.image) ? p.image : p.image ? [p.image] : [];
     d.images = imgs.map((i) => typeof i === "object" ? i == null ? void 0 : i.url : i).filter(Boolean);
     let offers = p.offers ?? {};
@@ -3879,6 +4815,7 @@ function parseDetail(html, url) {
   }
   const og = $('meta[property="og:image"]').attr("content");
   if (og) d.images.push(og);
+  if (!d.description) d.description = htmlToPlain($('meta[property="og:description"]').attr("content") || $('meta[name="description"]').attr("content") || "");
   if (!d.title) d.title = $('meta[property="og:title"]').attr("content") || $("h1").first().text().replace(/\s+/g, " ").trim();
   $("[class*=gallery] img, [class*=product-image] img, [class*=slider] img, [class*=thumb] img").each((_, el) => {
     var _a3;
@@ -3901,6 +4838,14 @@ function parseDetail(html, url) {
     d.inStock = $("#add-to-cart-button, #buy-now-button").length > 0 || /in stock/i.test(avText) && !OUT_OF_STOCK.test(avText);
     const byline = $("#bylineInfo").text().replace(/\s+/g, " ").trim();
     if (byline) d.brand = byline.replace(/^(Visit the |Brand:\s*)|( Store)$/g, "").trim();
+    const bullets = $("#feature-bullets li, #featurebullets_feature_div li").map((_, li) => $(li).text().replace(/\s+/g, " ").trim()).get().filter(Boolean);
+    const about = $("#productDescription").text().replace(/\s+/g, " ").trim();
+    const amazonText = [bullets.map((x) => "- " + x).join("\n"), about].filter(Boolean).join("\n\n");
+    if (amazonText) d.description = amazonText.slice(0, 5e3);
+    $("tr").each((_, tr) => {
+      const k = $(tr).find("th").first().text().replace(/\s+/g, " ").trim();
+      if (!d.model && /^(item )?model( number| name)?$/i.test(k)) d.model = $(tr).find("td").first().text().replace(/\s+/g, " ").trim();
+    });
     const hi = [...html.matchAll(/"hiRes":"(https:[^"]+)"/g)].map((m) => m[1]);
     const large = hi.length ? hi : [...html.matchAll(/"large":"(https:[^"]+)"/g)].map((m) => m[1]);
     const land = $("#landingImage");
@@ -3992,7 +4937,7 @@ async function getJson(url) {
   const res = await fetch(url, { headers: { "user-agent": UA, accept: "application/json" }, signal: AbortSignal.timeout(3e4) });
   return { status: res.status, json: await res.json().catch(() => ({})) };
 }
-async function scrapeShopify(site, category, brand, limit, ctx) {
+async function scrapeShopify(site, category, brand2, limit, ctx) {
   const base = assertPublicUrl(site).origin;
   let currency = "";
   try {
@@ -4002,17 +4947,17 @@ async function scrapeShopify(site, category, brand, limit, ctx) {
   const words = norm(category).split(" ").filter(Boolean);
   let seen = 0;
   let found = 0;
-  for (let page = 1; found < limit && page <= 40 && !ctx.stopped(); page++) {
-    const { status, json: json2 } = await getJson(`${base}/products.json?limit=250&page=${page}`);
+  for (let page2 = 1; found < limit && page2 <= 40 && !ctx.stopped(); page2++) {
+    const { status, json: json2 } = await getJson(`${base}/products.json?limit=250&page=${page2}`);
     if (status !== 200) throw new Error(`Could not read ${base}/products.json (HTTP ${status}). This does not look like a Shopify store.`);
     const items = json2.products ?? [];
     if (!items.length) break;
     for (const p of items) {
       if (found >= limit || ctx.stopped()) break;
       const tags = Array.isArray(p.tags) ? p.tags.join(" ") : String(p.tags ?? "");
-      const blob = norm([p.title, p.vendor, p.product_type, tags].join(" "));
-      if (brand && !blob.includes(norm(brand))) continue;
-      if (words.length && !words.every((w) => blob.includes(w))) continue;
+      const blob2 = norm([p.title, p.vendor, p.product_type, tags].join(" "));
+      if (brand2 && !blob2.includes(norm(brand2))) continue;
+      if (words.length && !words.every((w) => blob2.includes(w))) continue;
       ctx.checked(++seen);
       const available = (p.variants ?? []).filter((v2) => v2.available);
       if (!available.length) continue;
@@ -4025,11 +4970,13 @@ async function scrapeShopify(site, category, brand, limit, ctx) {
         link: `${base}/products/${p.handle}`,
         images: (p.images ?? []).map((i) => i.src),
         skus: (p.variants ?? []).map((x) => x.sku).filter(Boolean),
-        barcodes: (p.variants ?? []).map((x) => x.barcode).filter(Boolean)
+        barcodes: (p.variants ?? []).map((x) => x.barcode).filter(Boolean),
+        description: htmlToPlain(p.body_html),
+        model: (p.variants ?? []).map((x) => String(x.sku ?? "").trim()).find(Boolean) ?? ""
       });
       if (ok) found++;
     }
-    ctx.log(`Scanned page ${page}: ${found} new in-stock products so far`);
+    ctx.log(`Scanned page ${page2}: ${found} new in-stock products so far`);
   }
 }
 async function launchBrowser() {
@@ -4047,25 +4994,25 @@ async function launchBrowser() {
   }
 }
 const BLOCKED = /captcha|robot check|enter the characters|are you a human|access denied|unusual traffic/i;
-async function scrapeBrowser(searchUrl, brand, limit, pages, ctx) {
+async function scrapeBrowser(searchUrl, brand2, limit, pages, ctx) {
   assertPublicUrl(searchUrl.replace("{query}", "x").replace("{page}", "1"));
   const browser = await launchBrowser();
   try {
-    const page = await (await browser.newContext({ userAgent: UA, locale: "en-IN" })).newPage();
+    const page2 = await (await browser.newContext({ userAgent: UA, locale: "en-IN" })).newPage();
     const candidates = [];
     const seen = /* @__PURE__ */ new Set();
     for (let n = 1; n <= pages && !ctx.stopped(); n++) {
       let url = searchUrl.replace("{page}", String(n));
       if (n > 1 && !searchUrl.includes("{page}")) url += `${url.includes("?") ? "&" : "?"}page=${n}`;
       ctx.log(`Loading search page ${n}`);
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 6e4 });
-      await page.waitForTimeout(2500);
+      await page2.goto(url, { waitUntil: "domcontentloaded", timeout: 6e4 });
+      await page2.waitForTimeout(2500);
       for (let i = 0; i < 6; i++) {
-        await page.mouse.wheel(0, 2500);
-        await page.waitForTimeout(400);
+        await page2.mouse.wheel(0, 2500);
+        await page2.waitForTimeout(400);
       }
-      const html = await page.content();
-      if (BLOCKED.test(await page.title() + " " + html.slice(0, 3e3))) {
+      const html = await page2.content();
+      if (BLOCKED.test(await page2.title() + " " + html.slice(0, 3e3))) {
         ctx.log("The website showed a robot check, so it stopped. Try again later, or use another website.");
         break;
       }
@@ -4074,7 +5021,7 @@ async function scrapeBrowser(searchUrl, brand, limit, pages, ctx) {
       const items = u.host.includes("amazon.") ? listingAmazon(html, base) : listingGeneric(html, base);
       let added = 0;
       for (const it of items) {
-        if (seen.has(it.link) || brand && !norm(it.title).includes(norm(brand))) continue;
+        if (seen.has(it.link) || brand2 && !norm(it.title).includes(norm(brand2))) continue;
         seen.add(it.link);
         candidates.push(it);
         added++;
@@ -4089,15 +5036,15 @@ async function scrapeBrowser(searchUrl, brand, limit, pages, ctx) {
       ctx.log(`Checking ${i + 1}/${candidates.length}: ${c.title.slice(0, 60)}`);
       let d;
       try {
-        await page.goto(c.link, { waitUntil: "domcontentloaded", timeout: 6e4 });
-        await page.waitForTimeout(1500);
-        d = parseDetail(await page.content(), c.link);
+        await page2.goto(c.link, { waitUntil: "domcontentloaded", timeout: 6e4 });
+        await page2.waitForTimeout(1500);
+        d = parseDetail(await page2.content(), c.link);
       } catch (e) {
         ctx.log(`Skipped (page error): ${String(e.message).slice(0, 80)}`);
         continue;
       }
       if (!d.inStock || !d.images.length) continue;
-      if (await ctx.emit({ title: d.title || c.title, brand: d.brand || brand, price: d.price, comparePrice: d.comparePrice, link: c.link, images: d.images })) found++;
+      if (await ctx.emit({ title: d.title || c.title, brand: d.brand || brand2, price: d.price, comparePrice: d.comparePrice, link: c.link, images: d.images, description: d.description, model: d.model })) found++;
       await sleep(300);
     }
   } finally {
@@ -4127,7 +5074,6 @@ async function markInterrupted(shop) {
   if (dead.length) await prisma.finderRun.updateMany({ where: { id: { in: dead } }, data: { status: "error", error: "Interrupted: the server restarted.", finishedAt: /* @__PURE__ */ new Date() } });
 }
 const isGone = (e) => ["P2003", "P2025"].includes((e == null ? void 0 : e.code) ?? "");
-const safeName = (t) => t.replace(/[<>:"/\\|?*\x00-\x1f]/g, " ").replace(/\s+/g, " ").trim().replace(/^[. ]+|[. ]+$/g, "").slice(0, 70).trim() || "product";
 const EXT$1 = { "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif", "image/avif": ".avif" };
 async function fetchImage(url, referer) {
   try {
@@ -4144,14 +5090,14 @@ async function fetchImage(url, referer) {
 }
 async function downloadImages(urls, dir, referer) {
   mkdirSync(dir, { recursive: true });
-  const list2 = urls.slice(0, 12);
-  const got = new Array(list2.length).fill(null);
+  const list = urls.slice(0, 12);
+  const got = new Array(list.length).fill(null);
   let next = 0;
   await Promise.all(
     Array.from({ length: 6 }, async () => {
-      while (next < list2.length) {
+      while (next < list.length) {
         const i = next++;
-        got[i] = await fetchImage(list2[i], referer);
+        got[i] = await fetchImage(list[i], referer);
       }
     })
   );
@@ -4172,7 +5118,7 @@ async function loadCatalog(shop, onPage) {
   var _a2, _b, _c;
   const out = [];
   let after = null;
-  for (let page = 1; page <= 100; page++) {
+  for (let page2 = 1; page2 <= 100; page2++) {
     const data = await gql(
       shop,
       `query($after: String) { products(first: 100, after: $after) {
@@ -4238,7 +5184,7 @@ async function execute(shop, id2, p, flag) {
   try {
     log2("Reading your Shopify catalog to skip products you already have…");
     const catalog = await loadCatalog(shop, (n) => n % 500 === 0 && log2(`Read ${n} products from your store`));
-    const index2 = buildIndex(catalog);
+    const index = buildIndex(catalog);
     log2(`Your store has ${catalog.length} products. Searching now…`);
     const earlier = /* @__PURE__ */ new Set();
     if (p.skipEarlier) {
@@ -4273,19 +5219,21 @@ async function execute(shop, id2, p, flag) {
       const compare = num(prod.comparePrice);
       const discount = price && compare && compare > price ? Math.round((compare - price) / compare * 100) : 0;
       const base = { runId: id2, shop, title: prod.title, brand: prod.brand, price: prod.price, comparePrice: discount ? prod.comparePrice : "", discount, link: prod.link, linkKey: key2 };
-      const hit = matchCatalog(index2, { title: prod.title, brand: prod.brand, skus: prod.skus, barcodes: prod.barcodes });
+      const hit = matchCatalog(index, { title: prod.title, brand: prod.brand, skus: prod.skus, barcodes: prod.barcodes });
       if (hit) {
         skippedInStore++;
         log2(`Already in your store, skipped: ${prod.title.slice(0, 50)}`);
         await save({ ...base, isNew: false, matchReason: `${hit.reason}: ${hit.title}`.slice(0, 200) });
         return false;
       }
-      let folder = safeName(prod.title);
-      for (let n = 2; usedFolders.has(folder.toLowerCase()); n++) folder = `${safeName(prod.title)} (${n})`;
-      usedFolders.add(folder.toLowerCase());
-      log2(`New product, downloading images: ${prod.title.slice(0, 50)}`);
-      const files = await downloadImages(prod.images, path.join(runDir, folder), prod.link);
-      if (!await save({ ...base, isNew: true, imageCount: files.length, folder, thumb: files[0] ? `${folder}/${files[0]}` : "" })) return false;
+      const baseSku = makeSku(prod.brand, prod.title, prod.model);
+      let sku = baseSku;
+      for (let n = 2; usedFolders.has(sku.toLowerCase()); n++) sku = `${baseSku}-${n}`;
+      usedFolders.add(sku.toLowerCase());
+      const folder = sku;
+      log2(`New product ${sku}, downloading images: ${prod.title.slice(0, 50)}`);
+      const files2 = await downloadImages(prod.images, path.join(runDir, folder), prod.link);
+      if (!await save({ ...base, isNew: true, sku, description: (prod.description ?? "").slice(0, 5e3), imageCount: files2.length, folder, thumb: files2[0] ? `${folder}/${files2[0]}` : "" })) return false;
       return true;
     };
     await runScrape(
@@ -4336,12 +5284,12 @@ const loader$n = async ({
   }
   const [kind, runId, folder, name] = parts;
   if (kind === "file" && runId && folder && name) {
-    const file = path.join(FINDER_DIR, runId, folder, name);
+    const file2 = path.join(FINDER_DIR, runId, folder, name);
     const type = MIME$2[path.extname(name).toLowerCase()];
-    if (!inside(file) || !type || !existsSync(file)) return new Response("Not found", {
+    if (!inside(file2) || !type || !existsSync(file2)) return new Response("Not found", {
       status: 404
     });
-    return new Response(new Uint8Array(readFileSync(file)), {
+    return new Response(new Uint8Array(readFileSync(file2)), {
       headers: {
         "Content-Type": type,
         "X-Content-Type-Options": "nosniff",
@@ -4369,16 +5317,16 @@ const loader$n = async ({
       status: 404
     });
     const folders = folder ? [folder] : run.products.map((p) => p.folder).filter(Boolean);
-    const files = {};
+    const files2 = {};
     for (const f of folders) {
       const dir = path.join(FINDER_DIR, runId, f);
       if (!inside(dir) || !existsSync(dir) || !statSync(dir).isDirectory()) continue;
-      for (const n of readdirSync(dir)) files[`${f}/${n}`] = new Uint8Array(readFileSync(path.join(dir, n)));
+      for (const n of readdirSync(dir)) files2[`${f}/${n}`] = new Uint8Array(readFileSync(path.join(dir, n)));
     }
-    if (!Object.keys(files).length) return new Response("No images", {
+    if (!Object.keys(files2).length) return new Response("No images", {
       status: 404
     });
-    return new Response(new Uint8Array(zipSync(files, {
+    return new Response(new Uint8Array(zipSync(files2, {
       level: 0
     })), {
       headers: {
@@ -4397,9 +5345,9 @@ const loader$n = async ({
         createdAt: "asc"
       }
     });
-    const head = ["Title", "Brand", "Price", "Compare price", "Discount %", "Link", "Images"];
-    const lines = [head.map(csvCell).join(",")];
-    for (const p of items) lines.push([p.title, p.brand, p.price, p.comparePrice, p.discount || "", p.link, p.imageCount].map(csvCell).join(","));
+    const head2 = ["Product Name", "Product Description", "Link", "SKU"];
+    const lines = [head2.map(csvCell).join(",")];
+    for (const p of items) lines.push([p.title, p.description, p.link, p.sku || p.folder].map(csvCell).join(","));
     return new Response(String.fromCharCode(65279) + lines.join("\r\n"), {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
@@ -4698,20 +5646,20 @@ async function ownJob(shop, jobId) {
   if (!job) throw new Error("Batch not found.");
   return job;
 }
-async function addUpload(shop, jobId, file) {
+async function addUpload(shop, jobId, file2) {
   const job = await ownJob(shop, jobId);
   if (job.status === "running") throw new Error("This batch is already running.");
-  if (file.bytes.length === 0) throw new Error("The file is empty.");
-  if (file.bytes.length > LIMITS$1.maxFileBytes) throw new Error(`The file is larger than ${LIMITS$1.maxFileBytes / 1024 / 1024} MB.`);
-  const ext = detectType(file.bytes);
+  if (file2.bytes.length === 0) throw new Error("The file is empty.");
+  if (file2.bytes.length > LIMITS$1.maxFileBytes) throw new Error(`The file is larger than ${LIMITS$1.maxFileBytes / 1024 / 1024} MB.`);
+  const ext = detectType(file2.bytes);
   if (!ext) throw new Error("Only JPG, PNG and WebP photos are supported.");
   if (await prisma.imageItem.count({ where: { jobId } }) >= LIMITS$1.maxFiles) throw new Error(`A batch can hold up to ${LIMITS$1.maxFiles} photos.`);
   const item = await prisma.imageItem.create({
-    data: { jobId, shop, name: safeSeg(file.name), folder: file.folder ? safeSeg(file.folder.split(/[\\/]/)[0]) : "", ext, inBytes: file.bytes.length }
+    data: { jobId, shop, name: safeSeg(file2.name), folder: file2.folder ? safeSeg(file2.folder.split(/[\\/]/)[0]) : "", ext, inBytes: file2.bytes.length }
   });
   const p = itemPaths(jobId, item.id, ext);
   mkdirSync(path.dirname(p.input), { recursive: true });
-  writeFileSync(p.input, file.bytes);
+  writeFileSync(p.input, file2.bytes);
   await prisma.imageJob.update({ where: { id: jobId }, data: { total: { increment: 1 } } });
   return item.id;
 }
@@ -5031,9 +5979,9 @@ async function applyOne(ctx, itemId) {
     await ensureBackup(ctx.shop, { jobId: item.jobId, id: item.id, ext: item.ext, mediaId: item.mediaId, productId: item.productId, productTitle: item.productTitle, srcUrl: item.srcUrl, inBytes: item.inBytes });
     const outExt = path.extname(item.outName).slice(1).toLowerCase();
     if (outExt !== item.ext) throw new Error("The edited photo has a different file type than the Shopify image, so it was not applied.");
-    const file = `${itemPaths(item.jobId, item.id, item.ext).outBase}.${outExt}`;
-    if (!existsSync(file)) throw new Error("The edited photo is missing on this computer.");
-    const r = await replaceImage(ctx, item.mediaId, readFileSync(file), outExt, item.outName);
+    const file2 = `${itemPaths(item.jobId, item.id, item.ext).outBase}.${outExt}`;
+    if (!existsSync(file2)) throw new Error("The edited photo is missing on this computer.");
+    const r = await replaceImage(ctx, item.mediaId, readFileSync(file2), outExt, item.outName);
     await prisma.imageItem.update({ where: { id: item.id }, data: { applyStatus: "applied", appliedAt: /* @__PURE__ */ new Date(), newUrl: r.url || null, applyError: null } });
     await log(ctx.shop, "image_applied", `${item.productTitle ?? item.productId}: ${item.name}`);
   } catch (e) {
@@ -5044,9 +5992,9 @@ async function applyOne(ctx, itemId) {
 }
 async function restoreOriginal(ctx, mediaId) {
   const b = await prisma.imageBackup.findUnique({ where: { shop_mediaId: { shop: ctx.shop, mediaId } } });
-  const file = b ? path.join(IMAGE_DIR, b.file) : "";
-  if (!b || !existsSync(file)) throw new Error("There is no saved original for this image.");
-  await replaceImage(ctx, mediaId, readFileSync(file), b.ext, `original.${b.ext}`);
+  const file2 = b ? path.join(IMAGE_DIR, b.file) : "";
+  if (!b || !existsSync(file2)) throw new Error("There is no saved original for this image.");
+  await replaceImage(ctx, mediaId, readFileSync(file2), b.ext, `original.${b.ext}`);
   await prisma.imageBackup.update({ where: { id: b.id }, data: { restoredAt: /* @__PURE__ */ new Date() } });
   await prisma.imageItem.updateMany({ where: { shop: ctx.shop, mediaId, applyStatus: "applied" }, data: { applyStatus: "restored" } });
   await log(ctx.shop, "image_restored", `${b.productTitle || b.productId}`);
@@ -5088,17 +6036,17 @@ async function lookupSkus(ctx, skus) {
       for (const v of ((_b = p.variants) == null ? void 0 : _b.nodes) ?? []) {
         const key2 = String(v.sku ?? "").trim().toLowerCase();
         if (!key2) continue;
-        const list2 = found.get(key2) ?? [];
-        if (!list2.some((x) => x.id === p.id)) list2.push({ id: p.id, title: p.title, imageCount: ((_c = p.mediaCount) == null ? void 0 : _c.count) ?? 0 });
-        found.set(key2, list2);
+        const list = found.get(key2) ?? [];
+        if (!list.some((x) => x.id === p.id)) list.push({ id: p.id, title: p.title, imageCount: ((_c = p.mediaCount) == null ? void 0 : _c.count) ?? 0 });
+        found.set(key2, list);
       }
     }
   }
   return unique.map((sku) => {
-    const list2 = found.get(sku.toLowerCase()) ?? [];
-    if (list2.length === 0) return { sku, state: "missing", productId: "", title: "", imageCount: 0 };
-    if (list2.length > 1) return { sku, state: "ambiguous", productId: "", title: list2.map((p) => p.title).join(" / "), imageCount: 0 };
-    return { sku, state: "found", productId: list2[0].id, title: list2[0].title, imageCount: list2[0].imageCount };
+    const list = found.get(sku.toLowerCase()) ?? [];
+    if (list.length === 0) return { sku, state: "missing", productId: "", title: "", imageCount: 0 };
+    if (list.length > 1) return { sku, state: "ambiguous", productId: "", title: list.map((p) => p.title).join(" / "), imageCount: 0 };
+    return { sku, state: "found", productId: list[0].id, title: list[0].title, imageCount: list[0].imageCount };
   });
 }
 function sniffImage(b) {
@@ -5110,22 +6058,22 @@ function sniffImage(b) {
 async function uploadProductImages(ctx, productId, mode, images, label2 = "image") {
   var _a2, _b, _c, _d, _e, _f, _g;
   if (!PRODUCT_GID.test(productId)) throw new Error("Invalid product.");
-  const list2 = [...images].sort((a, b) => a.position - b.position);
-  if (list2.length === 0) throw new Error("No images to upload.");
-  if (list2.length > MAX_IMAGES_PER_PRODUCT) throw new Error(`Too many images for one product (maximum ${MAX_IMAGES_PER_PRODUCT}).`);
+  const list = [...images].sort((a, b) => a.position - b.position);
+  if (list.length === 0) throw new Error("No images to upload.");
+  if (list.length > MAX_IMAGES_PER_PRODUCT) throw new Error(`Too many images for one product (maximum ${MAX_IMAGES_PER_PRODUCT}).`);
   const before = (await ctx.gql(MEDIA, { id: productId })).product;
   if (!before) throw new Error("The product no longer exists in Shopify.");
-  const title = before.title ?? "";
+  const title2 = before.title ?? "";
   const old = (((_a2 = before.media) == null ? void 0 : _a2.nodes) ?? []).filter((m) => m.mediaContentType === "IMAGE").map((m) => m.id);
   const known = new Set((((_b = before.media) == null ? void 0 : _b.nodes) ?? []).map((m) => m.id));
   const failed = [];
   const created = [];
-  for (const img of list2) {
+  for (const img of list) {
     try {
       if (img.bytes.length > MAX_BYTES) throw new Error("The image is larger than 25 MB.");
       if (sniffImage(img.bytes) !== img.ext) throw new Error("The file is not a valid JPG, PNG or WebP image.");
       const resourceUrl = await stageUpload(ctx, img.bytes, `${label2}-${img.position}.${img.ext}`, img.ext);
-      const data = await ctx.gql(ADD, { product: { id: productId }, media: [{ originalSource: resourceUrl, alt: title.slice(0, 250), mediaContentType: "IMAGE" }] });
+      const data = await ctx.gql(ADD, { product: { id: productId }, media: [{ originalSource: resourceUrl, alt: title2.slice(0, 250), mediaContentType: "IMAGE" }] });
       const err = msg$1((_c = data.productUpdate) == null ? void 0 : _c.userErrors);
       if (err) throw new Error(`Shopify refused the image: ${err}`);
       const fresh = (((_f = (_e = (_d = data.productUpdate) == null ? void 0 : _d.product) == null ? void 0 : _e.media) == null ? void 0 : _f.nodes) ?? []).find((m) => !known.has(m.id));
@@ -5136,7 +6084,7 @@ async function uploadProductImages(ctx, productId, mode, images, label2 = "image
       failed.push({ position: img.position, error: e.message });
     }
   }
-  const ready = /* @__PURE__ */ new Set();
+  const ready2 = /* @__PURE__ */ new Set();
   const pending = new Set(created.map((c) => c.id));
   const deadline = Date.now() + (ctx.timeoutMs ?? 9e4);
   let wait = 800;
@@ -5147,21 +6095,21 @@ async function uploadProductImages(ctx, productId, mode, images, label2 = "image
     for (const n of nodes) {
       if (!n) continue;
       if (n.status === "READY") {
-        ready.add(n.id);
+        ready2.add(n.id);
         pending.delete(n.id);
       } else if (n.status === "FAILED") pending.delete(n.id);
     }
     for (const id2 of [...pending]) if (!nodes.some((n) => (n == null ? void 0 : n.id) === id2)) pending.delete(id2);
   }
-  for (const c of created) if (!ready.has(c.id)) failed.push({ position: c.position, error: "Shopify could not process this image." });
+  for (const c of created) if (!ready2.has(c.id)) failed.push({ position: c.position, error: "Shopify could not process this image." });
   let removed = 0;
-  if (mode === "replace" && ready.size > 0 && old.length > 0) {
+  if (mode === "replace" && ready2.size > 0 && old.length > 0) {
     const data = await ctx.gql(DROP, { files: old.map((id2) => ({ id: id2, referencesToRemove: [productId] })) });
     const err = msg$1((_g = data.fileUpdate) == null ? void 0 : _g.userErrors);
     if (err) failed.push({ position: 0, error: `The new images were added, but the old ones could not be removed: ${err}` });
     else removed = old.length;
   }
-  return { productId, title, added: ready.size, failed: failed.sort((a, b) => a.position - b.position), removed };
+  return { productId, title: title2, added: ready2.size, failed: failed.sort((a, b) => a.position - b.position), removed };
 }
 const shopifyCtx = (shop) => ({ shop, gql: (query, variables) => gql(shop, query, variables ?? {}) });
 const json$2 = (body, status = 200) => Response.json(body, {
@@ -5201,15 +6149,15 @@ const loader$m = async ({
     });
     const p = itemPaths(jobId, item.id, item.ext);
     const ext = item.outName ? path.extname(item.outName).slice(1).toLowerCase() : "";
-    const file = a === "thumb" ? p.thumb : a === "orig" ? p.orig : a === "result" && ext ? `${p.outBase}.${ext}` : null;
-    if (!file || !existsSync(file)) return new Response("Not found", {
+    const file2 = a === "thumb" ? p.thumb : a === "orig" ? p.orig : a === "result" && ext ? `${p.outBase}.${ext}` : null;
+    if (!file2 || !existsSync(file2)) return new Response("Not found", {
       status: 404
     });
     const type = a === "result" ? MIME[ext] : "image/webp";
     if (!type) return new Response("Not found", {
       status: 404
     });
-    return new Response(new Uint8Array(await readFile(file)), {
+    return new Response(new Uint8Array(await readFile(file2)), {
       headers: {
         "Content-Type": type,
         "X-Content-Type-Options": "nosniff",
@@ -5239,7 +6187,7 @@ const loader$m = async ({
       }
     });
     const used = /* @__PURE__ */ new Set();
-    const files = items.map((it) => {
+    const files2 = items.map((it) => {
       const ext = path.extname(it.outName ?? "").slice(1).toLowerCase();
       if (!it.outName || !ext) return null;
       const dir = JSON.parse(job.settings || "{}").keepFolders !== false && it.folder ? `${it.folder}/` : "";
@@ -5251,7 +6199,7 @@ const loader$m = async ({
         file: `${itemPaths(jobId, it.id, it.ext).outBase}.${ext}`
       };
     }).filter((f) => Boolean(f && existsSync(f.file)));
-    if (files.length === 0) return new Response("No finished photos", {
+    if (files2.length === 0) return new Response("No finished photos", {
       status: 404
     });
     let i = 0;
@@ -5268,8 +6216,8 @@ const loader$m = async ({
         });
       },
       async pull() {
-        if (i < files.length) {
-          const f = files[i++];
+        if (i < files2.length) {
+          const f = files2[i++];
           const entry2 = new ZipPassThrough(f.name);
           zip.add(entry2);
           entry2.push(new Uint8Array(await readFile(f.file)), true);
@@ -5370,13 +6318,13 @@ const action$b = async ({
         error: "The file is too large."
       }, 413);
       const form2 = await request.formData();
-      const file = form2.get("file");
-      if (!(file instanceof File)) return json$2({
+      const file2 = form2.get("file");
+      if (!(file2 instanceof File)) return json$2({
         error: "No file received."
       }, 400);
       const id2 = await addUpload(shop, jobId, {
-        name: file.name,
-        bytes: Buffer.from(await file.arrayBuffer()),
+        name: file2.name,
+        bytes: Buffer.from(await file2.arrayBuffer()),
         folder: String(form2.get("folder") ?? "")
       });
       return json$2({
@@ -5432,14 +6380,14 @@ const loader$l = async ({
       id: id2
     }
   });
-  const file = (msg2 == null ? void 0 : msg2.mediaFile) ? mediaFilePath(msg2.mediaFile) : null;
-  if (!msg2 || !file) return new Response("Not found", {
+  const file2 = (msg2 == null ? void 0 : msg2.mediaFile) ? mediaFilePath(msg2.mediaFile) : null;
+  if (!msg2 || !file2) return new Response("Not found", {
     status: 404
   });
   const mime = (msg2.mediaMime ?? "").toLowerCase();
   const inline = INLINE_MIME.has(mime);
   const name = (msg2.mediaName ?? msg2.mediaFile).replace(/[^\w.\- ]+/g, "_").slice(0, 100);
-  return new Response(new Uint8Array(await readFile(file)), {
+  return new Response(new Uint8Array(await readFile(file2)), {
     headers: {
       // Never let user-supplied content render as HTML/SVG: unknown types are forced to download.
       "Content-Type": inline ? mime : "application/octet-stream",
@@ -5514,8 +6462,8 @@ const action$a = async ({
       error: "Body must be JSON"
     }, 400);
   }
-  const phone = normalizePhone(body == null ? void 0 : body.to);
-  if (!phone) return json$1({
+  const phone2 = normalizePhone(body == null ? void 0 : body.to);
+  if (!phone2) return json$1({
     ok: false,
     error: "Invalid phone number"
   }, 400);
@@ -5529,13 +6477,13 @@ const action$a = async ({
     ok: false,
     error: "This route needs the QR (WhatsApp Web) connection"
   }, 501);
-  const r = await bridgeSendText(phone, text2);
+  const r = await bridgeSendText(phone2, text2);
   await logEvent({
     source: "whatsapp",
     event: "ims_send",
     level: r.ok ? "info" : "error",
     // never write the whole number or the text into the log
-    detail: `${ref || "message"} -> ${phone.slice(0, -4)}****${r.ok ? "" : `: ${r.error}`}`
+    detail: `${ref || "message"} -> ${phone2.slice(0, -4)}****${r.ok ? "" : `: ${r.error}`}`
   });
   if (!r.ok) return json$1({
     ok: false,
@@ -5616,8 +6564,8 @@ class CsvError extends Error {
 }
 function planChanges(table, live) {
   if (table.length < 2) throw new CsvError("The file has no rows.");
-  const head = table[0].map((h) => h.trim().toLowerCase());
-  const col = (name) => head.indexOf(name);
+  const head2 = table[0].map((h) => h.trim().toLowerCase());
+  const col = (name) => head2.indexOf(name);
   if (col("type") < 0 || col("id") < 0) throw new CsvError('This is not a file exported from this page (the columns "type" and "id" are missing). Download the CSV again and fill only the new_* columns.');
   const has = (name) => col(name) >= 0;
   if (!has("new_seo_title") && !has("new_seo_description") && !has("new_alt")) throw new CsvError("The columns new_seo_title, new_seo_description and new_alt are missing.");
@@ -5853,10 +6801,10 @@ async function liveAlts(ctx, mediaIds) {
   for (const n of data.nodes ?? []) if (n == null ? void 0 : n.id) out.set(n.id, String(n.alt ?? "").trim());
   return out;
 }
-async function setAlts(ctx, files) {
+async function setAlts(ctx, files2) {
   var _a2;
-  if (!files.length) return;
-  const data = await ctx.gql(SET_ALTS, { files });
+  if (!files2.length) return;
+  const data = await ctx.gql(SET_ALTS, { files: files2 });
   const err = msg((_a2 = data.fileUpdate) == null ? void 0 : _a2.userErrors);
   if (err) throw new Error(err);
 }
@@ -5917,7 +6865,7 @@ async function runScan(shop, ctx, scanId) {
     startTask(shop, "seoscan", "Reading and checking your products", await countProducts(ctx) || null);
     let after = null;
     let n = 0;
-    for (let page = 0; page < MAX_PAGES; page++) {
+    for (let page2 = 0; page2 < MAX_PAGES; page2++) {
       const res = await fetchProductsPage(ctx, after);
       await prisma.$transaction(
         res.products.map((p) => {
@@ -6115,34 +7063,34 @@ async function step(shop, ctx, batchId, dir, limit) {
         for (const c of alts) await fail(c.id, String((e == null ? void 0 : e.message) ?? e)).catch(() => void 0);
       }
     }
-    for (const [productId, list2] of seo) {
+    for (const [productId, list] of seo) {
       try {
         const live = await liveSeo(ctx, productId);
         if (!live) {
-          for (const c of list2) await fail(c.id, "The product no longer exists in Shopify.");
+          for (const c of list) await fail(c.id, "The product no longer exists in Shopify.");
           continue;
         }
-        let title = live.seoTitle;
+        let title2 = live.seoTitle;
         let desc = live.seoDescription;
         const ok = [];
-        for (const c of list2) {
+        for (const c of list) {
           const cur = c.kind === "seoTitle" ? live.seoTitle : live.seoDescription;
           if (cleanText(cur) !== cleanText(expected(c, dir))) {
             await fail(c.id, dir === "apply" ? "Changed in Shopify after the preview. Nothing was overwritten." : "Changed again after it was applied. Not restored.");
             continue;
           }
-          if (c.kind === "seoTitle") title = target(c, dir);
+          if (c.kind === "seoTitle") title2 = target(c, dir);
           else desc = target(c, dir);
           ok.push(c);
         }
         if (!ok.length) continue;
-        await setProductSeo(ctx, productId, title, desc);
+        await setProductSeo(ctx, productId, title2, desc);
         for (const c of ok) {
           await done(c.id, to);
           await patchSnapshot(shop, c, target(c, dir));
         }
       } catch (e) {
-        for (const c of list2) await fail(c.id, String((e == null ? void 0 : e.message) ?? e)).catch(() => void 0);
+        for (const c of list) await fail(c.id, String((e == null ? void 0 : e.message) ?? e)).catch(() => void 0);
       }
     }
     const p = await batchProgress(shop, batchId);
@@ -6276,12 +7224,12 @@ const action$9 = async ({
       });
     }
     if (op === "preview") {
-      const csv = typeof body.csv === "string" ? body.csv : "";
-      if (!csv.trim()) return json({
+      const csv2 = typeof body.csv === "string" ? body.csv : "";
+      if (!csv2.trim()) return json({
         error: "The file is empty."
       }, 400);
       const name = typeof body.name === "string" ? body.name : "CSV upload";
-      const r = await previewCsv(shop, csv, name);
+      const r = await previewCsv(shop, csv2, name);
       await logEvent({
         shop,
         source: "admin",
@@ -6486,7 +7434,7 @@ async function getWaiting(shop, take = 5) {
     at: (c.lastInboundAt ?? c.lastMessageAt).toISOString()
   }));
 }
-const orderlyStyles = "/assets/orderly-CDqAn5dy.css";
+const orderlyStyles = "/assets/orderly-B_TVYid9.css";
 const dashboardStyles = "/assets/dashboard-j6vCbuOj.css";
 function waitedFor(iso, now = Date.now()) {
   const s = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1e3));
@@ -6520,15 +7468,15 @@ function SupportAlert({ initial }) {
   const [fresh, setFresh] = useState([]);
   const [, setTick] = useState(0);
   const known = useRef(null);
-  const load = useRef(fetcher.load);
+  const load2 = useRef(fetcher.load);
   const busy2 = useRef(fetcher.state !== "idle");
-  load.current = fetcher.load;
+  load2.current = fetcher.load;
   busy2.current = fetcher.state !== "idle";
-  const list2 = ((_a2 = fetcher.data) == null ? void 0 : _a2.waiting) ?? initial;
+  const list = ((_a2 = fetcher.data) == null ? void 0 : _a2.waiting) ?? initial;
   useEffect(() => setMounted(true), []);
   useEffect(() => {
     const poll = () => {
-      if (document.visibilityState === "visible" && !busy2.current) void load.current("/app/waiting");
+      if (document.visibilityState === "visible" && !busy2.current) void load2.current("/app/waiting");
     };
     const t = setInterval(poll, 6e3);
     const clock = setInterval(() => setTick((n) => n + 1), 3e4);
@@ -6540,7 +7488,7 @@ function SupportAlert({ initial }) {
     };
   }, []);
   useEffect(() => {
-    const ids = list2.map((w) => w.id);
+    const ids = list.map((w) => w.id);
     const before = known.current;
     known.current = new Set(ids);
     setDismissed((d) => d.filter((id2) => ids.includes(id2)));
@@ -6556,9 +7504,9 @@ function SupportAlert({ initial }) {
       return () => clearTimeout(t);
     }
     setFresh((f) => f.filter((id2) => ids.includes(id2)));
-  }, [list2]);
+  }, [list]);
   if (!mounted) return null;
-  const visible = list2.filter((w) => !dismissed.includes(w.id));
+  const visible = list.filter((w) => !dismissed.includes(w.id));
   if (!visible.length) return null;
   const dismiss = (id2) => setDismissed((d) => [...d, id2]);
   return /* @__PURE__ */ jsxs("div", { className: "sa", role: "alert", "aria-live": "assertive", children: [
@@ -6655,13 +7603,13 @@ function Shell({ data, children }) {
       return !c;
     });
   };
-  const page = CRUMBS[pathname.split("/")[2] ?? ""];
+  const page2 = CRUMBS[pathname.split("/")[2] ?? ""];
   const name = data.shop.replace(/\.myshopify\.com$/, "");
   return /* @__PURE__ */ jsxs("div", { className: `orderly shell${collapsed ? " is-collapsed" : ""}${mobileOpen ? " is-open" : ""}`, children: [
     /* @__PURE__ */ jsxs("aside", { className: "sb", "aria-label": "Main navigation", children: [
       /* @__PURE__ */ jsxs("div", { className: "sb-brand", children: [
-        /* @__PURE__ */ jsx("span", { className: "sb-logo", children: "O" }),
-        /* @__PURE__ */ jsx("span", { className: "sb-name", children: "Orderly" }),
+        /* @__PURE__ */ jsx("span", { className: "sb-logo", children: "S" }),
+        /* @__PURE__ */ jsx("span", { className: "sb-name", children: "ShopPilot" }),
         /* @__PURE__ */ jsx("button", { className: "sb-collapse", onClick: toggle, "aria-label": collapsed ? "Expand sidebar" : "Collapse sidebar", children: collapsed ? /* @__PURE__ */ jsx(ChevronsRight, { size: 16 }) : /* @__PURE__ */ jsx(ChevronsLeft, { size: 16 }) })
       ] }),
       /* @__PURE__ */ jsx("nav", { className: "sb-nav", children: groups(data).map((g2) => /* @__PURE__ */ jsxs("div", { className: "sb-group", children: [
@@ -6688,12 +7636,12 @@ function Shell({ data, children }) {
       /* @__PURE__ */ jsxs("header", { className: "tb", children: [
         /* @__PURE__ */ jsx("button", { className: "tb-icon tb-burger", onClick: () => setMobileOpen((o) => !o), "aria-label": "Toggle menu", children: mobileOpen ? /* @__PURE__ */ jsx(X, { size: 18 }) : /* @__PURE__ */ jsx(Menu, { size: 18 }) }),
         /* @__PURE__ */ jsxs("nav", { className: "tb-crumbs", "aria-label": "Breadcrumb", children: [
-          /* @__PURE__ */ jsx(Link, { to: "/app", children: "Orderly" }),
-          page && /* @__PURE__ */ jsxs(Fragment, { children: [
+          /* @__PURE__ */ jsx(Link, { to: "/app", children: "ShopPilot" }),
+          page2 && /* @__PURE__ */ jsxs(Fragment, { children: [
             /* @__PURE__ */ jsx("span", { children: "/" }),
-            /* @__PURE__ */ jsx("b", { children: page })
+            /* @__PURE__ */ jsx("b", { children: page2 })
           ] }),
-          !page && /* @__PURE__ */ jsxs(Fragment, { children: [
+          !page2 && /* @__PURE__ */ jsxs(Fragment, { children: [
             /* @__PURE__ */ jsx("span", { children: "/" }),
             /* @__PURE__ */ jsx("b", { children: "Dashboard" })
           ] })
@@ -6704,11 +7652,11 @@ function Shell({ data, children }) {
     ] })
   ] });
 }
-function Page({ title, subtitle, actions, children }) {
+function Page({ title: title2, subtitle, actions, children }) {
   return /* @__PURE__ */ jsxs("div", { className: "o-page", children: [
     /* @__PURE__ */ jsxs("header", { className: "o-head", children: [
       /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("h1", { className: "o-title", children: title }),
+        /* @__PURE__ */ jsx("h1", { className: "o-title", children: title2 }),
         subtitle && /* @__PURE__ */ jsx("p", { className: "o-sub", children: subtitle })
       ] }),
       actions && /* @__PURE__ */ jsx("div", { className: "o-row", children: actions })
@@ -6716,10 +7664,10 @@ function Page({ title, subtitle, actions, children }) {
     children
   ] });
 }
-function Card({ title, action: action2, children }) {
+function Card({ title: title2, action: action2, children }) {
   return /* @__PURE__ */ jsxs("section", { className: "o-card", children: [
-    (title || action2) && /* @__PURE__ */ jsxs("div", { className: "o-card-head", children: [
-      title && /* @__PURE__ */ jsx("h2", { children: title }),
+    (title2 || action2) && /* @__PURE__ */ jsxs("div", { className: "o-card-head", children: [
+      title2 && /* @__PURE__ */ jsx("h2", { children: title2 }),
       action2
     ] }),
     children
@@ -7465,7 +8413,7 @@ const app__index = UNSAFE_withComponentProps(function Dashboard() {
   const callMax = Math.max(1, ...d.orders.calls.map((c) => c.count));
   const cur = k.revenue.currency;
   const ser = (key2) => d.days.map((x) => x[key2]);
-  const pulse = [{
+  const pulse2 = [{
     label: "Revenue",
     value: cur ? money$1(k.revenue.value, cur) : k.revenue.value.toLocaleString(),
     change: k.revenue.change,
@@ -7662,7 +8610,7 @@ const app__index = UNSAFE_withComponentProps(function Dashboard() {
       })]
     }), /* @__PURE__ */ jsx("div", {
       className: "db-pulse",
-      children: pulse.map((p) => /* @__PURE__ */ jsxs("div", {
+      children: pulse2.map((p) => /* @__PURE__ */ jsxs("div", {
         className: "db-pulse-item",
         children: [/* @__PURE__ */ jsxs("div", {
           className: "db-pulse-top",
@@ -8398,7 +9346,7 @@ const app__index = UNSAFE_withComponentProps(function Dashboard() {
     }), /* @__PURE__ */ jsxs("details", {
       className: "db-guide",
       children: [/* @__PURE__ */ jsx("summary", {
-        children: "What each part of Orderly does"
+        children: "What each part of ShopPilot does"
       }), /* @__PURE__ */ jsx("div", {
         className: "db-guide-grid",
         children: GUIDE.map((g2) => {
@@ -8472,7 +9420,7 @@ const loader$f = async ({
   if (filter === "bot") where.mode = "bot";
   if (filter === "closed") where.status = "closed";
   if (filter === "open") where.status = "open";
-  const list2 = await prisma.conversation.findMany({
+  const list = await prisma.conversation.findMany({
     where,
     orderBy: {
       lastMessageAt: "desc"
@@ -8506,7 +9454,7 @@ const loader$f = async ({
     q,
     filter,
     canSendFiles: activeProvider() === "qr",
-    list: list2.map((c) => ({
+    list: list.map((c) => ({
       id: c.id,
       phone: c.phone,
       name: c.customerName,
@@ -8644,8 +9592,8 @@ const action$7 = async ({
         message: "Slow down: too many replies."
       };
       const body = String(form2.get("body") ?? "").trim().slice(0, 1500);
-      const file = form2.get("file");
-      const hasFile = file instanceof File && file.size > 0;
+      const file2 = form2.get("file");
+      const hasFile = file2 instanceof File && file2.size > 0;
       if (!body && !hasFile) return {
         ok: false,
         message: "Type a message or attach a file."
@@ -8656,8 +9604,8 @@ const action$7 = async ({
       };
       let media;
       if (hasFile) {
-        const mime = (file.type || "").split(";")[0].toLowerCase();
-        if (file.size > MAX_MEDIA_BYTES) return {
+        const mime = (file2.type || "").split(";")[0].toLowerCase();
+        if (file2.size > MAX_MEDIA_BYTES) return {
           ok: false,
           message: "File is larger than 16 MB."
         };
@@ -8665,11 +9613,11 @@ const action$7 = async ({
           ok: false,
           message: "This file type is not allowed. Use images, video, audio, PDF, Word, Excel, text or zip."
         };
-        const saved = saveMedia(Buffer.from(await file.arrayBuffer()), mime);
+        const saved = saveMedia(Buffer.from(await file2.arrayBuffer()), mime);
         media = {
           kind: kindFromMime(mime),
           mime,
-          name: file.name.replace(/[^\w.\- ]+/g, "_").slice(0, 100),
+          name: file2.name.replace(/[^\w.\- ]+/g, "_").slice(0, 100),
           file: saved.file
         };
       }
@@ -8829,16 +9777,16 @@ function Ticks({
 const app_conversations = UNSAFE_withComponentProps(function Conversations() {
   var _a2;
   const {
-    list: list2,
+    list,
     selected,
     q,
     filter,
     canSendFiles
   } = useLoaderData();
   const result = useActionData();
-  const nav = useNavigation();
+  const nav2 = useNavigation();
   const shopify2 = useAppBridge();
-  const busy2 = nav.state !== "idle";
+  const busy2 = nav2.state !== "idle";
   const replyForm = useRef(null);
   const textarea = useRef(null);
   const fileInput = useRef(null);
@@ -8908,7 +9856,7 @@ const app_conversations = UNSAFE_withComponentProps(function Conversations() {
               children: "Agent"
             }), /* @__PURE__ */ jsx("option", {
               value: "bot",
-              children: "Bot"
+              children: "JAZZ"
             })]
           }), /* @__PURE__ */ jsx("button", {
             type: "submit",
@@ -8916,13 +9864,13 @@ const app_conversations = UNSAFE_withComponentProps(function Conversations() {
           })]
         }), /* @__PURE__ */ jsxs("div", {
           className: "wa-list",
-          children: [list2.length === 0 && /* @__PURE__ */ jsx("p", {
+          children: [list.length === 0 && /* @__PURE__ */ jsx("p", {
             className: "o-muted",
             style: {
               padding: 16
             },
             children: "No conversations yet. Messages appear here when customers write in on WhatsApp."
-          }), list2.map((c) => /* @__PURE__ */ jsxs(Link, {
+          }), list.map((c) => /* @__PURE__ */ jsxs(Link, {
             className: `wa-item ${(selected == null ? void 0 : selected.id) === c.id ? "active" : ""}`,
             to: `?c=${c.id}&filter=${filter}&q=${encodeURIComponent(q)}`,
             children: [/* @__PURE__ */ jsx(Avatar, {
@@ -8979,7 +9927,7 @@ const app_conversations = UNSAFE_withComponentProps(function Conversations() {
               children: [/* @__PURE__ */ jsx("b", {
                 children: selected.name ?? selected.phone
               }), /* @__PURE__ */ jsxs("small", {
-                children: [selected.name ? `${selected.phone} · ` : "", selected.mode === "human" ? `Agent mode${selected.handoffReason ? ` (${selected.handoffReason})` : ""}` : "Bot is replying"]
+                children: [selected.name ? `${selected.phone} · ` : "", selected.mode === "human" ? `Agent mode${selected.handoffReason ? ` (${selected.handoffReason})` : ""}` : "JAZZ is replying"]
               })]
             }), /* @__PURE__ */ jsxs("div", {
               className: "wa-actions",
@@ -9043,7 +9991,7 @@ const app_conversations = UNSAFE_withComponentProps(function Conversations() {
                   className: `wa-msg ${cls}`,
                   children: [m.direction === "out" && /* @__PURE__ */ jsx("span", {
                     className: "wa-who",
-                    children: m.sender === "agent" ? "Agent" : "🤖 Bot"
+                    children: m.sender === "agent" ? "Agent" : "🤖 JAZZ"
                   }), m.media && /* @__PURE__ */ jsx(MediaView, {
                     m: m.media
                   }), m.body && /* @__PURE__ */ jsx("div", {
@@ -9177,7 +10125,7 @@ const loader$e = async ({
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") ?? "").trim().slice(0, 60);
   const filter = ["found", "missing"].includes(url.searchParams.get("filter") ?? "") ? url.searchParams.get("filter") : "all";
-  const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+  const page2 = Math.max(1, Number(url.searchParams.get("page")) || 1);
   const where = {
     shop
   };
@@ -9205,7 +10153,7 @@ const loader$e = async ({
       createdAt: "desc"
     },
     take: PAGE_SIZE$1,
-    skip: (page - 1) * PAGE_SIZE$1
+    skip: (page2 - 1) * PAGE_SIZE$1
   }), prisma.productEnquiry.count({
     where
   }), prisma.productEnquiry.count({
@@ -9244,7 +10192,7 @@ const loader$e = async ({
   return {
     q,
     filter,
-    page,
+    page: page2,
     total,
     pages: Math.max(1, Math.ceil(total / PAGE_SIZE$1)),
     all,
@@ -9479,7 +10427,7 @@ const EXT = { jpg: "jpg", jpeg: "jpg", png: "png", webp: "webp" };
 const junk = (path2) => path2.split("/").some((p) => p.startsWith(".") || p === "__MACOSX" || p.toLowerCase() === "thumbs.db" || p.toLowerCase() === "desktop.ini");
 function parseZip(bytes2) {
   const problems = [];
-  const files = unzipSync(bytes2, {
+  const files2 = unzipSync(bytes2, {
     filter: (f) => {
       var _a2;
       const path2 = f.name.replace(/\\/g, "/");
@@ -9493,18 +10441,18 @@ function parseZip(bytes2) {
     }
   });
   const bySku = /* @__PURE__ */ new Map();
-  for (const [raw, data] of Object.entries(files)) {
+  for (const [raw, data] of Object.entries(files2)) {
     const path2 = raw.replace(/\\/g, "/");
     const parts = path2.split("/").filter(Boolean);
     if (parts.length < 2) {
       problems.push({ path: path2, reason: "This image is not inside a SKU folder." });
       continue;
     }
-    const file = parts[parts.length - 1];
+    const file2 = parts[parts.length - 1];
     const sku = parts[parts.length - 2].trim();
-    const dot = file.lastIndexOf(".");
-    const stem2 = file.slice(0, dot).trim();
-    const ext = EXT[file.slice(dot + 1).toLowerCase()];
+    const dot2 = file2.lastIndexOf(".");
+    const stem2 = file2.slice(0, dot2).trim();
+    const ext = EXT[file2.slice(dot2 + 1).toLowerCase()];
     if (!/^\d{1,3}$/.test(stem2) || Number(stem2) < 1) {
       problems.push({ path: path2, reason: "The file name must be a position number like 1.jpg, 2.jpg." });
       continue;
@@ -9515,7 +10463,7 @@ function parseZip(bytes2) {
       problems.push({ path: path2, reason: `Position ${position} is used twice in this folder.` });
       continue;
     }
-    folder.images.push({ position, ext, name: file, data });
+    folder.images.push({ position, ext, name: file2, data });
     bySku.set(sku.toLowerCase(), folder);
   }
   const folders = [...bySku.values()].map((f) => ({ sku: f.sku, images: f.images.sort((a, b) => a.position - b.position) })).sort((a, b) => a.sku.localeCompare(b.sku, void 0, { numeric: true }));
@@ -9633,17 +10581,17 @@ const app_imageBulk = UNSAFE_withComponentProps(function BulkUpload() {
     ...r,
     ...p
   } : r));
-  const readZip = async (file) => {
+  const readZip = async (file2) => {
     setError(null);
     setRows([]);
     setQueue([]);
     setProblems([]);
-    if (!/\.zip$/i.test(file.name)) return setError("Please choose a .zip file.");
-    if (file.size > MAX_ZIP) return setError(`The ZIP is larger than ${mb(MAX_ZIP)}. Split it into smaller ZIPs.`);
-    setZipName(file.name);
+    if (!/\.zip$/i.test(file2.name)) return setError("Please choose a .zip file.");
+    if (file2.size > MAX_ZIP) return setError(`The ZIP is larger than ${mb(MAX_ZIP)}. Split it into smaller ZIPs.`);
+    setZipName(file2.name);
     try {
       setPhase("reading");
-      const parsed = parseZip(new Uint8Array(await file.arrayBuffer()));
+      const parsed = parseZip(new Uint8Array(await file2.arrayBuffer()));
       setProblems(parsed.problems);
       if (parsed.folders.length === 0) throw new Error("No SKU folders with numbered images (1.jpg, 2.jpg ...) were found in this ZIP.");
       setPhase("checking");
@@ -10106,18 +11054,18 @@ async function loadImageEditor(shop, url, kind = "upload") {
     })
   };
 }
-function Compare({ before, after, onClose, title }) {
+function Compare({ before, after, onClose, title: title2 }) {
   const [pos, setPos] = useState(50);
   useEffect(() => {
     const k = (e) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
   }, [onClose]);
-  return /* @__PURE__ */ jsxs("div", { className: "ie-modal", role: "dialog", "aria-modal": "true", "aria-label": `Compare ${title}`, children: [
+  return /* @__PURE__ */ jsxs("div", { className: "ie-modal", role: "dialog", "aria-modal": "true", "aria-label": `Compare ${title2}`, children: [
     /* @__PURE__ */ jsx("button", { type: "button", className: "ie-backdrop", "aria-label": "Close preview", onClick: onClose }),
     /* @__PURE__ */ jsxs("div", { className: "ie-modal-box", children: [
       /* @__PURE__ */ jsxs("div", { className: "ie-modal-head", children: [
-        /* @__PURE__ */ jsx("b", { children: title }),
+        /* @__PURE__ */ jsx("b", { children: title2 }),
         /* @__PURE__ */ jsx("button", { className: "ghost", onClick: onClose, "aria-label": "Close", children: /* @__PURE__ */ jsx(X, { size: 14 }) })
       ] }),
       /* @__PURE__ */ jsxs("div", { className: "ie-compare", children: [
@@ -10135,26 +11083,26 @@ function Compare({ before, after, onClose, title }) {
 }
 const PRESET_ICONS = [ShoppingBag, Store, Camera, Scissors, Minimize2];
 const SWATCHES = ["#ffffff", "#f5efe6", "#e9e9e9", "#c9b8a3", "#111111"];
-function Switch({ checked, onChange, label: label2, hint, disabled }) {
+function Switch({ checked, onChange, label: label2, hint: hint2, disabled }) {
   return /* @__PURE__ */ jsxs("label", { className: `ox-switch${disabled ? " off" : ""}`, children: [
     /* @__PURE__ */ jsx("input", { type: "checkbox", checked, disabled, onChange: (e) => onChange(e.target.checked) }),
     /* @__PURE__ */ jsx("i", { "aria-hidden": "true" }),
     /* @__PURE__ */ jsxs("span", { children: [
       /* @__PURE__ */ jsx("b", { children: label2 }),
-      hint && /* @__PURE__ */ jsx("small", { children: hint })
+      hint2 && /* @__PURE__ */ jsx("small", { children: hint2 })
     ] })
   ] });
 }
 function Seg({ value, options, onChange, label: label2, disabled }) {
   return /* @__PURE__ */ jsx("div", { className: "ox-seg", role: "radiogroup", "aria-label": label2, children: options.map((o) => /* @__PURE__ */ jsx("button", { type: "button", role: "radio", "aria-checked": value === o.v, className: value === o.v ? "on" : "", disabled, onClick: () => onChange(o.v), children: o.label }, o.v)) });
 }
-function Panel({ icon: Icon, title, summary, children }) {
+function Panel({ icon: Icon, title: title2, summary, children }) {
   const [open, setOpen] = useState(false);
   return /* @__PURE__ */ jsxs("section", { className: `ox-panel${open ? " open" : ""}`, children: [
     /* @__PURE__ */ jsxs("button", { type: "button", className: "ox-head", "aria-expanded": open, onClick: () => setOpen((o) => !o), children: [
       /* @__PURE__ */ jsx("span", { className: "ox-ico", children: /* @__PURE__ */ jsx(Icon, { size: 16 }) }),
       /* @__PURE__ */ jsxs("span", { className: "ox-head-text", children: [
-        /* @__PURE__ */ jsx("b", { children: title }),
+        /* @__PURE__ */ jsx("b", { children: title2 }),
         /* @__PURE__ */ jsx("small", { children: summary })
       ] }),
       /* @__PURE__ */ jsx(ChevronDown, { size: 16, className: "ox-chev" })
@@ -10382,9 +11330,9 @@ const app_imageEditor = UNSAFE_withComponentProps(function ImageEditor() {
   const [error, setError] = useState(null);
   const [skipped, setSkipped] = useState(0);
   const [compare, setCompare] = useState(null);
-  const addFiles = useCallback((list2) => {
-    const ok = list2.filter((p) => isImageName(p.file.name) && p.file.size > 0 && p.file.size <= LIMITS$1.maxFileBytes);
-    setSkipped((n) => n + list2.length - ok.length);
+  const addFiles = useCallback((list) => {
+    const ok = list.filter((p) => isImageName(p.file.name) && p.file.size > 0 && p.file.size <= LIMITS$1.maxFileBytes);
+    setSkipped((n) => n + list.length - ok.length);
     setPicked((cur) => [...cur, ...ok].slice(0, LIMITS$1.maxFiles));
   }, []);
   const advice = opts.removeBg ? d.advice.ai : d.advice.plain;
@@ -10906,7 +11854,7 @@ const loader$b = async ({
   const ctx = shopifyCtx(session.shop);
   const q = (url.searchParams.get("q") ?? "").slice(0, 80);
   const base = await loadImageEditor(session.shop, url, "store");
-  let list2 = {
+  let list = {
     products: [],
     hasNext: false,
     endCursor: null
@@ -10914,7 +11862,7 @@ const loader$b = async ({
   let listError = null;
   let canEdit = false;
   try {
-    if (q.trim()) list2 = await listStoreProducts(ctx, {
+    if (q.trim()) list = await listStoreProducts(ctx, {
       q,
       after: url.searchParams.get("after")
     });
@@ -10929,7 +11877,7 @@ const loader$b = async ({
   return {
     ...base,
     q,
-    list: list2,
+    list,
     listError,
     canEdit
   };
@@ -11806,7 +12754,7 @@ const PAGE_SIZE = 50;
 async function loadOrderSheet(shop, url) {
   const q = (url.searchParams.get("q") ?? "").trim().slice(0, 60);
   const status = SHEET_STATUSES.includes(url.searchParams.get("status")) ? url.searchParams.get("status") : "";
-  const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+  const page2 = Math.max(1, Number(url.searchParams.get("page")) || 1);
   const kind = PERIOD_KINDS.includes(url.searchParams.get("period")) ? url.searchParams.get("period") : "week";
   const from = parseDay(url.searchParams.get("from"));
   const to = parseDay(url.searchParams.get("to"));
@@ -11817,7 +12765,7 @@ async function loadOrderSheet(shop, url) {
   }
   const where = status ? { ...base, status } : base;
   const [rows, listed, counts, sync, everything, gs, windowOrders] = await Promise.all([
-    prisma.orderSheet.findMany({ where, orderBy: [{ orderDate: "desc" }, { createdAt: "desc" }], take: PAGE_SIZE, skip: (page - 1) * PAGE_SIZE }),
+    prisma.orderSheet.findMany({ where, orderBy: [{ orderDate: "desc" }, { createdAt: "desc" }], take: PAGE_SIZE, skip: (page2 - 1) * PAGE_SIZE }),
     prisma.orderSheet.count({ where }),
     statusCounts(base),
     prisma.orderSyncState.findUnique({ where: { shop } }),
@@ -11845,7 +12793,7 @@ async function loadOrderSheet(shop, url) {
     })),
     q,
     status,
-    page,
+    page: page2,
     listed,
     pages: Math.max(1, Math.ceil(listed / PAGE_SIZE)),
     counts,
@@ -12360,11 +13308,13 @@ function Cell({
     const cur = String(raw ?? "");
     return /* @__PURE__ */ jsxs("select", {
       className: "os-in",
+      "data-empty": !cur,
       defaultValue: cur,
       onChange: (e) => save(e.target.value),
       "aria-label": col.label,
-      children: [!cur && /* @__PURE__ */ jsx("option", {
-        value: ""
+      children: [(col.kind === "select" || !cur) && /* @__PURE__ */ jsx("option", {
+        value: "",
+        children: "Select"
       }), !opts.includes(cur) && cur && /* @__PURE__ */ jsx("option", {
         value: cur,
         children: cur
@@ -12389,8 +13339,8 @@ const app_orderSheet = UNSAFE_withComponentProps(function OrderSheet() {
   var _a2, _b, _c;
   const d = useLoaderData();
   const result = useActionData();
-  const nav = useNavigation();
-  const busy2 = nav.state !== "idle";
+  const nav2 = useNavigation();
+  const busy2 = nav2.state !== "idle";
   useAutoRefresh(d.tasks.some((t) => t.running) ? 1500 : 2e4);
   const link = (patch) => {
     const p = new URLSearchParams({
@@ -12405,7 +13355,7 @@ const app_orderSheet = UNSAFE_withComponentProps(function OrderSheet() {
     for (const [k, v] of [...p]) if (!v || k === "page" && v === "1" || k === "period" && v === "week") p.delete(k);
     return `?${p.toString()}`;
   };
-  const cards = [["Total Orders", d.counts.total, ""], ["Delivered", d.counts.Delivered, "Delivered"], ["Unfulfilled", d.counts.Unfulfilled, "Unfulfilled"], ["Cancelled", d.counts.Cancelled, "Cancelled"], ["RTO (Returns)", d.counts.RTO, "RTO"]];
+  const cards2 = [["Total Orders", d.counts.total, ""], ["Delivered", d.counts.Delivered, "Delivered"], ["Unfulfilled", d.counts.Unfulfilled, "Unfulfilled"], ["Cancelled", d.counts.Cancelled, "Cancelled"], ["RTO (Returns)", d.counts.RTO, "RTO"]];
   const fulfilledOnly = d.counts.Fulfilled;
   return /* @__PURE__ */ jsxs(Page, {
     title: "Order Update",
@@ -12682,7 +13632,7 @@ const app_orderSheet = UNSAFE_withComponentProps(function OrderSheet() {
       })
     }), /* @__PURE__ */ jsx("div", {
       className: "d-kpis os-kpis",
-      children: cards.map(([label2, n, st]) => /* @__PURE__ */ jsxs(Link, {
+      children: cards2.map(([label2, n, st]) => /* @__PURE__ */ jsxs(Link, {
         to: link({
           status: st === d.status ? "" : st,
           page: "1"
@@ -13169,6 +14119,7 @@ const loader$6 = async ({
       id: p.id,
       title: p.title,
       brand: p.brand,
+      sku: p.sku || p.folder,
       price: p.price,
       comparePrice: p.comparePrice,
       discount: p.discount,
@@ -13583,7 +14534,7 @@ const app_productScrapper = UNSAFE_withComponentProps(function ProductScrapper()
         }), ((_c = d.run) == null ? void 0 : _c.csv) && /* @__PURE__ */ jsx("a", {
           className: "fp-btn ghost",
           href: d.run.csv,
-          children: "CSV"
+          children: "CSV (name, description, link, SKU)"
         })]
       }),
       children: d.products.length === 0 ? /* @__PURE__ */ jsx("p", {
@@ -13612,6 +14563,9 @@ const app_productScrapper = UNSAFE_withComponentProps(function ProductScrapper()
               className: "fp-meta",
               children: [p.brand && /* @__PURE__ */ jsx("span", {
                 children: p.brand
+              }), p.isNew && p.sku && /* @__PURE__ */ jsxs("span", {
+                title: "Image folder name in the ZIP",
+                children: ["SKU ", p.sku]
               }), /* @__PURE__ */ jsx("b", {
                 children: p.price || "—"
               }), p.comparePrice && /* @__PURE__ */ jsx("s", {
@@ -13974,23 +14928,23 @@ const action$2 = async ({
   };
 };
 function FaqForm({
-  faq,
+  faq: faq2,
   busy: busy2
 }) {
-  const editing = !!(faq == null ? void 0 : faq.id);
+  const editing = !!(faq2 == null ? void 0 : faq2.id);
   return /* @__PURE__ */ jsxs(Form, {
     method: "post",
     children: [editing && /* @__PURE__ */ jsx("input", {
       type: "hidden",
       name: "id",
-      value: faq.id
+      value: faq2.id
     }), /* @__PURE__ */ jsxs("label", {
       className: "o-field",
       children: [/* @__PURE__ */ jsx("span", {
         children: "Title (for you only)"
       }), /* @__PURE__ */ jsx("input", {
         name: "title",
-        defaultValue: faq == null ? void 0 : faq.title,
+        defaultValue: faq2 == null ? void 0 : faq2.title,
         required: true,
         maxLength: 80,
         style: {
@@ -14003,8 +14957,8 @@ function FaqForm({
         children: "Keywords: sent when the message contains any of these (comma separated; English, Hindi or Hinglish)"
       }), /* @__PURE__ */ jsx("textarea", {
         name: "keywords",
-        rows: (faq == null ? void 0 : faq.keywords) && faq.keywords.length > 300 ? 6 : 2,
-        defaultValue: faq == null ? void 0 : faq.keywords
+        rows: (faq2 == null ? void 0 : faq2.keywords) && faq2.keywords.length > 300 ? 6 : 2,
+        defaultValue: faq2 == null ? void 0 : faq2.keywords
       })]
     }), /* @__PURE__ */ jsxs("label", {
       className: "o-field",
@@ -14012,8 +14966,8 @@ function FaqForm({
         children: "Questions, one per line (matched even if the customer words it differently)"
       }), /* @__PURE__ */ jsx("textarea", {
         name: "questions",
-        rows: (faq == null ? void 0 : faq.questions) && faq.questions.length > 200 ? 5 : 3,
-        defaultValue: faq == null ? void 0 : faq.questions
+        rows: (faq2 == null ? void 0 : faq2.questions) && faq2.questions.length > 200 ? 5 : 3,
+        defaultValue: faq2 == null ? void 0 : faq2.questions
       })]
     }), /* @__PURE__ */ jsxs("label", {
       className: "o-field",
@@ -14022,7 +14976,7 @@ function FaqForm({
       }), /* @__PURE__ */ jsx("textarea", {
         name: "replyEn",
         rows: 3,
-        defaultValue: faq == null ? void 0 : faq.replyEn,
+        defaultValue: faq2 == null ? void 0 : faq2.replyEn,
         maxLength: 1500
       })]
     }), /* @__PURE__ */ jsxs("label", {
@@ -14032,7 +14986,7 @@ function FaqForm({
       }), /* @__PURE__ */ jsx("textarea", {
         name: "replyHinglish",
         rows: 3,
-        defaultValue: faq == null ? void 0 : faq.replyHinglish,
+        defaultValue: faq2 == null ? void 0 : faq2.replyHinglish,
         maxLength: 1500
       })]
     }), /* @__PURE__ */ jsxs("label", {
@@ -14042,7 +14996,7 @@ function FaqForm({
       }), /* @__PURE__ */ jsx("textarea", {
         name: "replyHi",
         rows: 3,
-        defaultValue: faq == null ? void 0 : faq.replyHi,
+        defaultValue: faq2 == null ? void 0 : faq2.replyHi,
         maxLength: 1500
       })]
     }), /* @__PURE__ */ jsxs("div", {
@@ -14059,7 +15013,7 @@ function FaqForm({
           value: "toggle",
           disabled: busy2,
           formNoValidate: true,
-          children: faq.enabled ? "Turn off" : "Turn on"
+          children: faq2.enabled ? "Turn off" : "Turn on"
         }), /* @__PURE__ */ jsx("button", {
           className: "danger",
           name: "intent",
@@ -14073,7 +15027,7 @@ function FaqForm({
         })]
       })]
     })]
-  }, (faq == null ? void 0 : faq.id) ?? "new");
+  }, (faq2 == null ? void 0 : faq2.id) ?? "new");
 }
 const app_quickReplies = UNSAFE_withComponentProps(function QuickReplies() {
   const {
@@ -14143,9 +15097,9 @@ const loader$3 = async ({
   const q = (url.searchParams.get("q") ?? "").trim().slice(0, 80);
   const f = FILTERS.some(([k]) => k === url.searchParams.get("f")) ? url.searchParams.get("f") : "all";
   const rule = ruleById(url.searchParams.get("rule") ?? "") ? url.searchParams.get("rule") : "";
-  const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+  const page2 = Math.max(1, Number(url.searchParams.get("page")) || 1);
   const askedTab = url.searchParams.get("tab") ?? "";
-  const tab = TABS.some(([k]) => k === askedTab) ? askedTab : q || rule || f !== "all" || page > 1 ? "products" : "overview";
+  const tab = TABS.some(([k]) => k === askedTab) ? askedTab : q || rule || f !== "all" || page2 > 1 ? "products" : "overview";
   const all = await prisma.seoProduct.findMany({
     where: {
       shop
@@ -14219,7 +15173,7 @@ const loader$3 = async ({
     }, {
       title: "asc"
     }],
-    skip: (page - 1) * PAGE,
+    skip: (page2 - 1) * PAGE,
     take: PAGE
   })]);
   const batches = await prisma.seoBatch.findMany({
@@ -14253,7 +15207,7 @@ const loader$3 = async ({
     q,
     f,
     rule,
-    page,
+    page: page2,
     pages: Math.max(1, Math.ceil(total / PAGE)),
     total,
     stats: {
@@ -14352,7 +15306,7 @@ function useBatch(batchId, initial) {
     if (!running2) return;
     let stop = false;
     let failed = 0;
-    let timer;
+    let timer2;
     const tick = async () => {
       try {
         const r = await post("progress", {
@@ -14371,12 +15325,12 @@ function useBatch(batchId, initial) {
         failed += 1;
         if (failed >= 5) return;
       }
-      if (!stop) timer = setTimeout(tick, 900);
+      if (!stop) timer2 = setTimeout(tick, 900);
     };
-    timer = setTimeout(tick, 400);
+    timer2 = setTimeout(tick, 400);
     return () => {
       stop = true;
-      clearTimeout(timer);
+      clearTimeout(timer2);
     };
   }, [running2, batchId]);
   const start = async (op) => {
@@ -14574,7 +15528,7 @@ function BatchPanel({
   });
 }
 function Importer({
-  ready
+  ready: ready2
 }) {
   const rv = useRevalidator();
   const input2 = useRef(null);
@@ -14586,17 +15540,17 @@ function Importer({
     setPv(null);
     if (input2.current) input2.current.value = "";
   };
-  const pick2 = async (file) => {
+  const pick2 = async (file2) => {
     setError(null);
     setPv(null);
-    if (!/\.csv$/i.test(file.name)) return setError("Please choose a .csv file.");
-    if (file.size > 8e6) return setError("The file is larger than 8 MB. Split it into smaller files.");
-    setName(file.name);
+    if (!/\.csv$/i.test(file2.name)) return setError("Please choose a .csv file.");
+    if (file2.size > 8e6) return setError("The file is larger than 8 MB. Split it into smaller files.");
+    setName(file2.name);
     setChecking(true);
     try {
       setPv(await post("preview", {
-        csv: await file.text(),
-        name: file.name
+        csv: await file2.text(),
+        name: file2.name
       }));
       rv.revalidate();
     } catch (e) {
@@ -14611,7 +15565,7 @@ function Importer({
       tone: "critical",
       children: error
     }), !pv && /* @__PURE__ */ jsxs("label", {
-      className: `seo-drop ${ready && !checking ? "" : "off"}`,
+      className: `seo-drop ${ready2 && !checking ? "" : "off"}`,
       children: [/* @__PURE__ */ jsx(FileUp, {
         size: 22
       }), /* @__PURE__ */ jsx("b", {
@@ -14622,7 +15576,7 @@ function Importer({
         ref: input2,
         type: "file",
         accept: ".csv,text/csv",
-        disabled: !ready || checking,
+        disabled: !ready2 || checking,
         onChange: (e) => {
           var _a2;
           return ((_a2 = e.target.files) == null ? void 0 : _a2[0]) && pick2(e.target.files[0]);
@@ -14865,7 +15819,7 @@ function Meter({
   });
 }
 function Serp({
-  title,
+  title: title2,
   description,
   handle,
   shop
@@ -14885,7 +15839,7 @@ function Serp({
       })]
     }), /* @__PURE__ */ jsx("div", {
       className: "seo-serp-title",
-      children: title
+      children: title2
     }), /* @__PURE__ */ jsx("div", {
       className: "seo-serp-desc",
       children: description || /* @__PURE__ */ jsx("em", {
@@ -15649,6 +16603,30 @@ const app_settings = UNSAFE_withComponentProps(function Settings() {
           })
         })]
       }), /* @__PURE__ */ jsxs(Card, {
+        title: "Personal numbers (bot stays silent)",
+        children: [/* @__PURE__ */ jsxs("p", {
+          className: "o-muted",
+          children: ["JAZZ never replies to numbers saved in your phone's contacts (family, friends, suppliers). A saved number can still talk to JAZZ by starting the message with ", /* @__PURE__ */ jsx("b", {
+            children: "!"
+          }), ", ", /* @__PURE__ */ jsx("b", {
+            children: "#"
+          }), " or ", /* @__PURE__ */ jsx("b", {
+            children: "$"
+          }), ", for example ", /* @__PURE__ */ jsx("b", {
+            children: "#W1219"
+          }), ". Add any other personal numbers here, one per line."]
+        }), /* @__PURE__ */ jsxs("label", {
+          className: "o-field",
+          children: [/* @__PURE__ */ jsx("span", {
+            children: "Extra personal numbers"
+          }), /* @__PURE__ */ jsx("textarea", {
+            name: "savedNumbers",
+            rows: 3,
+            defaultValue: settings.savedNumbers.join("\n"),
+            placeholder: "+919876543210\n+919812345678"
+          })]
+        })]
+      }), /* @__PURE__ */ jsxs(Card, {
         title: "Customer-facing messages (English)",
         children: [/* @__PURE__ */ jsx("p", {
           className: "o-muted",
@@ -15945,7 +16923,7 @@ const route34 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePrope
   headers,
   loader
 }, Symbol.toStringTag, { value: "Module" }));
-const serverManifest = { "entry": { "module": "/assets/entry.client-De-QXFzv.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-Bgn1TnLL.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index/route": { "id": "routes/_index/route", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-DKYy_aGp.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": ["/assets/route-CNPfFM0M.css"], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/health": { "id": "routes/health", "parentId": "root", "path": "health", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/health-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.cancelled": { "id": "routes/webhooks.orders.cancelled", "parentId": "root", "path": "webhooks/orders/cancelled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.cancelled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.create": { "id": "routes/webhooks.orders.create", "parentId": "root", "path": "webhooks/orders/create", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.create-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.updated": { "id": "routes/webhooks.orders.updated", "parentId": "root", "path": "webhooks/orders/updated", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.updated-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.products.update": { "id": "routes/webhooks.products.update", "parentId": "root", "path": "webhooks/products/update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.products.update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.avatar.$id": { "id": "routes/api.avatar.$id", "parentId": "root", "path": "api/avatar/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.avatar._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.finder.$": { "id": "routes/api.finder.$", "parentId": "root", "path": "api/finder/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.finder._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.image-editor.$": { "id": "routes/api.image-editor.$", "parentId": "root", "path": "api/image-editor/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.image-editor._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.media.$id": { "id": "routes/api.media.$id", "parentId": "root", "path": "api/media/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.media._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.send": { "id": "routes/api.send", "parentId": "root", "path": "api/send", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.send-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.seo.$": { "id": "routes/api.seo.$", "parentId": "root", "path": "api/seo/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.seo._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.webhooks.whatsapp": { "id": "routes/api.webhooks.whatsapp", "parentId": "root", "path": "api/webhooks/whatsapp", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.webhooks.whatsapp-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-C4QtNXlO.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/wand-sparkles-BdPk82tl.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/sparkles-xFG9LRwy.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-DNIVUmzw.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/wand-sparkles-BdPk82tl.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/circle-check-CgxXrolP.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.conversations": { "id": "routes/app.conversations", "parentId": "routes/app", "path": "conversations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.conversations-Bgp4Hu3h.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.enquiries": { "id": "routes/app.enquiries", "parentId": "routes/app", "path": "enquiries", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.enquiries-COB6tued.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-bulk": { "id": "routes/app.image-bulk", "parentId": "routes/app", "path": "image-bulk", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-bulk-DqWooGbZ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-editor": { "id": "routes/app.image-editor", "parentId": "routes/app", "path": "image-editor", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-editor-DecPYZBZ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-CYr-TWIU.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/chevron-down-DgceB_EA.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js", "/assets/x-DIQ7-F4l.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-products": { "id": "routes/app.image-products", "parentId": "routes/app", "path": "image-products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-products-gnF-_YWP.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-CYr-TWIU.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/chevron-down-DgceB_EA.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.integrations": { "id": "routes/app.integrations", "parentId": "routes/app", "path": "integrations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.integrations-C5bXxipA.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.logs": { "id": "routes/app.logs", "parentId": "routes/app", "path": "logs", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.logs-lqPVshDm.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.order-sheet": { "id": "routes/app.order-sheet", "parentId": "routes/app", "path": "order-sheet", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.order-sheet-o5vifZPE.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/x-DIQ7-F4l.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.orders": { "id": "routes/app.orders", "parentId": "routes/app", "path": "orders", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.orders-Dn87TNmU.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.product-scrapper": { "id": "routes/app.product-scrapper", "parentId": "routes/app", "path": "product-scrapper", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.product-scrapper-XyK2KC9M.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/search-Brt88N_W.js", "/assets/trash-B5HXC6TW.js", "/assets/download-2kZZwBYa.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.products": { "id": "routes/app.products", "parentId": "routes/app", "path": "products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.products-bWC2Cbow.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.quick-replies": { "id": "routes/app.quick-replies", "parentId": "routes/app", "path": "quick-replies", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.quick-replies-C0KLsZI0.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.seo": { "id": "routes/app.seo", "parentId": "routes/app", "path": "seo", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.seo-eZqunjrD.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/scan-search-B8PBngg6.js", "/assets/circle-check-CgxXrolP.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/chevron-down-DgceB_EA.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/rotate-ccw-B15igVXZ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.settings": { "id": "routes/app.settings", "parentId": "routes/app", "path": "settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.settings-BiVMbAsC.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.waiting": { "id": "routes/app.waiting", "parentId": "routes/app", "path": "waiting", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/app.waiting-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.whatsapp-web": { "id": "routes/app.whatsapp-web", "parentId": "routes/app", "path": "whatsapp-web", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.whatsapp-web-rkKNcRIT.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-d463654a.js", "version": "d463654a", "sri": void 0 };
+const serverManifest = { "entry": { "module": "/assets/entry.client-De-QXFzv.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-Bgn1TnLL.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index/route": { "id": "routes/_index/route", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-0IrQz9vg.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/sparkles-xFG9LRwy.js", "/assets/check-CGWzhlUJ.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/wand-sparkles-BKiQOlNj.js", "/assets/bot-BbHIXRQL.js", "/assets/scan-search-B8PBngg6.js", "/assets/zap-Bwwxmd1D.js", "/assets/download-2kZZwBYa.js", "/assets/arrow-right-B_uRSdyZ.js"], "css": ["/assets/route-DDOjQ5rG.css"], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/health": { "id": "routes/health", "parentId": "root", "path": "health", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/health-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.cancelled": { "id": "routes/webhooks.orders.cancelled", "parentId": "root", "path": "webhooks/orders/cancelled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.cancelled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.create": { "id": "routes/webhooks.orders.create", "parentId": "root", "path": "webhooks/orders/create", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.create-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.updated": { "id": "routes/webhooks.orders.updated", "parentId": "root", "path": "webhooks/orders/updated", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.updated-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.products.update": { "id": "routes/webhooks.products.update", "parentId": "root", "path": "webhooks/products/update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.products.update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.avatar.$id": { "id": "routes/api.avatar.$id", "parentId": "root", "path": "api/avatar/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.avatar._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.finder.$": { "id": "routes/api.finder.$", "parentId": "root", "path": "api/finder/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.finder._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.image-editor.$": { "id": "routes/api.image-editor.$", "parentId": "root", "path": "api/image-editor/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.image-editor._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.media.$id": { "id": "routes/api.media.$id", "parentId": "root", "path": "api/media/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.media._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.send": { "id": "routes/api.send", "parentId": "root", "path": "api/send", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.send-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.seo.$": { "id": "routes/api.seo.$", "parentId": "root", "path": "api/seo/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.seo._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.webhooks.whatsapp": { "id": "routes/api.webhooks.whatsapp", "parentId": "root", "path": "api/webhooks/whatsapp", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.webhooks.whatsapp-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-D9ql_vVJ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/wand-sparkles-BKiQOlNj.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/zap-Bwwxmd1D.js", "/assets/sparkles-xFG9LRwy.js", "/assets/smartphone-k2xT6UfX.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-FbhgjGSA.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/wand-sparkles-BKiQOlNj.js", "/assets/bot-BbHIXRQL.js", "/assets/scan-search-B8PBngg6.js", "/assets/smartphone-k2xT6UfX.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/circle-check-C3rt3n8w.js", "/assets/arrow-right-B_uRSdyZ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.conversations": { "id": "routes/app.conversations", "parentId": "routes/app", "path": "conversations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.conversations-BNXOjWJh.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.enquiries": { "id": "routes/app.enquiries", "parentId": "routes/app", "path": "enquiries", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.enquiries-COB6tued.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-bulk": { "id": "routes/app.image-bulk", "parentId": "routes/app", "path": "image-bulk", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-bulk-DqWooGbZ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-editor": { "id": "routes/app.image-editor", "parentId": "routes/app", "path": "image-editor", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-editor-oLxol0EM.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BdrjVghj.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/chevron-down-DgceB_EA.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/check-CGWzhlUJ.js", "/assets/sparkles-xFG9LRwy.js", "/assets/x-DIQ7-F4l.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-products": { "id": "routes/app.image-products", "parentId": "routes/app", "path": "image-products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-products-BRAmRHXP.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BdrjVghj.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/check-CGWzhlUJ.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/chevron-down-DgceB_EA.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.integrations": { "id": "routes/app.integrations", "parentId": "routes/app", "path": "integrations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.integrations-C5bXxipA.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.logs": { "id": "routes/app.logs", "parentId": "routes/app", "path": "logs", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.logs-lqPVshDm.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.order-sheet": { "id": "routes/app.order-sheet", "parentId": "routes/app", "path": "order-sheet", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.order-sheet-AP8WeaL_.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/x-DIQ7-F4l.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.orders": { "id": "routes/app.orders", "parentId": "routes/app", "path": "orders", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.orders-Dn87TNmU.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.product-scrapper": { "id": "routes/app.product-scrapper", "parentId": "routes/app", "path": "product-scrapper", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.product-scrapper-CpJb0ZY2.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/search-Brt88N_W.js", "/assets/trash-B5HXC6TW.js", "/assets/download-2kZZwBYa.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.products": { "id": "routes/app.products", "parentId": "routes/app", "path": "products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.products-bWC2Cbow.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.quick-replies": { "id": "routes/app.quick-replies", "parentId": "routes/app", "path": "quick-replies", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.quick-replies-C0KLsZI0.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.seo": { "id": "routes/app.seo", "parentId": "routes/app", "path": "seo", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.seo-BsTh6JKt.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/scan-search-B8PBngg6.js", "/assets/arrow-right-B_uRSdyZ.js", "/assets/circle-check-C3rt3n8w.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/chevron-down-DgceB_EA.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/rotate-ccw-B15igVXZ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.settings": { "id": "routes/app.settings", "parentId": "routes/app", "path": "settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.settings-7p8iI1f7.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.waiting": { "id": "routes/app.waiting", "parentId": "routes/app", "path": "waiting", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/app.waiting-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.whatsapp-web": { "id": "routes/app.whatsapp-web", "parentId": "routes/app", "path": "whatsapp-web", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.whatsapp-web-rkKNcRIT.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-af12a0d6.js", "version": "af12a0d6", "sri": void 0 };
 const assetsBuildDirectory = "build/client";
 const basename = "/";
 const future = { "unstable_optimizeDeps": false, "v8_passThroughRequests": false, "v8_trailingSlashAwareDataRequests": false, "unstable_previewServerPrerendering": false, "v8_middleware": false, "v8_splitRouteModules": false, "v8_viteEnvironmentApi": false };

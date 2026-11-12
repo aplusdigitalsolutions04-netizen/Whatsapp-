@@ -10,6 +10,8 @@ import { productLines, productMessage } from "./product-summary";
 import { rateLimited } from "./rate-limit.server";
 import { clip, compose, numbered, shortDate, titleCase } from "./reply-format";
 import { getSettings, type Settings } from "./settings.server";
+import { applyWakeRule } from "./saved-contacts";
+import { isSavedContact } from "./saved-contacts.server";
 import { findOrderEverywhere, findOrdersEverywhere, getOrdersEverywhere } from "./order-lookup.server";
 import {
   getProductsByIds,
@@ -523,6 +525,10 @@ export async function handleInbound(shop: string, msg: InboundPayload) {
 
   const s = await getSettings(shop);
   if (!s.enabled) return;
+  // Numbers saved in the owner's phone are not customers: stay silent unless the message starts with ! # or $.
+  const wake = applyWakeRule(msg.text, isSavedContact(phone, s.savedNumbers));
+  if (!wake.reply) return;
+  if (wake.text !== msg.text) msg = { ...msg, text: wake.text };
   if (conv.mode === "human") {
     // The chat is with a person now. Never leave the customer in silence, though: say once that the team has the request.
     await acknowledgeWaiting(shop, conv, s, msg.id).catch(() => undefined);

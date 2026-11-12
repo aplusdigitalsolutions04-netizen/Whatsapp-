@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildIndex, matchCatalog } from "../app/lib/finder/match.ts";
-import { linkKey, listingAmazon, listingGeneric, money, num, parseDetail } from "../app/lib/finder/parse.ts";
+import { htmlToPlain, linkKey, listingAmazon, listingGeneric, makeSku, money, num, parseDetail } from "../app/lib/finder/parse.ts";
 
 const catalog = [
   { id: "1", title: "HP LaserJet 1008a Monochrome Single Function Printer Combo", handle: "hp-laserjet-1008a", vendor: "WERY", skus: ["HP-1008A"], barcodes: [] },
@@ -63,6 +63,18 @@ test("detail page: Amazon price, availability, brand and hi-res images", () => {
   assert.equal(d.inStock, true);
   assert.equal(d.brand, "Acme");
   assert.equal(d.images.length, 1);
+});
+
+test("SKU is BRAND-MODEL and the description is plain text", () => {
+  assert.equal(makeSku("HP", "HP 15 Laptop 126snw 16GB RAM 512GB SSD"), "HP-126snw");
+  assert.equal(makeSku("Dell Inc", "Dell Inspiron 3520 Intel Core i5", "3520-i5"), "DELL-3520-i5");
+  assert.equal(makeSku("", "Acme Trail Shoe"), "ACME-Trail-Shoe");
+  assert.equal(makeSku("Sony", "Sony WH-1000XM5 Wireless Headphones"), "SONY-WH-1000XM5");
+  assert.equal(makeSku("", ""), "ITEM");
+  assert.equal(htmlToPlain("<p>Fast&nbsp;laptop</p><ul><li>16GB RAM</li><li>SSD</li></ul>"), "Fast laptop\n16GB RAM\nSSD");
+  const d = parseDetail(`<script type="application/ld+json">${JSON.stringify({ "@type": "Product", name: "X", description: "<b>Great</b> value", model: "ZX-9", offers: { price: "10" } })}</script>`, "https://a.example.com/p/x");
+  assert.equal(d.description, "Great value");
+  assert.equal(d.model, "ZX-9");
 });
 
 test("search listings: Amazon results and generic product links", () => {

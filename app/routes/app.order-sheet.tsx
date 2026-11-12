@@ -185,8 +185,8 @@ function Cell({ row, col }: { row: { id: string; isManual: boolean; v: Record<st
     const opts = col.kind === "status" ? [...SHEET_STATUSES] : col.opts!;
     const cur = String(raw ?? "");
     return (
-      <select key={key} className="os-in" defaultValue={cur} onChange={(e) => save(e.target.value)} aria-label={col.label}>
-        {!cur && <option value="" />}
+      <select key={key} className="os-in" data-empty={!cur} defaultValue={cur} onChange={(e) => save(e.target.value)} aria-label={col.label}>
+        {(col.kind === "select" || !cur) && <option value="">Select</option>}
         {!opts.includes(cur) && cur && <option value={cur}>{cur}</option>}
         {opts.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>

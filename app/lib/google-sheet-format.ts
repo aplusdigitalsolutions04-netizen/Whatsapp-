@@ -124,7 +124,7 @@ export function appsScriptCode(token: string): string {
   const colors = JSON.stringify([...COUNTER_COLORS]);
   const formulas = JSON.stringify(counterFormulas());
   return [
-    "// Orderly: receives orders from your app and writes them into this sheet.",
+    "// ShopPilot: receives orders from your app and writes them into this sheet.",
     "// Layout: all-time counters in rows 1-2 (A:E), last-7-days counters in rows 1-3 (G onward), headers in row 4, orders from row 5.",
     `var TOKEN = '${token}';`,
     `var LABELS = ${labels};`,

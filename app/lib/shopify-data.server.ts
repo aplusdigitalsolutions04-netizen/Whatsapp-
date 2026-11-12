@@ -2,6 +2,7 @@
 import { unauthenticated } from "../shopify.server";
 import { productTerms } from "./intent";
 import { logEvent } from "./log.server";
+import { formatMoney } from "./money";
 import { orderNameMatches, parseOrderRef } from "./order-ref";
 import { explainShopifyError } from "./shopify-errors";
 import { htmlToText } from "./product-summary";
@@ -103,7 +104,7 @@ export function mapOrder(o: Gql): OrderSummary {
     closed: !!o.closedAt,
     financialStatus: o.displayFinancialStatus ?? null,
     fulfillmentStatus: o.displayFulfillmentStatus ?? null,
-    total: money ? `${money.currencyCode} ${money.amount}` : null,
+    total: money ? formatMoney(money.amount, money.currencyCode) || null : null,
     statusUrl: o.statusPageUrl ?? null,
     customerName: [o.customer?.firstName, o.customer?.lastName].filter(Boolean).join(" ") || null,
     phones: [o.phone, o.customer?.phone, o.customer?.defaultPhoneNumber?.phoneNumber, o.shippingAddress?.phone, o.billingAddress?.phone].filter(Boolean),
@@ -279,11 +280,7 @@ export type ProductSummary = {
 };
 
 function money(amount: string | number, currency: string): string {
-  try {
-    return new Intl.NumberFormat("en-IN", { style: "currency", currency, maximumFractionDigits: 2 }).format(Number(amount));
-  } catch {
-    return `${currency} ${amount}`;
-  }
+  return formatMoney(amount, currency);
 }
 
 function mapProduct(p: Gql): ProductSummary {

@@ -107,7 +107,7 @@ export async function aiFallbackReply(args: {
   const cfg = await getAiConfig(args.shop);
   if (!cfg.enabled) return null;
   const system = [
-    "You are the WhatsApp support assistant of an online store.",
+    "You are JAZZ, the WhatsApp support assistant of an online store. Prices are in Indian rupees: write them with the ₹ symbol (for example ₹1,499), never as INR or Rs.",
     "Answer ONLY using the STORE FACTS below. Never invent prices, stock, policies, delivery dates or order details.",
     "You have no access to customer orders: if asked about a specific order or tracking, tell them to send their order number (like #W1219) or their registered mobile number.",
     `If the facts do not answer the question, or the customer is upset or asks for a person, reply with exactly ${HANDOFF_MARK}.`,

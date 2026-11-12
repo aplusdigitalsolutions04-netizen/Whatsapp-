@@ -49,6 +49,8 @@ model BotSettings {
   aiProvider             String   @default("openai")
   aiModel                String   @default("")
   aiKeyEnc               String?
+  // Personal numbers typed by the owner (one per line). The bot stays silent for them unless a message starts with ! # or $
+  savedNumbers           String   @default("")
   updatedAt              DateTime @updatedAt
 }
 
@@ -314,6 +316,9 @@ model FinderProduct {
   // link without query/fragment, used to recognise the same product in later runs
   linkKey      String
   imageCount   Int       @default(0)
+  // BRAND-MODEL, e.g. HP-126snw. Also the name of the image folder.
+  sku          String    @default("")
+  description  String    @default("")
   folder       String    @default("")
   thumb        String    @default("")
   // false = already in the Shopify store (matchReason says why)

@@ -46,7 +46,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     },
     counts,
     products: products.map((p) => ({
-      id: p.id, title: p.title, brand: p.brand, price: p.price, comparePrice: p.comparePrice, discount: p.discount, link: p.link, imageCount: p.imageCount,
+      id: p.id, title: p.title, brand: p.brand, sku: p.sku || p.folder, price: p.price, comparePrice: p.comparePrice, discount: p.discount, link: p.link, imageCount: p.imageCount,
       isNew: p.isNew, reason: p.matchReason,
       thumb: p.thumb && run ? signedFinderUrl(`file/${run.id}/${p.thumb}`) : null,
       zip: p.isNew && p.folder && p.imageCount && run ? signedFinderUrl(`zip/${run.id}/${p.folder}`) : null,
@@ -207,7 +207,7 @@ export default function ProductScrapper() {
               ))}
             </div>
             {d.run?.zipAll && <a className="fp-btn" href={d.run.zipAll}><Download size={13} style={{ verticalAlign: -2 }} /> All images (ZIP)</a>}
-            {d.run?.csv && <a className="fp-btn ghost" href={d.run.csv}>CSV</a>}
+            {d.run?.csv && <a className="fp-btn ghost" href={d.run.csv}>CSV (name, description, link, SKU)</a>}
           </div>
         }
       >
@@ -224,6 +224,7 @@ export default function ProductScrapper() {
                   <a href={p.link} target="_blank" rel="noreferrer noopener" className="fp-title">{p.title}</a>
                   <div className="fp-meta">
                     {p.brand && <span>{p.brand}</span>}
+                    {p.isNew && p.sku && <span title="Image folder name in the ZIP">SKU {p.sku}</span>}
                     <b>{p.price || "—"}</b>
                     {p.comparePrice && <s>{p.comparePrice}</s>}
                     {p.discount > 0 && <Badge tone="success">{p.discount}% off</Badge>}

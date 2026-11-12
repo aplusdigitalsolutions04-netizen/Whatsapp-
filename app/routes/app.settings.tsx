@@ -76,6 +76,17 @@ export default function Settings() {
           </p>
         </Card>
 
+        <Card title="Personal numbers (bot stays silent)">
+          <p className="o-muted">
+            JAZZ never replies to numbers saved in your phone&apos;s contacts (family, friends, suppliers). A saved number can still
+            talk to JAZZ by starting the message with <b>!</b>, <b>#</b> or <b>$</b>, for example <b>#W1219</b>. Add any other personal numbers here, one per line.
+          </p>
+          <label className="o-field">
+            <span>Extra personal numbers</span>
+            <textarea name="savedNumbers" rows={3} defaultValue={settings.savedNumbers.join("\n")} placeholder={"+919876543210\n+919812345678"} />
+          </label>
+        </Card>
+
         <Card title="Customer-facing messages (English)">
           <p className="o-muted">Hindi replies use built-in translations. Edit questions and answers on the Quick replies page.</p>
           {EDITABLE_TEMPLATES.map((k) => (

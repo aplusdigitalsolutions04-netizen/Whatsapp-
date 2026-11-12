@@ -9,9 +9,51 @@ const OUT_OF_STOCK = /out of stock|sold out|currently unavailable|notify me when
 const CURRENCY: Record<string, string> = { INR: "₹", USD: "$", EUR: "€", GBP: "£", AUD: "A$", CAD: "C$" };
 
 export type Candidate = { title: string; link: string };
-export type Detail = { title: string; brand: string; price: string; comparePrice: string; inStock: boolean | null; images: string[] };
+export type Detail = { title: string; brand: string; price: string; comparePrice: string; inStock: boolean | null; images: string[]; description: string; model: string };
 
 export const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/** Product description HTML to readable plain text (line breaks kept for paragraphs and list items). */
+export function htmlToPlain(html: unknown): string {
+  const raw = String(html ?? "");
+  if (!raw.trim()) return "";
+  const $ = cheerio.load(`<div id="r">${raw}</div>`);
+  $("script, style").remove();
+  $("br").replaceWith("\n");
+  $("p, div, li, h1, h2, h3, h4, h5, h6, tr").each((_, el) => {
+    $(el).append("\n");
+  });
+  return $("#r")
+    .text()
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ ?\n ?/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, 5000);
+}
+
+const UNIT = /^\d+(\.\d+)?(gb|tb|mb|kb|inch|in|hz|mah|w|mp|kg|g|ml|l|cm|mm|ghz|v|gen|pcs|pack|bit)$/i;
+const NOT_MODEL = /^(hd|fhd|uhd|4k|5g|4g|3g|wifi|usb|led|lcd|oled|ssd|hdd|ram|rom|pro|max|plus|mini|ultra)$/i;
+
+/** Model name from the product title: the first word that mixes letters and digits and is not a size like "16GB". */
+export function modelFromTitle(title: string, brand: string): string {
+  const b = norm(brand);
+  const tokens = String(title ?? "").split(/[\s,()/|]+/).map((t) => t.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, "")).filter(Boolean);
+  const mixed = tokens.filter((t) => /[A-Za-z]/.test(t) && /\d/.test(t) && t.length >= 3 && t.length <= 24 && !UNIT.test(t) && norm(t) !== b);
+  if (mixed.length) return mixed[0];
+  const words = tokens.filter((t) => !NOT_MODEL.test(t) && norm(t) !== b && /^[A-Za-z0-9-]+$/.test(t));
+  return words.slice(0, 2).join("-");
+}
+
+/** SKU in the format BRAND-MODEL, for example HP-126snw. Brand is upper case, the model keeps its own spelling. */
+export function makeSku(brand: string, title: string, model = ""): string {
+  const clean = (t: string) => t.replace(/[^A-Za-z0-9-]+/g, "").replace(/^-+|-+$/g, "");
+  let b = clean(String(brand ?? "").trim().split(/\s+/)[0] ?? "").toUpperCase();
+  if (!b) b = clean(String(title ?? "").trim().split(/\s+/)[0] ?? "").toUpperCase();
+  const m = clean(String(model ?? "").trim().replace(/\s+/g, "-")) || clean(modelFromTitle(title, brand || b));
+  return [b || "ITEM", m].filter(Boolean).join("-");
+}
 
 /** First number inside a price string, or null. */
 export function num(s: unknown): number | null {
@@ -126,13 +168,15 @@ function strikePrice($: cheerio.CheerioAPI): string {
 export function parseDetail(html: string, url: string): Detail {
   const $ = cheerio.load(html);
   const host = new URL(url).hostname;
-  const d: Detail = { title: "", brand: "", price: "", comparePrice: "", inStock: null, images: [] };
+  const d: Detail = { title: "", brand: "", price: "", comparePrice: "", inStock: null, images: [], description: "", model: "" };
 
   const ld = jsonLdProducts($);
   if (ld.length) {
     let p = ld[0];
     if (p.hasVariant) p = { ...p, ...(Array.isArray(p.hasVariant) ? p.hasVariant[0] : p.hasVariant) };
     d.title = p.name ?? "";
+    d.description = htmlToPlain(p.description);
+    d.model = String(p.model?.name ?? p.model ?? p.mpn ?? "").trim();
     d.brand = typeof p.brand === "object" ? (p.brand?.name ?? "") : (p.brand ?? "");
     const imgs = Array.isArray(p.image) ? p.image : p.image ? [p.image] : [];
     d.images = imgs.map((i: any) => (typeof i === "object" ? i?.url : i)).filter(Boolean);
@@ -150,6 +194,7 @@ export function parseDetail(html: string, url: string): Detail {
 
   const og = $('meta[property="og:image"]').attr("content");
   if (og) d.images.push(og);
+  if (!d.description) d.description = htmlToPlain($('meta[property="og:description"]').attr("content") || $('meta[name="description"]').attr("content") || "");
   if (!d.title) d.title = $('meta[property="og:title"]').attr("content") || $("h1").first().text().replace(/\s+/g, " ").trim();
 
   $("[class*=gallery] img, [class*=product-image] img, [class*=slider] img, [class*=thumb] img").each((_, el) => {
@@ -173,6 +218,14 @@ export function parseDetail(html: string, url: string): Detail {
     d.inStock = $("#add-to-cart-button, #buy-now-button").length > 0 || (/in stock/i.test(avText) && !OUT_OF_STOCK.test(avText));
     const byline = $("#bylineInfo").text().replace(/\s+/g, " ").trim();
     if (byline) d.brand = byline.replace(/^(Visit the |Brand:\s*)|( Store)$/g, "").trim();
+    const bullets = $("#feature-bullets li, #featurebullets_feature_div li").map((_, li) => $(li).text().replace(/\s+/g, " ").trim()).get().filter(Boolean);
+    const about = $("#productDescription").text().replace(/\s+/g, " ").trim();
+    const amazonText = [bullets.map((x) => "- " + x).join("\n"), about].filter(Boolean).join("\n\n");
+    if (amazonText) d.description = amazonText.slice(0, 5000);
+    $("tr").each((_, tr) => {
+      const k = $(tr).find("th").first().text().replace(/\s+/g, " ").trim();
+      if (!d.model && /^(item )?model( number| name)?$/i.test(k)) d.model = $(tr).find("td").first().text().replace(/\s+/g, " ").trim();
+    });
     const hi = [...html.matchAll(/"hiRes":"(https:[^"]+)"/g)].map((m) => m[1]);
     const large = hi.length ? hi : [...html.matchAll(/"large":"(https:[^"]+)"/g)].map((m) => m[1]);
     const land = $("#landingImage");

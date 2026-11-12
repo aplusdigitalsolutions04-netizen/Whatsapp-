@@ -1,4 +1,4 @@
-/* Orderly design system: ivory, beige and mocha. Compact, quiet, information-rich. */
+/* ShopPilot design system: ivory, beige and mocha. Compact, quiet, information-rich. */
 .orderly {
   --ivory: #faf8f4;
   --white: #ffffff;
@@ -357,6 +357,7 @@
 .orderly .os-in { width: 100%; min-width: 0; padding: 4px 7px; border: 1px solid transparent; background: rgba(255, 255, 255, 0.55); border-radius: 6px; font-size: 12.5px; }
 .orderly .os-in:hover { border-color: var(--sand); background: #fff; }
 .orderly .os-in:focus { border-color: var(--mocha); background: #fff; }
+.orderly select.os-in[data-empty="true"] { color: #8b8176; }
 /* Row colours follow the Shopify status automatically; employees cannot change them. */
 .orderly tbody tr.os-row.st-Fulfilled { background: #e4f2e1; }
 .orderly tbody tr.os-row.st-Unfulfilled { background: #fdeed6; }

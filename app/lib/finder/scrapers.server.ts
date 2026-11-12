@@ -1,10 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { isIP } from "node:net";
-import { listingAmazon, listingGeneric, money, norm, num, parseDetail, SITES, UA, type Candidate } from "./parse";
+import { htmlToPlain, listingAmazon, listingGeneric, money, norm, num, parseDetail, SITES, UA, type Candidate } from "./parse";
 
 export type ScrapedProduct = {
   title: string; brand: string; price: string; comparePrice: string; link: string; images: string[];
   skus?: string[]; barcodes?: string[];
+  /** Plain-text description and the maker's model name, when the page has them. */
+  description?: string; model?: string;
 };
 export type Ctx = {
   log: (msg: string) => void;
@@ -73,6 +75,8 @@ export async function scrapeShopify(site: string, category: string, brand: strin
         link: `${base}/products/${p.handle}`, images: (p.images ?? []).map((i: any) => i.src),
         skus: (p.variants ?? []).map((x: any) => x.sku).filter(Boolean),
         barcodes: (p.variants ?? []).map((x: any) => x.barcode).filter(Boolean),
+        description: htmlToPlain(p.body_html),
+        model: (p.variants ?? []).map((x: any) => String(x.sku ?? "").trim()).find(Boolean) ?? "",
       });
       if (ok) found++;
     }
@@ -152,7 +156,7 @@ export async function scrapeBrowser(searchUrl: string, brand: string, limit: num
         continue;
       }
       if (!d.inStock || !d.images.length) continue;
-      if (await ctx.emit({ title: d.title || c.title, brand: d.brand || brand, price: d.price, comparePrice: d.comparePrice, link: c.link, images: d.images })) found++;
+      if (await ctx.emit({ title: d.title || c.title, brand: d.brand || brand, price: d.price, comparePrice: d.comparePrice, link: c.link, images: d.images, description: d.description, model: d.model })) found++;
       await sleep(300);
     }
   } finally {

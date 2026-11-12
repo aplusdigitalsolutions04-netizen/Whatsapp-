@@ -52,9 +52,10 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
   if (kind === "csv" && runId) {
     const items = await prisma.finderProduct.findMany({ where: { runId, isNew: true }, orderBy: { createdAt: "asc" } });
-    const head = ["Title", "Brand", "Price", "Compare price", "Discount %", "Link", "Images"];
+    // Same SKU as the image folder inside the ZIP, so each row matches its pictures.
+    const head = ["Product Name", "Product Description", "Link", "SKU"];
     const lines = [head.map(csvCell).join(",")];
-    for (const p of items) lines.push([p.title, p.brand, p.price, p.comparePrice, p.discount || "", p.link, p.imageCount].map(csvCell).join(","));
+    for (const p of items) lines.push([p.title, p.description, p.link, p.sku || p.folder].map(csvCell).join(","));
     return new Response(String.fromCharCode(0xfeff) + lines.join("\r\n"), { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="products-${runId}.csv"` } });
   }
   return new Response("Not found", { status: 404 });

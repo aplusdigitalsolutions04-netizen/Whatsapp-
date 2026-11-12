@@ -12,6 +12,7 @@ import makeWASocket, {
 import prisma from "../db.server";
 import { logEvent, redact } from "./log.server";
 import { normalizePhone } from "./phone";
+import { rememberContacts } from "./saved-contacts.server";
 import { parseBridgeMessage } from "./bridge-parse";
 import { MAX_MEDIA_BYTES, mediaFilePath, saveMedia } from "./media.server";
 import { applyStatus, processEvent, recordEvent } from "./webhook-processor.server";
@@ -65,13 +66,17 @@ export async function startBridge() {
     const sock = makeWASocket({
       auth: state,
       version,
-      browser: Browsers.macOS("Orderly"),
+      browser: Browsers.macOS("ShopPilot"),
       printQRInTerminal: false,
       syncFullHistory: false,
       markOnlineOnConnect: false,
     });
     bridge.sock = sock;
     sock.ev.on("creds.update", saveCreds);
+    // Names saved in the phone's address book: the bot stays silent for those people (see saved-contacts.ts).
+    sock.ev.on("contacts.upsert", (l: any[]) => rememberContacts(l));
+    sock.ev.on("contacts.update", (l: any[]) => rememberContacts(l));
+    sock.ev.on("messaging-history.set", (h: any) => rememberContacts(h?.contacts));
 
     sock.ev.on("connection.update", async (u: any) => {
       if (u.qr) {

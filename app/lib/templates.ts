@@ -1,7 +1,7 @@
 // Customer-facing texts. House style: a short line, numbered points, one clear next step. No long paragraphs.
 export const DEFAULT_TEMPLATES = {
   greeting:
-    "Welcome to WERY! 👋\nHow can I help you today?\n\n1. Find a Product\n2. Check Order Status\n3. Track My Shipment\n4. Product Information\n5. Talk to Our Support Team\n\nPlease reply with a number or type your question.",
+    "Hi, I'm JAZZ! 👋 Welcome to WERY.\nHow can I help you today?\n\n1. Find a Product\n2. Check Order Status\n3. Track My Shipment\n4. Product Information\n5. Talk to Our Support Team\n\nPlease reply with a number or type your question.",
   askOrderNumber:
     "I couldn't find an order linked to this WhatsApp number. 😕\n\nPlease send either:\n\n1. Your Order Number (Example: #W1219)\n2. Your registered mobile number",
   askOrderDetails:
@@ -57,7 +57,7 @@ export const EDITABLE_TEMPLATES: TemplateKey[] = [
 /** Built-in Hindi replies, used when the customer writes in Hindi/Hinglish. */
 export const TEMPLATES_HI: Templates = {
   greeting:
-    "WERY में आपका स्वागत है! 👋\nमैं आपकी कैसे मदद करूँ?\n\n1. प्रोडक्ट खोजें\n2. ऑर्डर की स्थिति देखें\n3. मेरा शिपमेंट ट्रैक करें\n4. प्रोडक्ट की जानकारी\n5. सपोर्ट टीम से बात करें\n\nकृपया संख्या लिखकर भेजें या अपना सवाल लिखें।",
+    "नमस्ते, मैं JAZZ हूँ! 👋 WERY में आपका स्वागत है।\nमैं आपकी कैसे मदद करूँ?\n\n1. प्रोडक्ट खोजें\n2. ऑर्डर की स्थिति देखें\n3. मेरा शिपमेंट ट्रैक करें\n4. प्रोडक्ट की जानकारी\n5. सपोर्ट टीम से बात करें\n\nकृपया संख्या लिखकर भेजें या अपना सवाल लिखें।",
   askOrderNumber:
     "इस WhatsApp नंबर से जुड़ा कोई ऑर्डर नहीं मिला। 😕\n\nकृपया इनमें से एक भेजें:\n\n1. आपका ऑर्डर नंबर (जैसे #W1219)\n2. आपका रजिस्टर्ड मोबाइल नंबर",
   askOrderDetails:
