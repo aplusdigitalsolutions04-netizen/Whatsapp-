@@ -1,26 +1,19 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { ActionFunctionArgs, LinksFunction, LoaderFunctionArgs, MetaFunction } from "react-router";
 import { redirect, Form, useActionData, useLoaderData } from "react-router";
-import {
-  ArrowRight, ArrowUpRight, BellRing, Check, ChevronLeft, ChevronRight, Headset, Languages, ShieldCheck, Truck, Zap,
-} from "lucide-react";
 
 import { login } from "../../shopify.server";
 import { loginErrorMessage } from "./error.server";
+import { MASCOT_SVG } from "./mascot";
 
-import styles from "./styles.module.css";
+import pageStyles from "./jazz.css?url";
 
 export const meta: MetaFunction = () => [
   { title: "ShopPilot: WhatsApp bot, order updates and store tools for Shopify" },
-  { name: "description", content: "JAZZ answers your customers on WhatsApp 24/7: order status, Delhivery tracking and product questions. Plus order sheet, product scrapper, image editor and SEO tools in one Shopify app." },
+  { name: "description", content: "Hi, I'm JAZZ. I answer your customers' order, tracking and product questions on WhatsApp 24/7. Plus order sheet, product scrapper, image editor and SEO tools in one Shopify app." },
 ];
 
-// Display face for the headings (falls back to Georgia when offline).
-export const links: LinksFunction = () => [
-  { rel: "preconnect", href: "https://fonts.googleapis.com" },
-  { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-  { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&display=swap" },
-];
+export const links: LinksFunction = () => [{ rel: "stylesheet", href: pageStyles }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
@@ -38,427 +31,382 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   return { errors };
 };
 
-const IMG = "/landing";
+/* ------------------------------------------------------------------ data */
 
-const STRIP = [
-  { icon: Zap, title: "INSTANT REPLIES", text: "Answers in seconds, 24/7" },
-  { icon: ShieldCheck, title: "VERIFIED ORDERS", text: "Order number + phone match" },
-  { icon: Truck, title: "DELHIVERY TRACKING", text: "Link opens with the ID filled in" },
-  { icon: Headset, title: "HUMAN TAKEOVER", text: "Step in with one click" },
-];
+const SUPPORT_EMAIL = "support@wery.in";
+const SUPPORT_PHONE = "+91 92118 90093";
+const SUPPORT_TEL = "+919211890093";
 
-const CARDS = [
-  { title: "WHATSAPP BOT", text: "JAZZ, always on.", img: "phone-night" },
-  { title: "ORDER TRACKING", text: "Status, courier, link.", img: "boxes" },
-  { title: "ORDER SHEET", text: "Your team, in sync.", img: "desk-lamp" },
-  { title: "STORE TOOLS", text: "Scrape, edit, optimise.", img: "shoes" },
-];
+const ICON: Record<string, string> = {
+  chat: '<path d="M21 12a8.5 8.5 0 0 1-12.4 7.5L3 21l1.6-5.4A8.5 8.5 0 1 1 21 12Z"/>',
+  bag: '<path d="M5 8h14l-1 12H6L5 8Z"/><path d="M9 8a3 3 0 0 1 6 0"/>',
+  truck: '<path d="M3 6h11v10H3zM14 9h4l3 3v4h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/>',
+  sheet: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 3v18"/>',
+  bell: '<path d="M6 9a6 6 0 0 1 12 0c0 6 2 7 2 7H4s2-1 2-7ZM10 20a2 2 0 0 0 4 0"/>',
+  box: '<path d="M21 8 12 3 3 8l9 5 9-5ZM3 8v8l9 5 9-5V8M12 13v8"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  lang: '<path d="M4 5h9M8.5 3v2M6 5c1 4 3 6 6 8M11 5c-1 4-3 6-6 8M13 20l4-10 4 10M14.5 17h5"/>',
+  seo: '<path d="M3 17 9 11l4 4 8-9M15 6h6v6"/>',
+  img: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-8 8"/>',
+  scrape: '<path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2M8 12h8"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  shield: '<path d="M12 3 5 6v6c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6l-7-3Z"/><path d="m9 12 2 2 4-4"/>',
+  user: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c1-4 4-6 7-6s6 2 7 6"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+  phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2Z"/>',
+  check: '<path d="m5 12 4.5 4.5L19 7"/>',
+  out: '<path d="M7 17 17 7M8 7h9v9"/>',
+  down: '<path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/>',
+};
 
-type Slide = { n: string; title: string; text: string; specs: [string, string][]; img: string; cta: string };
-const SLIDES: Slide[] = [
-  {
-    n: "JAZZ", title: "JAZZ, YOUR WHATSAPP ASSISTANT",
-    text: "Answers order, tracking and product questions in short numbered steps, then hands over to your team the moment a person is needed.",
-    specs: [["Languages", "English, Hindi, Hinglish"], ["Replies", "Instant, 24/7"], ["Handover", "One click"]],
-    img: "boxes-plant", cta: "See order tracking",
-  },
-  {
-    n: "SCRAPPER", title: "PRODUCT SCRAPPER",
-    text: "Find new products on other sites, skip what you already sell, and download a sheet with name, description, link and a BRAND-MODEL SKU, plus images grouped by SKU.",
-    specs: [["CSV", "Name, description, link, SKU"], ["Images", "ZIP, one folder per SKU"], ["Naming", "1, 2, 3 ..."]],
-    img: "shelf", cta: "Try the scrapper",
-  },
-  {
-    n: "ORDER SHEET", title: "ORDER UPDATE SHEET",
-    text: "Orders and a Google Sheet stay in sync by day, week, month and year, colour-coded by status, with room for dispatch, AWB and COD details.",
-    specs: [["Sync", "Google Sheets"], ["Periods", "Day to year"], ["Manual rows", "Supported"]],
-    img: "desk-lamp", cta: "Open the sheet",
-  },
-  {
-    n: "SEO", title: "SEO FIXER AND IMAGE EDITOR",
-    text: "Score every product, fix titles, descriptions and alt text in bulk, and clean up product photos with background removal. Review first, undo any time.",
-    specs: [["Score", "Per product"], ["Fix", "Bulk, via CSV"], ["Undo", "Any batch"]],
-    img: "monitor", cta: "Improve my store",
-  },
-];
-
-const TOOLS = [
-  { label: "ORDER SHEET", img: "desk-lamp", pos: "50% 40%" },
-  { label: "PRODUCT SCRAPPER", img: "shoes", pos: "50% 30%" },
-  { label: "IMAGE EDITOR", img: "parcel-label", pos: "50% 55%" },
-  { label: "SEO FIXER", img: "monitor", pos: "55% 45%" },
-  { label: "AUTO REPLIES", img: "phone-night", pos: "50% 55%" },
-];
-
-const STEPS = [
-  { n: "01", title: "Install on your store", text: "Enter your Shopify store address and approve the app. No coding, no passwords to create." },
-  { n: "02", title: "Link WhatsApp", text: "Scan one QR code. JAZZ starts answering the same minute." },
-  { n: "03", title: "Relax, then step in", text: "JAZZ handles the routine questions. Your team gets an alert when a person is needed." },
-];
-
-const FAQ: { q: string; a: string }[] = [
-  { q: "Will JAZZ reply to my friends and family?", a: "No. Numbers saved in your phone are ignored. A saved contact can still talk to JAZZ by starting the message with !, # or $ (for example #W0000)." },
-  { q: "Is my customers' order data safe?", a: "Order details are shared only when the customer's order number and registered phone number match. Nothing else is revealed." },
-  { q: "Which languages does JAZZ speak?", a: "English, Hindi and Hinglish out of the box. Messages in other languages are translated, answered, and translated back." },
-  { q: "How does Delhivery tracking work?", a: "JAZZ sends the courier, the tracking ID and a Delhivery link. The link opens Delhivery with the tracking ID already filled in." },
-  { q: "Can a person take over a chat?", a: "Yes. Open the Live Inbox, reply as an agent, and JAZZ stays quiet until you hand the chat back." },
-];
-
-const DEMO: { who: "me" | "bot"; lines: ReactNode }[] = [
-  { who: "me", lines: "Hi" },
-  {
-    who: "bot",
-    lines: (
-      <>
-        Hi, I&apos;m JAZZ! 👋 Welcome to WERY.
-        <br />
-        How can I help you today?
-        <br />
-        <br />
-        1. Find a Product
-        <br />
-        2. Check Order Status
-        <br />
-        3. Track My Shipment
-      </>
-    ),
-  },
-  { who: "me", lines: "#W0000" },
-  {
-    who: "bot",
-    lines: (
-      <>
-        Your order details: 📦
-        <br />
-        1. Order Number: #W0000
-        <br />
-        2. Fulfillment: Fulfilled
-        <br />
-        3. Total: ₹1,499
-        <br />
-        <br />
-        Tracking 🚚
-        <br />
-        1. Courier: Delhivery
-        <br />
-        2. Tracking ID: DL123456789
-        <br />
-        3. Link: <u>delhivery.com/track-v2/package/DL123456789</u>
-      </>
-    ),
-  },
-];
-
-/** Plays the chat: customer message, typing dots, JAZZ answer, then starts over. */
-function useDemo() {
-  const [shown, setShown] = useState(DEMO.length);
-  const [typing, setTyping] = useState(false);
-  useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    let dead = false;
-    const timers: number[] = [];
-    const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(() => !dead && fn(), ms));
-    const play = () => {
-      setShown(0);
-      setTyping(false);
-      at(700, () => setShown(1));
-      at(1300, () => setTyping(true));
-      at(2700, () => { setTyping(false); setShown(2); });
-      at(5200, () => setShown(3));
-      at(5800, () => setTyping(true));
-      at(7400, () => { setTyping(false); setShown(4); });
-      at(13500, play);
-    };
-    play();
-    return () => {
-      dead = true;
-      timers.forEach(clearTimeout);
-    };
-  }, []);
-  return { shown, typing };
+function Ico({ n, w = 1.8 }: { n: string; w?: number }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={w} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" dangerouslySetInnerHTML={{ __html: ICON[n] }} />;
 }
 
-/** Fades sections in on scroll and moves the hero photo slightly slower than the page (parallax). */
-function usePageMotion(root: RefObject<HTMLDivElement | null>) {
-  useEffect(() => {
-    const el = root.current;
-    if (!el) return;
-    const items = Array.from(el.querySelectorAll<HTMLElement>("[data-reveal]"));
-    const show = (n: Element) => n.classList.add(styles.in);
-    const vh = window.innerHeight;
-    items.forEach((n) => n.getBoundingClientRect().top < vh * 0.95 && show(n));
-    el.classList.add(styles.ready);
-    const io = new IntersectionObserver((entries) => entries.forEach((e) => { if (e.isIntersecting) { show(e.target); io.unobserve(e.target); } }), { threshold: 0.12 });
-    items.forEach((n) => !n.classList.contains(styles.in) && io.observe(n));
+// Bars are a visual style (how much JAZZ covers); the label on the right says what each one does.
+const SKILLS: [string, string, string, number][] = [
+  ["box", "Order status", "Instant", 98],
+  ["truck", "Delhivery tracking", "Pre-filled link", 95],
+  ["search", "Product search", "With photos", 92],
+  ["lang", "Hindi & Hinglish", "Automatic", 90],
+  ["bell", "Support alerts", "Live", 100],
+  ["sheet", "Order sheet sync", "Google Sheets", 94],
+  ["seo", "SEO fixer", "In bulk", 88],
+  ["img", "Image editor", "In bulk", 86],
+  ["scrape", "Product scrapper", "CSV + ZIP", 90],
+];
 
-    let raf = 0;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const onScroll = () => {
-      if (reduce || raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        el.style.setProperty("--py", `${Math.min(window.scrollY, 900) * 0.25}px`);
-        el.dataset.stuck = window.scrollY > 40 ? "1" : "0";
-      });
+const TOOLS: [string, string][] = [
+  ["chat", "WhatsApp"], ["bag", "Shopify"], ["truck", "Delhivery"], ["sheet", "Google Sheets"],
+];
+
+const SAYS = ["Hi! 👋 I'm JAZZ.", "Order #W0000 is on the way 🚚", "Total ₹1,499 · Delhivery", "नमस्ते! मैं मदद करूँ?", "Need a person? I'll alert your team 🔔"];
+const ROLES = ["answer orders on WhatsApp.", "track parcels for customers.", "speak Hindi, English & Hinglish.", "call you when it matters."];
+const CODE = [
+  '<span class="c">// customer</span>\n<span class="k">message</span>: <span class="s">"#W0000"</span>',
+  '<span class="k">jazz</span>.verify(<span class="n">phone</span>)  <span class="s">✔ match</span>',
+  '<span class="k">status</span>: <span class="s">"In transit"</span>',
+  '<span class="k">courier</span>: <span class="s">"Delhivery"</span>',
+  '<span class="k">track</span>: <span class="s">"DL123456789"</span>',
+  '<span class="k">total</span>: <span class="n">₹1,499</span>',
+];
+
+const reduced = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ------------------------------------------------------------------ small animated pieces */
+
+function Typed() {
+  const [text, setText] = useState(ROLES[0]);
+  useEffect(() => {
+    if (reduced()) return;
+    let li = 0, ci = 0, del = false, t: number;
+    const step = () => {
+      const full = ROLES[li];
+      setText(full.slice(0, ci));
+      if (!del && ci < full.length) { ci++; t = window.setTimeout(step, 55); }
+      else if (!del) { del = true; t = window.setTimeout(step, 1500); }
+      else if (ci > 0) { ci--; t = window.setTimeout(step, 24); }
+      else { del = false; li = (li + 1) % ROLES.length; t = window.setTimeout(step, 300); }
     };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      io.disconnect();
-      window.removeEventListener("scroll", onScroll);
-      cancelAnimationFrame(raf);
-    };
-  }, [root]);
+    step();
+    return () => clearTimeout(t);
+  }, []);
+  return <><span className="typed">{text}</span><span className="caret" /></>;
+}
+
+function Say() {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (reduced()) return;
+    const t = window.setInterval(() => setI((n) => (n + 1) % SAYS.length), 3200);
+    return () => clearInterval(t);
+  }, []);
+  return <div className="say" key={i}>{SAYS[i]}</div>;
+}
+
+function CodeCard() {
+  const [n, setN] = useState(CODE.length);
+  useEffect(() => {
+    if (reduced()) return;
+    let k = 0;
+    const t = window.setInterval(() => { k = (k + 1) % (CODE.length + 3); setN(Math.min(k, CODE.length)); }, 1100);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className="card-code" aria-hidden="true">
+      <header><span>&lt;/&gt; live chat</span><i /></header>
+      <pre dangerouslySetInnerHTML={{ __html: CODE.slice(0, n).join("\n") + (n < CODE.length ? '<span class="caret" style="height:1em;width:2px"></span>' : "") }} />
+    </div>
+  );
+}
+
+function DotNav() {
+  const [on, setOn] = useState(0);
+  useEffect(() => {
+    if (reduced()) return;
+    const t = window.setInterval(() => setOn((n) => (n + 1) % 3), 2600);
+    return () => clearInterval(t);
+  }, []);
+  return <div className="dotnav" aria-hidden="true">{[0, 1, 2].map((i) => <i key={i} className={i === on ? "on" : ""} />)}</div>;
 }
 
 function LoginForm({ errors, id }: { errors?: { shop?: string }; id: string }) {
   return (
-    <Form className={styles.form} method="post">
-      <div className={styles.formRow}>
-        <input id={id} className={styles.input} type="text" name="shop" placeholder="your-store.myshopify.com" aria-label="Shop domain" autoComplete="off" spellCheck={false} />
-        <button className={styles.button} type="submit">
-          START WITH SHOPIFY <ArrowRight size={15} />
-        </button>
+    <Form className="login" method="post">
+      <div className="loginrow">
+        <input id={id} type="text" name="shop" placeholder="your-store.myshopify.com" aria-label="Shop domain" autoComplete="off" spellCheck={false} />
+        <button className="btn primary" type="submit">Install on Shopify <Ico n="out" w={2.2} /></button>
       </div>
-      <span className={styles.hint} role={errors?.shop ? "alert" : undefined} data-error={errors?.shop ? "1" : undefined}>
+      <span className="hint" role={errors?.shop ? "alert" : undefined} data-error={errors?.shop ? "1" : undefined}>
         {errors?.shop ?? "Enter your store address, for example my-shop.myshopify.com"}
       </span>
     </Form>
   );
 }
 
+/* ------------------------------------------------------------------ page */
+
 export default function App() {
   const { showForm } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const errors = actionData?.errors;
   const root = useRef<HTMLDivElement>(null);
-  usePageMotion(root);
-  const { shown, typing } = useDemo();
 
-  const [slide, setSlide] = useState(0);
-  const [hover, setHover] = useState(false);
-  const go = useCallback((d: number) => setSlide((s) => (s + d + SLIDES.length) % SLIDES.length), []);
   useEffect(() => {
-    if (hover || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const t = window.setInterval(() => go(1), 6500);
-    return () => clearInterval(t);
-  }, [hover, go, slide]);
+    const el = root.current;
+    if (!el) return;
+    const reduce = reduced();
+
+    /* scroll reveal, counters, skill bars */
+    const countUp = (n: HTMLElement) => {
+      const to = Number(n.dataset.count), t0 = performance.now();
+      if (reduce) { n.textContent = String(to); return; }
+      const tick = (t: number) => { const p = Math.min(1, (t - t0) / 1400); n.textContent = String(Math.round(to * (1 - Math.pow(1 - p, 3)))); if (p < 1) requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+    };
+    const reveal = (n: Element) => {
+      n.classList.add("in");
+      n.querySelectorAll<HTMLElement>("[data-count]").forEach(countUp);
+      const bar = n.querySelector<HTMLElement>(".bar i");
+      if (bar) bar.style.width = `${bar.dataset.w}%`;
+    };
+    el.querySelectorAll<HTMLElement>("[data-count]").forEach((n) => { if (!reduce) n.textContent = "0"; });
+    const items = Array.from(el.querySelectorAll<HTMLElement>(".reveal"));
+    const vh = window.innerHeight;
+    el.classList.add("ready");
+    items.forEach((n) => n.getBoundingClientRect().top < vh * 0.95 && reveal(n));
+    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { reveal(e.target); io.unobserve(e.target); } }), { threshold: 0.15 });
+    items.forEach((n) => !n.classList.contains("in") && io.observe(n));
+
+    /* JAZZ's eyes follow the cursor; a happy hop on hover */
+    const bot = el.querySelector<SVGSVGElement>("#bot");
+    const eyes = el.querySelector<SVGGElement>("#eyes");
+    const onMove = (e: PointerEvent) => {
+      if (!bot || !eyes) return;
+      const r = bot.getBoundingClientRect();
+      const dx = Math.max(-1, Math.min(1, (e.clientX - (r.left + r.width / 2)) / 400));
+      const dy = Math.max(-1, Math.min(1, (e.clientY - (r.top + r.height * 0.38)) / 400));
+      eyes.style.transform = `translate(${dx * 8}px, ${dy * 6}px)`;
+    };
+    const onEnter = () => bot?.animate([{ transform: "scale(1)" }, { transform: "scale(1.05) rotate(-1.5deg)" }, { transform: "scale(1)" }], { duration: 500, easing: "ease-out" });
+    if (!reduce) { window.addEventListener("pointermove", onMove); bot?.addEventListener("pointerenter", onEnter); }
+
+    /* 3D tilt on the feature cards */
+    const tilts: [HTMLElement, (e: PointerEvent) => void, () => void][] = [];
+    if (!reduce) el.querySelectorAll<HTMLElement>(".pcard").forEach((c) => {
+      const move = (e: PointerEvent) => {
+        const r = c.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
+        c.style.transform = `rotateY(${x * 9}deg) rotateX(${-y * 9}deg) translateY(-6px)`;
+      };
+      const leave = () => { c.style.transform = ""; };
+      c.addEventListener("pointermove", move);
+      c.addEventListener("pointerleave", leave);
+      tilts.push([c, move, leave]);
+    });
+
+    /* highlight the menu link of the section on screen */
+    const links = Array.from(el.querySelectorAll<HTMLAnchorElement>(".links a"));
+    const secs = links.map((a) => el.querySelector(a.getAttribute("href") ?? ""));
+    const onScroll = () => {
+      let cur = 0;
+      secs.forEach((s, i) => { if (s && s.getBoundingClientRect().top < window.innerHeight * 0.4) cur = i; });
+      links.forEach((a, i) => a.classList.toggle("on", i === cur));
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+
+    return () => {
+      io.disconnect();
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("scroll", onScroll);
+      bot?.removeEventListener("pointerenter", onEnter);
+      tilts.forEach(([c, m, l]) => { c.removeEventListener("pointermove", m); c.removeEventListener("pointerleave", l); });
+    };
+  }, []);
 
   return (
-    <div className={styles.page} ref={root}>
-      <header className={styles.nav}>
-        <a className={styles.brand} href="#top" aria-label="ShopPilot home">
-          <span className={styles.wordmark}>SHOPPILOT</span>
-          <small>WHATSAPP · ORDERS · STORE TOOLS</small>
-        </a>
-        <nav className={styles.navLinks} aria-label="Sections">
-          <a href="#features">FEATURES</a>
-          <a href="#spotlight">SPOTLIGHT</a>
-          <a href="#tools">TOOLS</a>
-          <a href="#how">HOW IT WORKS</a>
-          <a href="#faq">FAQ</a>
-        </nav>
-        <a className={styles.navCta} href="#start">GET STARTED</a>
+    <div className="jp" ref={root}>
+      <div className="ambient" aria-hidden="true"><i /><i /><i /></div>
+
+      {/* ------------------------------------------------ nav */}
+      <nav className="top">
+        <div className="wrap">
+          <a className="logo" href="#home" aria-label="ShopPilot home">
+            <svg viewBox="0 0 40 40" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ead3ad" /><stop offset="1" stopColor="#b8935f" /></linearGradient></defs><rect x="4" y="8" width="32" height="26" rx="10" fill="url(#lg)" /><rect x="9" y="13" width="22" height="14" rx="6" fill="#1a120c" /><circle cx="16" cy="20" r="2.6" fill="#ffd89a" /><circle cx="24" cy="20" r="2.6" fill="#ffd89a" /><rect x="19" y="2" width="2" height="7" rx="1" fill="#d9b98a" /><circle cx="20" cy="3" r="2.4" fill="#ead3ad" /></svg>
+            ShopPilot
+          </a>
+          <div className="links">
+            <a href="#home" className="on">Home</a><a href="#about">About</a><a href="#skills">Skills</a><a href="#work">Features</a><a href="#contact">Contact</a>
+          </div>
+          <a className="btn primary" href="#start">Install App <Ico n="out" w={2.2} /></a>
+        </div>
+      </nav>
+
+      {/* ------------------------------------------------ hero */}
+      <header className="hero" id="home">
+        <div className="wrap">
+          <div>
+            <span className="pill">I&apos;M A WHATSAPP ASSISTANT</span>
+            <h1>Hi, I&apos;m <span className="name">JAZZ</span></h1>
+            <h2>I <Typed /></h2>
+            <p className="lead">I&apos;m the assistant inside ShopPilot. I answer your customers&apos; order, tracking and product questions on WhatsApp, day and night, and call you in when a person is needed.</p>
+            <div className="cta" id="start">
+              {showForm ? <LoginForm errors={errors} id="shop-hero" /> : <a className="btn primary" href="#work">See What I Do <Ico n="out" w={2.2} /></a>}
+            </div>
+            <div className="cta">
+              <a className="btn ghost" href="#work">See What I Do <Ico n="out" w={2.2} /></a>
+            </div>
+            <div className="stack">
+              <small>THINGS I WORK WITH</small>
+              <div className="tools">
+                {TOOLS.map(([i, label]) => <span className="tool" key={label}><Ico n={i} /><em>{label}</em></span>)}
+                <span className="tool"><b>₹</b><em>Prices in rupees</em></span>
+                <span className="tool"><b>अ</b><em>Hindi + Hinglish</em></span>
+                <span className="tool"><Ico n="bell" /><em>Support alerts</em></span>
+              </div>
+            </div>
+          </div>
+
+          <div className="art">
+            <div className="halo" />
+            <div className="dots" />
+            <svg className="doodle" viewBox="0 0 90 110" aria-hidden="true"><path d="M62 6C28 14 10 52 36 76c10 9 26 10 36-2M72 74l-4-16M72 74l-17-2" /></svg>
+            <Say />
+            <div className="botwrap" dangerouslySetInnerHTML={{ __html: MASCOT_SVG }} />
+            <CodeCard />
+          </div>
+        </div>
       </header>
 
-      <main id="top">
-        {/* ------------------------------------------------ hero */}
-        <section className={styles.hero}>
-          <div className={styles.heroBg} aria-hidden="true" style={{ backgroundImage: `url(${IMG}/hero.jpg)` }} />
-          <div className={styles.heroShade} aria-hidden="true" />
-          <div className={styles.heroInner}>
-            <div className={styles.heroText}>
-              <span className={`${styles.kicker} ${styles.rise}`}>SHOPPILOT / WHATSAPP + STORE TOOLS</span>
-              <h1 className={`${styles.title} ${styles.rise}`} style={{ animationDelay: "90ms" }}>
-                YOUR STORE,<br />ALWAYS <em>ANSWERING.</em>
-              </h1>
-              <p className={`${styles.lead} ${styles.rise}`} style={{ animationDelay: "180ms" }}>
-                JAZZ replies to order, tracking and product questions on WhatsApp, day and night, while your team gets the tools to run the store.
-              </p>
-              <div id="start" className={`${styles.startBox} ${styles.rise}`} style={{ animationDelay: "270ms" }}>
-                {showForm && <LoginForm errors={errors} id="shop-hero" />}
-              </div>
-              <a className={`${styles.scroll} ${styles.rise}`} style={{ animationDelay: "380ms" }} href="#features">
-                SCROLL DOWN<i />
-              </a>
-            </div>
+      {/* ------------------------------------------------ about */}
+      <section className="about alt" id="about">
+        <div className="wrap">
+          <div className="reveal">
+            <span className="tag">ABOUT ME</span>
+            <h2>I&apos;m passionate about<br />answering your customers</h2>
+            <p>I never sleep, I never get tired, and I always check the order number against the registered phone before I share anything. When a person is needed, I tell your team with an alert.</p>
+            <a className="btn ghost" href="#skills">Learn More About Me <Ico n="user" w={2.2} /></a>
+          </div>
+          <div className="stats reveal">
+            <div className="stat"><span className="ic"><Ico n="clock" /></span><div><b><span data-count="24">24</span>/7</b><span>Always on</span></div></div>
+            <div className="stat"><span className="ic"><Ico n="lang" /></span><div><b data-count="3">3</b><span>Languages</span></div></div>
+            <div className="stat"><span className="ic"><Ico n="grid" /></span><div><b><span data-count="8">8</span>+</b><span>Tools in one app</span></div></div>
+            <div className="stat"><span className="ic"><Ico n="shield" /></span><div><b><span data-count="100">100</span>%</b><span>Phone-verified orders</span></div></div>
+          </div>
+        </div>
+      </section>
 
-            <div className={`${styles.phoneWrap} ${styles.rise}`} style={{ animationDelay: "220ms" }}>
-              <div className={styles.phone} role="img" aria-label="Demo chat: a customer tracks order W0000 and JAZZ replies with the Delhivery tracking link">
-                <div className={styles.phoneTop}>
-                  <span className={styles.avatar}>J</span>
-                  <div>
-                    <b>JAZZ</b>
-                    <small><i className={styles.online} /> online</small>
+      {/* ------------------------------------------------ skills */}
+      <section className="skills" id="skills">
+        <div className="wrap">
+          <div className="head reveal"><span className="tag">MY SKILLS</span><h2>Things I Master</h2></div>
+          <div className="sgrid">
+            {SKILLS.map(([i, name, note, pct]) => (
+              <div className="skill reveal" key={name}>
+                <div className="row"><span className="ic"><Ico n={i} w={1.9} /></span><b>{name}</b><span className="note">{note}</span></div>
+                <div className="bar"><i style={{ "--w": `${pct}%` } as CSSProperties} data-w={pct} /></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ------------------------------------------------ features */}
+      <section className="work alt" id="work">
+        <div className="wrap">
+          <div className="head reveal"><span className="tag">FEATURED TOOLS</span><h2>Some of My Recent Work</h2></div>
+          <div className="cards">
+            <article className="pcard reveal">
+              <div className="shot"><span className="num">01</span>
+                <div className="m-chat"><div className="me">#W0000</div><div className="jz">Order #W0000 · Fulfilled · ₹1,499</div><div className="jz">Delhivery · DL123456789</div><div className="jz" style={{ color: "#80664f" }}>delhivery.com/track-v2/…</div></div>
+              </div>
+              <div className="pbody"><h3>WhatsApp Order Bot</h3><p>Status, courier, tracking ID and a pre-filled Delhivery link in short numbered steps.</p><a href="#start">View Feature <Ico n="out" w={2.4} /></a></div>
+            </article>
+            <article className="pcard reveal" style={{ transitionDelay: ".1s" }}>
+              <div className="shot"><span className="num">02</span>
+                <div className="m-sheet">
+                  <div className="r h"><span>ORDER</span><span>CUSTOMER</span><span>STATUS</span></div>
+                  <div className="r"><span>#W0000</span><span>Asha K.</span><span><i className="chip g">Delivered</i></span></div>
+                  <div className="r"><span>#W0001</span><span>Rohit S.</span><span><i className="chip b">In transit</i></span></div>
+                  <div className="r"><span>#W0002</span><span>Meera P.</span><span><i className="chip y">Pending</i></span></div>
+                  <div className="r"><span>#W0003</span><span>Dev T.</span><span><i className="chip g">Delivered</i></span></div>
+                </div>
+              </div>
+              <div className="pbody"><h3>Order Update Sheet</h3><p>Orders and a Google Sheet stay in sync, colour-coded, with room for AWB and COD details.</p><a href="#start">View Feature <Ico n="out" w={2.4} /></a></div>
+            </article>
+            <article className="pcard reveal" style={{ transitionDelay: ".2s" }}>
+              <div className="shot"><span className="num">03</span>
+                <div className="m-seo">
+                  <div className="ring"><svg viewBox="0 0 88 88"><defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ead3ad" /><stop offset="1" stopColor="#b8935f" /></linearGradient></defs><circle className="bg" cx="44" cy="44" r="36" /><circle className="fg" cx="44" cy="44" r="36" /></svg><b>86</b></div>
+                  <div className="mini">
+                    {[0.9, 0.7, 0.85, 0.55].map((w) => <div key={w}><i style={{ "--w": w } as CSSProperties} /></div>)}
                   </div>
                 </div>
-                <div className={styles.chat}>
-                  {DEMO.slice(0, shown).map((m, i) => (
-                    <div key={i} className={`${styles.bubble} ${m.who === "me" ? styles.me : styles.bot}`}>{m.lines}</div>
-                  ))}
-                  {typing && <div className={`${styles.bubble} ${styles.bot} ${styles.dots}`} aria-hidden="true"><i /><i /><i /></div>}
-                </div>
-                <div className={styles.compose}>Type a message</div>
               </div>
-              <div className={`${styles.floaty} ${styles.f1}`}><Truck size={15} /> Delhivery link, pre-filled</div>
-              <div className={`${styles.floaty} ${styles.f2}`}><BellRing size={15} /> Support request alert</div>
-            </div>
+              <div className="pbody"><h3>SEO Fixer</h3><p>Score every product, fix titles, descriptions and alt text in bulk, and undo any batch.</p><a href="#start">View Feature <Ico n="out" w={2.4} /></a></div>
+            </article>
           </div>
-        </section>
+          <DotNav />
+        </div>
+      </section>
 
-        {/* ------------------------------------------------ feature strip */}
-        <section className={styles.strip} aria-label="Highlights">
-          {STRIP.map((s, i) => (
-            <div key={s.title} data-reveal className={styles.stripItem} style={{ transitionDelay: `${i * 80}ms` }}>
-              <s.icon size={22} strokeWidth={1.4} />
-              <b>{s.title}</b>
-              <span>{s.text}</span>
-            </div>
-          ))}
-        </section>
-
-        {/* ------------------------------------------------ designed for modern selling */}
-        <section id="features" className={styles.collections}>
-          <div data-reveal className={styles.collHead}>
-            <span className={styles.kicker}>THE APP</span>
-            <h2>DESIGNED FOR<br />MODERN SELLING.</h2>
-            <a href="#tools" className={styles.viewAll}>VIEW ALL TOOLS <ArrowRight size={13} /></a>
+      {/* ------------------------------------------------ contact */}
+      <section className="contact" id="contact">
+        <div className="wrap">
+          <div className="box reveal">
+            <span className="tag">LET&apos;S WORK TOGETHER</span>
+            <h3>Have a store in mind?</h3>
+            <p>I&apos;m always ready to take the first reply. Connect your Shopify store and let&apos;s get started.</p>
+            {showForm ? <LoginForm errors={errors} id="shop-contact" /> : null}
           </div>
-          <div className={styles.collGrid}>
-            {CARDS.map((c, i) => (
-              <a key={c.title} href="#spotlight" data-reveal className={styles.coll} style={{ transitionDelay: `${i * 90}ms` }}>
-                <img src={`${IMG}/${c.img}.jpg`} alt="" loading="lazy" />
-                <span className={styles.collText}>
-                  <b>{c.title}</b>
-                  <small>{c.text}</small>
-                </span>
-                <ArrowUpRight className={styles.collArrow} size={18} />
-              </a>
-            ))}
-          </div>
-        </section>
-
-        {/* ------------------------------------------------ spotlight carousel */}
-        <section id="spotlight" className={styles.spot} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-          <div className={styles.slides}>
-            {SLIDES.map((s, i) => (
-              <article key={s.n} className={`${styles.slide} ${i === slide ? styles.active : ""}`} aria-hidden={i !== slide}>
-                <div className={styles.slideImg} style={{ backgroundImage: `url(${IMG}/${s.img}.jpg)` }} />
-                <div className={styles.slideText}>
-                  <span className={styles.count}>0{i + 1} / 0{SLIDES.length}</span>
-                  <h2>{s.title}</h2>
-                  <p>{s.text}</p>
-                  <dl className={styles.specs}>
-                    {s.specs.map(([k, v]) => (
-                      <div key={k}><dt>{k}</dt><dd>{v}</dd></div>
-                    ))}
-                  </dl>
-                  <div className={styles.slideActions}>
-                    <a className={styles.ghost} href="#start" tabIndex={i === slide ? 0 : -1}>{s.cta.toUpperCase()}</a>
-                    <span className={styles.arrows}>
-                      <button type="button" onClick={() => go(-1)} aria-label="Previous"><ChevronLeft size={16} /></button>
-                      <button type="button" onClick={() => go(1)} aria-label="Next"><ChevronRight size={16} /></button>
-                    </span>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-          <div className={styles.dotsNav} role="tablist" aria-label="Spotlight">
-            {SLIDES.map((s, i) => (
-              <button key={s.n} type="button" role="tab" aria-selected={i === slide} className={i === slide ? styles.on : ""} onClick={() => setSlide(i)}>{s.n}</button>
-            ))}
-          </div>
-        </section>
-
-        {/* ------------------------------------------------ tools / materials row */}
-        <section id="tools" className={styles.tools}>
-          <div data-reveal className={styles.toolsHead}>
-            <h2>EVERYTHING<br />INCLUDED.</h2>
-            <p>Eight tools, one app. Support, tracking, catalogue work and SEO, built to save your team hours every day.</p>
-            <a className={styles.ghost} href="#start">EXPLORE THE APP</a>
-          </div>
-          <div className={styles.toolsRow}>
-            {TOOLS.map((t, i) => (
-              <div key={t.label} data-reveal className={styles.tool} style={{ transitionDelay: `${i * 80}ms` }}>
-                <img src={`${IMG}/${t.img}.jpg`} alt="" loading="lazy" style={{ objectPosition: t.pos }} />
-                <span>{t.label}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* ------------------------------------------------ order flow */}
-        <section className={styles.split}>
-          <div data-reveal className={styles.splitText}>
-            <span className={styles.kicker}>ORDER TRACKING THAT CLOSES THE LOOP</span>
-            <h2>&ldquo;WHERE IS MY ORDER?&rdquo;<br />ANSWERED IN SECONDS.</h2>
-            <p>The customer sends the order number. JAZZ checks it against the registered phone, then replies with the status, courier, tracking ID and a link that opens Delhivery with the ID already typed in.</p>
-            <ul className={styles.ticks}>
-              <li><Check size={15} /> Prices always in ₹</li>
-              <li><Check size={15} /> Short numbered replies, no walls of text</li>
-              <li><Check size={15} /> Works with #W0000, W0000 or a registered phone number</li>
-              <li><Languages size={15} /> English, Hindi and Hinglish</li>
+          <div className="box reveal" style={{ transitionDelay: ".1s" }}>
+            <span className="tag">WHY STORES CHOOSE JAZZ</span>
+            <h3>Replies that close the loop</h3>
+            <ul className="ticks">
+              <li><Ico n="check" w={2.6} /> Order details only after the phone number matches</li>
+              <li><Ico n="check" w={2.6} /> Prices in ₹, short numbered answers</li>
+              <li><Ico n="check" w={2.6} /> Delhivery link opens with the ID filled in</li>
+              <li><Ico n="check" w={2.6} /> A person can take over any chat</li>
             </ul>
           </div>
-          <div data-reveal className={styles.flow} aria-hidden="true">
-            {["Customer sends #W0000", "JAZZ verifies the phone", "Order + Delhivery link sent"].map((t, i) => (
-              <div key={t} className={styles.flowStep} style={{ animationDelay: `${i * 1.1}s` }}>
-                <span>{i + 1}</span>{t}
-              </div>
-            ))}
+          <div className="box follow reveal" style={{ transitionDelay: ".2s" }}>
+            <span className="tag">CONTACT US</span>
+            <h3>We&apos;re here to help</h3>
+            <a className="reach" href={`mailto:${SUPPORT_EMAIL}`}>
+              <span className="ic"><Ico n="mail" /></span>
+              <span><small>Email</small><b>{SUPPORT_EMAIL}</b></span>
+            </a>
+            <a className="reach" href={`tel:${SUPPORT_TEL}`}>
+              <span className="ic"><Ico n="phone" /></span>
+              <span><small>Phone</small><b>{SUPPORT_PHONE}</b></span>
+            </a>
           </div>
-        </section>
+        </div>
+      </section>
 
-        {/* ------------------------------------------------ steps */}
-        <section id="how" className={styles.how}>
-          <div data-reveal className={styles.centerHead}>
-            <span className={styles.kicker}>LIVE IN MINUTES</span>
-            <h2>HOW IT WORKS</h2>
-          </div>
-          <ol className={styles.steps}>
-            {STEPS.map((s, i) => (
-              <li key={s.n} data-reveal style={{ transitionDelay: `${i * 100}ms` }}>
-                <span className={styles.stepNo}>{s.n}</span>
-                <h3>{s.title}</h3>
-                <p>{s.text}</p>
-              </li>
-            ))}
-          </ol>
-        </section>
-
-        {/* ------------------------------------------------ faq */}
-        <section id="faq" className={styles.how}>
-          <div data-reveal className={styles.centerHead}>
-            <span className={styles.kicker}>GOOD TO KNOW</span>
-            <h2>QUESTIONS, ANSWERED</h2>
-          </div>
-          <div className={styles.faq}>
-            {FAQ.map((f, i) => (
-              <details key={f.q} data-reveal style={{ transitionDelay: `${i * 60}ms` }}>
-                <summary>{f.q}</summary>
-                <p>{f.a}</p>
-              </details>
-            ))}
-          </div>
-        </section>
-
-        {/* ------------------------------------------------ cta */}
-        <section className={styles.cta} data-reveal style={{ backgroundImage: `url(${IMG}/boxes-plant.jpg)` }}>
-          <div className={styles.ctaShade} />
-          <div className={styles.ctaInner}>
-            <span className={styles.kicker}>READY WHEN YOU ARE</span>
-            <h2>LET JAZZ TAKE<br />THE FIRST REPLY.</h2>
-            <p>Connect your store and see it answer a real order question.</p>
-            {showForm && <LoginForm errors={errors} id="shop-cta" />}
-          </div>
-        </section>
-      </main>
-
-      <footer className={styles.footer}>
-        <span className={styles.wordmark}>SHOPPILOT</span>
-        <span>WhatsApp bot, order updates and store tools for your Shopify store.</span>
-        <span className={styles.credit}>Photos: Pexels</span>
+      <footer>
+        <div className="wrap"><span>© 2026 ShopPilot. All rights reserved.</span><span>Made with <em>♥</em> by JAZZ</span></div>
       </footer>
     </div>
   );

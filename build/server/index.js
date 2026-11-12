@@ -17,8 +17,7 @@ import path from "node:path";
 import QRCode from "qrcode";
 import makeWASocket, { useMultiFileAuthState, fetchLatestBaileysVersion, Browsers, DisconnectReason, downloadMediaMessage } from "@whiskeysockets/baileys";
 import { randomBytes, timingSafeEqual, createHmac, createDecipheriv, scryptSync, createCipheriv, createSign, createHash, randomUUID } from "node:crypto";
-import { useRef, useState, useCallback, useEffect, Fragment as Fragment$1 } from "react";
-import { Truck, BellRing, Zap, ShieldCheck, Headset, ArrowRight, ArrowUpRight, ChevronLeft, ChevronRight, Check, Languages, X, ChevronsRight, ChevronsLeft, Menu, LayoutDashboard, MessagesSquare, PackageSearch, ClipboardList, ScanSearch, WandSparkles, SearchCheck, Sparkles, Smartphone, Plug, ScrollText, Bot, ShoppingBag, AlertTriangle, CheckCircle2, Users, Phone, ArrowDownRight, Minus, ImagePlus, Store, FileArchive, Play, RotateCcw, ChevronDown, Camera, Scissors, Minimize2, Eraser, Crop, Palette, FileImage, Cpu, UploadCloud, FolderPlus, Square, Download, Trash2, Search, CloudUpload, Undo2, Sheet, ExternalLink, Plus, RefreshCw, ImageOff, FileUp } from "lucide-react";
+import { useRef, useEffect, useState, Fragment as Fragment$1, useCallback } from "react";
 import { readFile } from "node:fs/promises";
 import { zipSync, ZipPassThrough, Zip, unzipSync } from "fflate";
 import * as cheerio from "cheerio";
@@ -26,6 +25,7 @@ import { isIP } from "node:net";
 import { fork } from "node:child_process";
 import os from "node:os";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
+import { BellRing, X, ChevronsRight, ChevronsLeft, Menu, LayoutDashboard, MessagesSquare, PackageSearch, ClipboardList, ScanSearch, WandSparkles, SearchCheck, Zap, Sparkles, Smartphone, Plug, ScrollText, Bot, ShoppingBag, AlertTriangle, CheckCircle2, ArrowRight, Users, Phone, ArrowUpRight, ArrowDownRight, Minus, ImagePlus, Store, FileArchive, Play, RotateCcw, ChevronDown, Camera, Scissors, Minimize2, Check, Eraser, Crop, Palette, FileImage, Cpu, UploadCloud, FolderPlus, Square, Download, Trash2, Search, CloudUpload, Undo2, Sheet, ExternalLink, Plus, RefreshCw, ImageOff, FileUp } from "lucide-react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 if (process.env.NODE_ENV !== "production") {
   if (!global.prismaGlobal) {
@@ -80,9 +80,9 @@ async function logEvent(args) {
     console.error("logEvent failed", redact(String(e)));
   }
 }
-function normalizePhone(input2) {
-  if (!input2) return null;
-  let s = String(input2).trim();
+function normalizePhone(input) {
+  if (!input) return null;
+  let s = String(input).trim();
   const hadPlus = s.startsWith("+");
   s = s.replace(/[^\d]/g, "");
   if (!s) return null;
@@ -131,7 +131,7 @@ function parseNumberList(raw) {
   }
   return [...out];
 }
-const inList = (phone2, list) => list.some((n) => samePhone(n, phone2));
+const inList = (phone, list) => list.some((n) => samePhone(n, phone));
 const FILE = path.join(path.resolve(process.env.WHATSAPP_AUTH_DIR || ".wa-auth"), "saved-contacts.json");
 const g$8 = globalThis;
 function load() {
@@ -183,8 +183,8 @@ function rememberContacts(list) {
   }
   if (changed) persistSoon();
 }
-function isSavedContact(phone2, manual) {
-  return inList(phone2, manual) || load().has(normalizePhone(phone2) ?? phone2);
+function isSavedContact(phone, manual) {
+  return inList(phone, manual) || load().has(normalizePhone(phone) ?? phone);
 }
 function unwrapMessage(msg2) {
   var _a2, _b, _c, _d, _e;
@@ -378,13 +378,13 @@ async function getAiPublicState(shop) {
     envKey: !!(provider === "anthropic" ? process.env.ANTHROPIC_API_KEY : process.env.OPENAI_API_KEY)
   };
 }
-async function saveAiConfig(shop, form2) {
-  const provider = form2.get("aiProvider") === "anthropic" ? "anthropic" : "openai";
-  const model = String(form2.get("aiModel") ?? "").trim().slice(0, 80);
-  const newKey = String(form2.get("aiKey") ?? "").trim();
+async function saveAiConfig(shop, form) {
+  const provider = form.get("aiProvider") === "anthropic" ? "anthropic" : "openai";
+  const model = String(form.get("aiModel") ?? "").trim().slice(0, 80);
+  const newKey = String(form.get("aiKey") ?? "").trim();
   if (newKey && (newKey.length < 20 || /\s/.test(newKey))) throw new Error("That doesn't look like a valid API key.");
   const data = {
-    aiEnabled: form2.get("aiEnabled") === "on",
+    aiEnabled: form.get("aiEnabled") === "on",
     aiProvider: provider,
     aiModel: model,
     ...newKey ? { aiKeyEnc: encryptSecret(newKey) } : {}
@@ -511,15 +511,15 @@ let cached = null;
 function buildIndex$1(faqs) {
   const phrases = /* @__PURE__ */ new Map();
   const byToken = /* @__PURE__ */ new Map();
-  for (const faq2 of faqs) {
-    if (!faq2.enabled) continue;
-    for (const k of splitKeywords(faq2.keywords)) {
-      if (k.split(" ").length <= MAX_WORDS && !phrases.has(k)) phrases.set(k, faq2);
+  for (const faq of faqs) {
+    if (!faq.enabled) continue;
+    for (const k of splitKeywords(faq.keywords)) {
+      if (k.split(" ").length <= MAX_WORDS && !phrases.has(k)) phrases.set(k, faq);
     }
-    for (const line of (faq2.questions ?? "").split("\n")) {
+    for (const line of (faq.questions ?? "").split("\n")) {
       const tokens2 = contentTokens(line);
       if (tokens2.length < 2) continue;
-      const q = { faq: faq2, tokens: tokens2 };
+      const q = { faq, tokens: tokens2 };
       for (const t of tokens2) {
         const list = byToken.get(t);
         if (list) list.push(q);
@@ -569,8 +569,8 @@ const make = (prefix, digits2) => {
   const p = prefix.toUpperCase();
   return { prefix: p, digits: digits2, key: `${p}${digits2}`, name: `#${p}${digits2}` };
 };
-function parseOrderRef(input2) {
-  const m = input2.trim().match(/^#?\s*(?:([A-Za-z]{1,4})\s?-?\s?)?(\d{3,10})$/);
+function parseOrderRef(input) {
+  const m = input.trim().match(/^#?\s*(?:([A-Za-z]{1,4})\s?-?\s?)?(\d{3,10})$/);
   return m ? make(m[1] ?? "", m[2]) : null;
 }
 const orderKey = (nameOrKey) => nameOrKey.toUpperCase().replace(/[#\s_-]/g, "");
@@ -610,16 +610,16 @@ function detectIntent(raw) {
   const trackWords = /\b(track|tracking|shipment|shipped|courier|delivery|delivered|dispatch|dispatched|parcel|awb|where is my|kahan|kahaan|kab aayega|kab tak|pahunchega)\b/.test(t) || HI_TRACK.test(t);
   const orderWords = /\b(order|status|invoice|payment)\b/.test(t) || HI_ORDER.test(t);
   const orderNumber = marked ?? (trackWords || orderWords ? (_a2 = findLooseOrderRef(text2)) == null ? void 0 : _a2.key : void 0);
-  const phone2 = findPhoneInText(text2) ?? void 0;
+  const phone = findPhoneInText(text2) ?? void 0;
   const withRefs = (base) => ({
     ...base,
     orderNumber,
-    ...phone2 && !orderNumber ? { phone: phone2 } : {}
+    ...phone && !orderNumber ? { phone } : {}
   });
   if (trackWords) return withRefs({ type: "tracking" });
   if (orderWords || orderNumber) return withRefs({ type: "order" });
-  if (phone2 && !/[\p{L}\p{M}]{4,}/u.test(text2.replace(/\b(my|number|is|mobile|phone|no|mera|meri|hai|registered)\b/gi, ""))) {
-    return { type: "order", phone: phone2 };
+  if (phone && !/[\p{L}\p{M}]{4,}/u.test(text2.replace(/\b(my|number|is|mobile|phone|no|mera|meri|hai|registered)\b/gi, ""))) {
+    return { type: "order", phone };
   }
   const bare = parseOrderRef(text2);
   if (bare && bare.prefix.length === 1) return { type: "order", orderNumber: bare.key, weak: true };
@@ -764,7 +764,7 @@ function clip$1(text2, max) {
 function numbered(items, start = 1) {
   return items.filter((x) => typeof x === "string" && x.trim().length > 0).map((x, i) => `${start + i}. ${x}`).join("\n");
 }
-function compose$1(parts) {
+function compose(parts) {
   const body = parts.points ? numbered(parts.points) : "";
   return [parts.intro, body, parts.note, parts.next].map((s) => (s ?? "").trim()).filter(Boolean).join("\n\n");
 }
@@ -874,19 +874,19 @@ function extractCombo(p, labels) {
     else if (!items.some((x) => x.name.toLowerCase() === it.name.toLowerCase())) items.push({ name: it.name, qty: label2 });
   };
   let section = "none";
-  let count2 = 0;
+  let count = 0;
   for (const l of lines) {
     const opt = l.text.match(OPTIONAL_HDR);
     const inc = l.text.match(INCLUDED_HDR);
     if (opt) {
       section = "opt";
-      count2 = 0;
+      count = 0;
       for (const part of splitInline(opt[1])) add(part, true);
       continue;
     }
     if (inc && l.text.length <= 140) {
       section = "inc";
-      count2 = 0;
+      count = 0;
       for (const part of splitInline(inc[1])) add(part, false);
       continue;
     }
@@ -894,11 +894,11 @@ function extractCombo(p, labels) {
     const looksLikeSentence = l.text.length > 90 || /[.!?]\s+\S/.test(l.text);
     const spec = l.text.match(SPEC);
     const quantityRow = !!spec && new RegExp(`^\\d{1,3}\\s*(?:${UNIT$1})?$`, "i").test(spec[2].trim());
-    if (l.blankBefore && count2 > 0 && !l.bullet || !l.bullet && !!spec && !quantityRow && !/^\d/.test(l.text) || looksLikeSentence) {
+    if (l.blankBefore && count > 0 && !l.bullet || !l.bullet && !!spec && !quantityRow && !/^\d/.test(l.text) || looksLikeSentence) {
       section = "none";
       continue;
     }
-    count2++;
+    count++;
     add(l.text, section === "opt");
   }
   let main = "";
@@ -924,14 +924,14 @@ function productPoints(p) {
   const lines = linesOf(p);
   const warranty = warrantyOf(lines);
   const titleKey = p.title.toLowerCase();
-  const specs2 = [];
+  const specs = [];
   const features = [];
   for (const l of lines) {
     if (WARRANTY.test(l.text)) continue;
     if (INCLUDED_HDR.test(l.text) || OPTIONAL_HDR.test(l.text)) continue;
     const m = l.text.match(SPEC);
     if (m && !/^\d/.test(l.text)) {
-      specs2.push({ text: `${cap(m[1].trim())}: ${clip$1(m[2], 70)}`, score: IMPORTANT.test(m[1]) ? 2 : 1 });
+      specs.push({ text: `${cap(m[1].trim())}: ${clip$1(m[2], 70)}`, score: IMPORTANT.test(m[1]) ? 2 : 1 });
     } else if (l.text.length >= 8 && l.text.toLowerCase() !== titleKey) {
       if (l.bullet || l.text.length <= 110) features.push(clip$1(l.text, 110));
       else {
@@ -947,7 +947,7 @@ function productPoints(p) {
     seen.add(k);
     return true;
   });
-  const bestSpecs = uniq([...specs2].sort((a, b) => b.score - a.score)).slice(0, 4).map((x) => x.text);
+  const bestSpecs = uniq([...specs].sort((a, b) => b.score - a.score)).slice(0, 4).map((x) => x.text);
   const room = Math.max(0, 5 - bestSpecs.length);
   const bestFeatures = uniq(features).slice(0, room);
   return { points: [...bestSpecs, ...bestFeatures], warranty };
@@ -963,7 +963,7 @@ function productMessage(p, L) {
         ...combo.included.map((i) => `${i.name}: ${i.qty ?? L.included}`)
       ];
       const note = combo.optional.length ? `${L.optional}: ${combo.optional.join(", ")}` : void 0;
-      const body3 = compose$1({
+      const body3 = compose({
         intro: L.comboIntro,
         points: rows2,
         note: [note, priceLine(L.comboPrice), p.url ? `${L.viewCombo}: ${p.url}` : null].filter(Boolean).join("\n")
@@ -972,7 +972,7 @@ function productMessage(p, L) {
 
 ${body3}` };
     }
-    const body2 = compose$1({
+    const body2 = compose({
       intro: L.comboUnclear,
       note: [priceLine(L.comboPrice), p.url ? `${L.viewCombo}: ${p.url}` : null].filter(Boolean).join("\n"),
       next: L.askTeam
@@ -986,7 +986,7 @@ ${body2}` };
   const options = named.length > 1 ? `${L.options}: ${clip$1(named.map((v) => v.title).join(", "), 100)}` : null;
   const rows = [...points, warranty ? `${L.warranty}: ${warranty}` : null, options, priceLine(L.price), p.available === false ? null : p.available ? `${L.stock}: ${L.inStock}` : null];
   const hasInfo = points.length > 0;
-  const body = compose$1({
+  const body = compose({
     intro: hasInfo ? L.details : L.noDetails,
     points: rows,
     note: p.url ? `${L.viewProduct}: ${p.url}` : void 0,
@@ -1252,22 +1252,22 @@ function safeJson(s) {
     return {};
   }
 }
-async function saveSettings(shop, form2) {
+async function saveSettings(shop, form) {
   const stored = await prisma.botSettings.findUnique({ where: { shop } });
   const templates = stored ? safeJson(stored.templates) : {};
-  for (const [k, v] of form2.entries()) {
+  for (const [k, v] of form.entries()) {
     if (k.startsWith("tpl_") && typeof v === "string") {
       templates[k.slice(4)] = v.trim().slice(0, 1e3);
     }
   }
   const data = {
-    enabled: form2.get("enabled") === "on",
-    maxVerifyAttempts: clamp(Number(form2.get("maxVerifyAttempts")), 1, 10),
-    recommendationsEnabled: form2.get("recommendationsEnabled") === "on",
-    maxRecommendations: clamp(Number(form2.get("maxRecommendations")), 1, 5),
-    recommendationRule: form2.get("recommendationRule") === "tag" ? "tag" : "productType",
+    enabled: form.get("enabled") === "on",
+    maxVerifyAttempts: clamp(Number(form.get("maxVerifyAttempts")), 1, 10),
+    recommendationsEnabled: form.get("recommendationsEnabled") === "on",
+    maxRecommendations: clamp(Number(form.get("maxRecommendations")), 1, 5),
+    recommendationRule: form.get("recommendationRule") === "tag" ? "tag" : "productType",
     templates: JSON.stringify(templates),
-    savedNumbers: parseNumberList(String(form2.get("savedNumbers") ?? "")).join("\n")
+    savedNumbers: parseNumberList(String(form.get("savedNumbers") ?? "")).join("\n")
   };
   await prisma.botSettings.upsert({
     where: { shop },
@@ -1370,7 +1370,7 @@ function mergeOrders(shopify2, ims) {
   const extra = ims.filter((o) => !have.has(digits$1(o.name)));
   return [...shopify2.map((o) => ({ ...o, source: o.source ?? "shopify" })), ...extra];
 }
-const ownedBy = (orders, phone2) => orders.filter((o) => o.phones.some((p) => samePhone(p, phone2)));
+const ownedBy = (orders, phone) => orders.filter((o) => o.phones.some((p) => samePhone(p, phone)));
 function formatMoney(amount, currency) {
   const n = Number(amount);
   if (amount == null || amount === "" || !Number.isFinite(n)) return "";
@@ -1576,10 +1576,10 @@ async function getOrdersByIds(shop, ids) {
 async function listOrders(shop, opts) {
   var _a2, _b, _c;
   const q = (_a2 = opts.search) == null ? void 0 : _a2.trim();
-  const phone2 = normalizePhone(q ?? "");
+  const phone = normalizePhone(q ?? "");
   let query = "";
   if (q) {
-    if (phone2) query = `phone:${phoneSearchVariants(phone2)[0]}`;
+    if (phone) query = `phone:${phoneSearchVariants(phone)[0]}`;
     else if (parseOrderRef(q)) query = `name:${parseOrderRef(q).name}`;
     else query = esc(q);
   }
@@ -1725,13 +1725,13 @@ async function testShopifyConnection(shop, fresh = false) {
     const granted = (((_a2 = data.currentAppInstallation) == null ? void 0 : _a2.accessScopes) ?? []).map((s) => s.handle);
     const has = (s) => granted.includes(s) || granted.includes(s.replace("read_", "write_"));
     const probe = await gql(shop, `query { orders(first: 1) { nodes { ${ORDER_FIELDS} } } ordersCount(limit: null) { count } }`);
-    const count2 = Number((_b = probe.ordersCount) == null ? void 0 : _b.count);
+    const count = Number((_b = probe.ordersCount) == null ? void 0 : _b.count);
     value = {
       ok: true,
       shopName: (_c = data.shop) == null ? void 0 : _c.name,
       domain: (_d = data.shop) == null ? void 0 : _d.myshopifyDomain,
       scopes: REQUIRED_SCOPES.map((s) => ({ scope: s, granted: has(s) })),
-      orders: { readable: Number.isFinite(count2) ? count2 : null }
+      orders: { readable: Number.isFinite(count) ? count : null }
     };
   } catch (e) {
     value = { ok: false, error: explainShopifyError(String(e.message ?? e)) };
@@ -1752,12 +1752,12 @@ async function both(shop, shopify2, ims, empty) {
   if (!found && (sFail || iFail)) throw sFail ? a.reason : b.reason;
   return { shopify: sv, ims: iv };
 }
-async function findOrdersEverywhere(shop, phone2) {
+async function findOrdersEverywhere(shop, phone) {
   const cfg = imsConfig();
-  const r = await both(shop, () => findOrdersByPhone(shop, phone2), cfg ? () => imsLookup(cfg, { phone: phone2 }) : null, (v) => v.length === 0);
-  return ownedBy(mergeOrders(r.shopify ?? [], r.ims ?? []), phone2);
+  const r = await both(shop, () => findOrdersByPhone(shop, phone), cfg ? () => imsLookup(cfg, { phone }) : null, (v) => v.length === 0);
+  return ownedBy(mergeOrders(r.shopify ?? [], r.ims ?? []), phone);
 }
-async function findOrderEverywhere(shop, number, phone2) {
+async function findOrderEverywhere(shop, number, phone) {
   const cfg = imsConfig();
   const r = await both(
     shop,
@@ -1768,7 +1768,7 @@ async function findOrderEverywhere(shop, number, phone2) {
     cfg ? () => imsLookup(cfg, { order: number }) : null,
     (v) => v.length === 0
   );
-  return ownedBy(mergeOrders(r.shopify ?? [], r.ims ?? []), phone2)[0] ?? null;
+  return ownedBy(mergeOrders(r.shopify ?? [], r.ims ?? []), phone)[0] ?? null;
 }
 async function getOrdersEverywhere(shop, ids) {
   const shopifyIds = ids.filter((i) => !i.startsWith("ims:"));
@@ -1925,7 +1925,7 @@ function formatOrder(o, lang = "en") {
   const orderStatus = o.cancelled ? L.cancelled : o.closed ? L.closed : L.active;
   const items = o.items.map((i) => `${i.title} × ${i.quantity}`).join(", ");
   const blocks = [
-    compose$1({
+    compose({
       intro: L.intro,
       points: [
         `${L.orderNo}: ${o.name}`,
@@ -1943,7 +1943,7 @@ function formatOrder(o, lang = "en") {
       const many = o.tracking.length > 1;
       const shipments = o.tracking.map((t, i) => {
         const delivered = t.status === "DELIVERED";
-        return compose$1({
+        return compose({
           intro: many ? `${L.shipment} ${i + 1}:` : void 0,
           points: [
             t.company && `${L.courier}: ${t.company}`,
@@ -1971,7 +1971,7 @@ function productList(items, lang = "en") {
   const L = labelsFor(lang);
   const rows = items.map((p) => `*${p.title}*${p.price ? `
    ${L.price}: ${p.price}` : ""}${p.compareAtPrice ? ` (~${p.compareAtPrice}~)` : ""}`);
-  return compose$1({ intro: L.found, points: rows, next: L.pickProduct(items.length) });
+  return compose({ intro: L.found, points: rows, next: L.pickProduct(items.length) });
 }
 async function update(conv, data) {
   Object.assign(conv, data);
@@ -2079,11 +2079,11 @@ async function decideReply(shop, conv, msg2, s, fixedLang, deps = defaultDeps) {
       pending = JSON.parse(conv.pendingOrders || "{}");
     } catch {
     }
-    const phone2 = findPhoneInText(text2);
+    const phone = findPhoneInText(text2);
     const marked = findMarkedOrderRef(text2);
-    const ref = marked && !refIsPhone(marked) ? marked : findLooseOrderRef(text2) ?? (phone2 ? null : parseOrderRef(text2));
+    const ref = marked && !refIsPhone(marked) ? marked : findLooseOrderRef(text2) ?? (phone ? null : parseOrderRef(text2));
     let checked;
-    if (pending.order && phone2) checked = await deps.findOrder(shop, pending.order, phone2);
+    if (pending.order && phone) checked = await deps.findOrder(shop, pending.order, phone);
     else if (pending.phone && ref) checked = await deps.findOrder(shop, ref.key, pending.phone);
     if (checked) return deliverOrder(shop, conv, checked, s);
     if (checked === null) {
@@ -2168,8 +2168,8 @@ ${LABELS[ui].pick(ids.length)}`;
     }
     const marked = findMarkedOrderRef(text2);
     if (marked && !refIsPhone(marked)) return orderByNumberFlow(shop, conv, marked.key, s, deps);
-    const phone2 = findPhoneInText(text2);
-    if (phone2) return phoneFlow(shop, conv, phone2, s, deps, lang);
+    const phone = findPhoneInText(text2);
+    if (phone) return phoneFlow(shop, conv, phone, s, deps, lang);
     const ref = findLooseOrderRef(text2) ?? parseOrderRef(text2);
     if (ref) return orderByNumberFlow(shop, conv, ref.key, s, deps);
   }
@@ -2273,11 +2273,11 @@ async function acknowledgeWaiting(shop, conv, s, inboundId, send = sendAndRecord
 }
 async function handleInbound(shop, msg2) {
   var _a2, _b, _c, _d;
-  const phone2 = normalizePhone(msg2.from) ?? `+${msg2.from.replace(/\D/g, "")}`;
+  const phone = normalizePhone(msg2.from) ?? `+${msg2.from.replace(/\D/g, "")}`;
   const now = /* @__PURE__ */ new Date();
   const conv = await prisma.conversation.upsert({
-    where: { shop_phone: { shop, phone: phone2 } },
-    create: { shop, phone: phone2, customerName: msg2.name ?? null, lastInboundAt: now, lastMessageAt: now },
+    where: { shop_phone: { shop, phone } },
+    create: { shop, phone, customerName: msg2.name ?? null, lastInboundAt: now, lastMessageAt: now },
     update: {
       lastInboundAt: now,
       lastMessageAt: now,
@@ -2301,7 +2301,7 @@ async function handleInbound(shop, msg2) {
   }).catch(() => void 0);
   const s = await getSettings(shop);
   if (!s.enabled) return;
-  const wake = applyWakeRule(msg2.text, isSavedContact(phone2, s.savedNumbers));
+  const wake = applyWakeRule(msg2.text, isSavedContact(phone, s.savedNumbers));
   if (!wake.reply) return;
   if (wake.text !== msg2.text) msg2 = { ...msg2, text: wake.text };
   if (conv.mode === "human") {
@@ -2315,12 +2315,12 @@ async function handleInbound(shop, msg2) {
   let work = msg2;
   if (rawText && (detected === "other" || detected === null && conv.lang.startsWith("x:"))) {
     if (detected === "other") {
-      const t = rateLimited(`tr:${phone2}`, 60, 36e5) ? null : await translateToEnglish(shop, rawText);
+      const t = rateLimited(`tr:${phone}`, 60, 36e5) ? null : await translateToEnglish(shop, rawText);
       if (!t) {
         const body = `${s.templates.unsupportedLanguage}
 
 ${TEMPLATES_HI.unsupportedLanguage}`;
-        const sent2 = await sendAndRecord({ shop, conversationId: conv.id, to: phone2, body, sender: "bot", inReplyTo: key2 });
+        const sent2 = await sendAndRecord({ shop, conversationId: conv.id, to: phone, body, sender: "bot", inReplyTo: key2 });
         if (!sent2.ok) throw new Error(sent2.error ?? "send failed");
         return;
       }
@@ -2337,7 +2337,7 @@ ${TEMPLATES_HI.unsupportedLanguage}`;
     decided = await decideReply(shop, view, work, s, pivot ? "en" : void 0);
   } catch (e) {
     await logEvent({ shop, source: "bot", level: "error", event: "lookup_failed", detail: String(e.message) });
-    await sendAndRecord({ shop, conversationId: conv.id, to: phone2, body: tpl(view, s).lookupError, sender: "bot", inReplyTo: `${msg2.id}:err` });
+    await sendAndRecord({ shop, conversationId: conv.id, to: phone, body: tpl(view, s).lookupError, sender: "bot", inReplyTo: `${msg2.id}:err` });
     throw e;
   }
   const out = typeof decided === "string" ? { text: decided } : decided;
@@ -2349,7 +2349,7 @@ ${TEMPLATES_HI.unsupportedLanguage}`;
       const img = await sendAndRecord({
         shop,
         conversationId: conv.id,
-        to: phone2,
+        to: phone,
         body: out.image.caption,
         sender: "bot",
         inReplyTo: `${key2}:img`,
@@ -2359,7 +2359,7 @@ ${TEMPLATES_HI.unsupportedLanguage}`;
     }
   }
   if (pivot) text2 = await translateReply(shop, text2, pivot) ?? text2;
-  const sent = await sendAndRecord({ shop, conversationId: conv.id, to: phone2, body: text2, sender: "bot", inReplyTo: key2 });
+  const sent = await sendAndRecord({ shop, conversationId: conv.id, to: phone, body: text2, sender: "bot", inReplyTo: key2 });
   if (!sent.ok) throw new Error(sent.error ?? "send failed");
 }
 async function fetchProductImage(url) {
@@ -2594,8 +2594,8 @@ async function startBridge() {
 async function refreshAvatar(from, jid) {
   var _a2;
   try {
-    const phone2 = normalizePhone(from) ?? `+${from.replace(/\D/g, "")}`;
-    const conv = await prisma.conversation.findFirst({ where: { phone: phone2 }, select: { id: true, avatarAt: true } });
+    const phone = normalizePhone(from) ?? `+${from.replace(/\D/g, "")}`;
+    const conv = await prisma.conversation.findFirst({ where: { phone }, select: { id: true, avatarAt: true } });
     if (!conv || conv.avatarAt && Date.now() - conv.avatarAt.getTime() < 24 * 36e5) return;
     let file = null;
     for (const j of [jid, `${from.replace(/\D/g, "")}@s.whatsapp.net`]) {
@@ -2965,8 +2965,8 @@ function rowToValues(r) {
     r.deliveryCharges ?? r.shippingCharge ?? ""
   ];
 }
-function spreadsheetIdFrom(input2) {
-  const s = input2.trim();
+function spreadsheetIdFrom(input) {
+  const s = input.trim();
   const m = s.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]{20,})/);
   if (m) return m[1];
   return /^[a-zA-Z0-9_-]{20,}$/.test(s) ? s : null;
@@ -3541,179 +3541,76 @@ function loginErrorMessage(loginErrors) {
   }
   return {};
 }
-const page = "_page_1n1g9_4";
-const kicker = "_kicker_1n1g9_33";
-const nav = "_nav_1n1g9_36";
-const brand = "_brand_1n1g9_42";
-const wordmark = "_wordmark_1n1g9_43";
-const navLinks = "_navLinks_1n1g9_45";
-const navCta = "_navCta_1n1g9_50";
-const hero = "_hero_1n1g9_57";
-const heroBg = "_heroBg_1n1g9_58";
-const heroShade = "_heroShade_1n1g9_63";
-const heroInner = "_heroInner_1n1g9_67";
-const title = "_title_1n1g9_70";
-const lead = "_lead_1n1g9_72";
-const startBox = "_startBox_1n1g9_73";
-const scroll = "_scroll_1n1g9_74";
-const rise = "_rise_1n1g9_78";
-const form = "_form_1n1g9_82";
-const formRow = "_formRow_1n1g9_83";
-const input = "_input_1n1g9_88";
-const button = "_button_1n1g9_90";
-const hint = "_hint_1n1g9_100";
-const ghost = "_ghost_1n1g9_102";
-const phoneWrap = "_phoneWrap_1n1g9_109";
-const phone = "_phone_1n1g9_109";
-const phoneTop = "_phoneTop_1n1g9_117";
-const avatar = "_avatar_1n1g9_120";
-const online = "_online_1n1g9_121";
-const chat = "_chat_1n1g9_123";
-const bubble = "_bubble_1n1g9_124";
-const me = "_me_1n1g9_126";
-const bot = "_bot_1n1g9_127";
-const dots = "_dots_1n1g9_129";
-const compose = "_compose_1n1g9_134";
-const floaty = "_floaty_1n1g9_135";
-const f1 = "_f1_1n1g9_140";
-const f2 = "_f2_1n1g9_141";
-const strip = "_strip_1n1g9_145";
-const stripItem = "_stripItem_1n1g9_146";
-const collections = "_collections_1n1g9_154";
-const collHead = "_collHead_1n1g9_155";
-const toolsHead = "_toolsHead_1n1g9_155";
-const splitText = "_splitText_1n1g9_155";
-const centerHead = "_centerHead_1n1g9_155";
-const slideText = "_slideText_1n1g9_155";
-const cta = "_cta_1n1g9_155";
-const viewAll = "_viewAll_1n1g9_157";
-const collGrid = "_collGrid_1n1g9_159";
-const coll = "_coll_1n1g9_154";
-const collText = "_collText_1n1g9_164";
-const collArrow = "_collArrow_1n1g9_167";
-const spot = "_spot_1n1g9_171";
-const slides = "_slides_1n1g9_172";
-const slide = "_slide_1n1g9_155";
-const active = "_active_1n1g9_174";
-const slideImg = "_slideImg_1n1g9_175";
-const count = "_count_1n1g9_182";
-const specs = "_specs_1n1g9_187";
-const slideActions = "_slideActions_1n1g9_192";
-const arrows = "_arrows_1n1g9_193";
-const dotsNav = "_dotsNav_1n1g9_196";
-const on = "_on_1n1g9_121";
-const tools = "_tools_1n1g9_155";
-const toolsRow = "_toolsRow_1n1g9_203";
-const tool = "_tool_1n1g9_155";
-const split = "_split_1n1g9_155";
-const ticks = "_ticks_1n1g9_214";
-const flow = "_flow_1n1g9_217";
-const flowStep = "_flowStep_1n1g9_219";
-const how = "_how_1n1g9_224";
-const steps = "_steps_1n1g9_227";
-const stepNo = "_stepNo_1n1g9_230";
-const faq = "_faq_1n1g9_233";
-const ctaShade = "_ctaShade_1n1g9_244";
-const ctaInner = "_ctaInner_1n1g9_245";
-const footer = "_footer_1n1g9_248";
-const credit = "_credit_1n1g9_250";
-const ready = "_ready_1n1g9_253";
-const styles$2 = {
-  page,
-  kicker,
-  nav,
-  brand,
-  wordmark,
-  navLinks,
-  navCta,
-  hero,
-  heroBg,
-  heroShade,
-  heroInner,
-  title,
-  lead,
-  startBox,
-  scroll,
-  rise,
-  form,
-  formRow,
-  input,
-  button,
-  hint,
-  ghost,
-  phoneWrap,
-  phone,
-  phoneTop,
-  avatar,
-  online,
-  chat,
-  bubble,
-  me,
-  bot,
-  dots,
-  compose,
-  floaty,
-  f1,
-  f2,
-  strip,
-  stripItem,
-  collections,
-  collHead,
-  toolsHead,
-  splitText,
-  centerHead,
-  slideText,
-  cta,
-  viewAll,
-  collGrid,
-  coll,
-  collText,
-  collArrow,
-  spot,
-  slides,
-  slide,
-  active,
-  slideImg,
-  count,
-  specs,
-  slideActions,
-  arrows,
-  dotsNav,
-  on,
-  tools,
-  toolsRow,
-  tool,
-  split,
-  ticks,
-  flow,
-  flowStep,
-  how,
-  steps,
-  stepNo,
-  faq,
-  ctaShade,
-  ctaInner,
-  footer,
-  credit,
-  ready,
-  "in": "_in_1n1g9_88"
-};
+const MASCOT_SVG = `<svg id="bot" viewBox="0 0 420 480" role="img" aria-label="JAZZ, a friendly assistant robot with a headset, waving">
+        <defs>
+          <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f3e0bd"/><stop offset=".55" stop-color="#cfa877"/><stop offset="1" stop-color="#8f6b45"/></linearGradient>
+          <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a382a"/><stop offset="1" stop-color="#1f1710"/></linearGradient>
+          <linearGradient id="visor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0f0a06"/><stop offset="1" stop-color="#1c130c"/></linearGradient>
+          <radialGradient id="jet" cx=".5" cy="0" r="1"><stop offset="0" stop-color="#ffd89a" stop-opacity=".95"/><stop offset="1" stop-color="#e8a96b" stop-opacity="0"/></radialGradient>
+          <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+
+        <ellipse class="shadow" cx="210" cy="452" rx="90" ry="12" fill="#000" opacity=".4"/>
+
+        <!-- things that orbit JAZZ -->
+        <g class="orbit" opacity=".95">
+          <g transform="translate(60 200)"><g class="item"><rect x="-17" y="-15" width="34" height="30" rx="5" fill="url(#gold)"/><path d="M-17-5h34M0-15v10" stroke="#5b3f2a" stroke-width="2.4"/></g></g>
+          <g transform="translate(362 150)"><g class="item b"><circle r="19" fill="url(#gold)"/><text y="7" text-anchor="middle" font-size="21" font-weight="700" fill="#5b3f2a" font-family="Inter,Arial">₹</text></g></g>
+          <g transform="translate(345 330)"><g class="item c"><circle r="16" fill="#8fd08a"/><path d="M-7 0 -2 5 8-5" stroke="#10270f" stroke-width="3.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g></g>
+        </g>
+        <g fill="#f3e0bd"><path class="spark" d="M70 90l5 12 12 5-12 5-5 12-5-12-12-5 12-5z"/><path class="spark b" d="M350 60l4 9 9 4-9 4-4 9-4-9-9-4 9-4z"/><path class="spark c" d="M380 250l3 7 7 3-7 3-3 7-3-7-7-3 7-3z"/></g>
+
+        <g class="floatY">
+          <!-- jet flame -->
+          <ellipse class="jet" cx="210" cy="410" rx="46" ry="36" fill="url(#jet)"/>
+
+          <!-- left arm -->
+          <g class="armL"><rect x="118" y="272" width="26" height="82" rx="13" fill="url(#gold)"/><circle cx="131" cy="358" r="16" fill="url(#gold)"/></g>
+
+          <!-- body -->
+          <rect x="190" y="228" width="40" height="30" rx="8" fill="#2a1f16"/>
+          <rect x="138" y="248" width="144" height="146" rx="50" fill="url(#gold)"/>
+          <rect x="152" y="258" width="116" height="22" rx="11" fill="#fff" opacity=".18"/>
+          <rect x="160" y="284" width="100" height="66" rx="18" fill="#1a120c"/>
+          <polyline class="beat" points="168,318 188,318 196,300 206,336 216,310 224,318 252,318" fill="none" stroke="#ffd89a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+          <circle cx="210" cy="372" r="12" fill="#2a1f16"/><text x="210" y="377" text-anchor="middle" font-size="14" font-weight="800" fill="#ffd89a" font-family="Inter,Arial">J</text>
+
+          <!-- waving right arm (raised) -->
+          <g class="wave"><rect x="276" y="272" width="26" height="82" rx="13" fill="url(#gold)"/><circle cx="289" cy="358" r="17" fill="url(#gold)"/><g fill="#8f6b45"><rect x="279" y="368" width="5" height="9" rx="2.5"/><rect x="287" y="371" width="5" height="9" rx="2.5"/><rect x="295" y="368" width="5" height="9" rx="2.5"/></g></g>
+
+          <!-- head -->
+          <line x1="210" y1="100" x2="210" y2="66" stroke="url(#gold)" stroke-width="6" stroke-linecap="round"/>
+          <circle class="ant" cx="210" cy="54" r="12" fill="#ffd89a"/>
+          <circle cx="210" cy="54" r="12" fill="url(#gold)" filter="url(#glow)"/>
+          <circle cx="206" cy="50" r="3.5" fill="#fff" opacity=".8"/>
+          <path d="M104 150C104 62 316 62 316 150" fill="none" stroke="url(#gold)" stroke-width="9" stroke-linecap="round"/>
+          <rect x="108" y="98" width="204" height="152" rx="66" fill="url(#shell)" stroke="#d9b98a" stroke-opacity=".45" stroke-width="1.5"/>
+          <rect x="126" y="116" width="168" height="112" rx="48" fill="url(#visor)"/>
+          <ellipse cx="170" cy="126" rx="40" ry="6" fill="#fff" opacity=".07"/>
+          <circle cx="106" cy="174" r="19" fill="url(#gold)"/><circle cx="106" cy="174" r="9" fill="#2a1f16"/>
+          <circle cx="314" cy="174" r="19" fill="url(#gold)"/><circle cx="314" cy="174" r="9" fill="#2a1f16"/>
+          <path d="M313 192C330 240 296 246 270 240" fill="none" stroke="#2a1f16" stroke-width="6" stroke-linecap="round"/>
+          <circle cx="266" cy="240" r="8" fill="url(#gold)"/>
+          <!-- eyes (follow the cursor) -->
+          <g id="eyes" class="pupil">
+            <rect class="eyeL" x="156" y="146" width="34" height="42" rx="15" fill="#ffd89a" filter="url(#glow)"/>
+            <rect class="eyeR" x="230" y="146" width="34" height="42" rx="15" fill="#ffd89a" filter="url(#glow)"/>
+            <circle cx="170" cy="160" r="5" fill="#fff" opacity=".85"/><circle cx="244" cy="160" r="5" fill="#fff" opacity=".85"/>
+          </g>
+          <circle cx="146" cy="204" r="9" fill="#ff9f7a" opacity=".28"/><circle cx="274" cy="204" r="9" fill="#ff9f7a" opacity=".28"/>
+          <path class="talk" d="M190 206Q210 226 230 206" fill="none" stroke="#ffd89a" stroke-width="5" stroke-linecap="round"/>
+        </g>
+      </svg>`;
+const pageStyles = "/assets/jazz-DBYmo0m3.css";
 const meta = () => [{
   title: "ShopPilot: WhatsApp bot, order updates and store tools for Shopify"
 }, {
   name: "description",
-  content: "JAZZ answers your customers on WhatsApp 24/7: order status, Delhivery tracking and product questions. Plus order sheet, product scrapper, image editor and SEO tools in one Shopify app."
+  content: "Hi, I'm JAZZ. I answer your customers' order, tracking and product questions on WhatsApp 24/7. Plus order sheet, product scrapper, image editor and SEO tools in one Shopify app."
 }];
 const links$5 = () => [{
-  rel: "preconnect",
-  href: "https://fonts.googleapis.com"
-}, {
-  rel: "preconnect",
-  href: "https://fonts.gstatic.com",
-  crossOrigin: "anonymous"
-}, {
   rel: "stylesheet",
-  href: "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&display=swap"
+  href: pageStyles
 }];
 const loader$r = async ({
   request
@@ -3734,226 +3631,152 @@ const action$i = async ({
     errors
   };
 };
-const IMG = "/landing";
-const STRIP = [{
-  icon: Zap,
-  title: "INSTANT REPLIES",
-  text: "Answers in seconds, 24/7"
-}, {
-  icon: ShieldCheck,
-  title: "VERIFIED ORDERS",
-  text: "Order number + phone match"
-}, {
-  icon: Truck,
-  title: "DELHIVERY TRACKING",
-  text: "Link opens with the ID filled in"
-}, {
-  icon: Headset,
-  title: "HUMAN TAKEOVER",
-  text: "Step in with one click"
-}];
-const CARDS = [{
-  title: "WHATSAPP BOT",
-  text: "JAZZ, always on.",
-  img: "phone-night"
-}, {
-  title: "ORDER TRACKING",
-  text: "Status, courier, link.",
-  img: "boxes"
-}, {
-  title: "ORDER SHEET",
-  text: "Your team, in sync.",
-  img: "desk-lamp"
-}, {
-  title: "STORE TOOLS",
-  text: "Scrape, edit, optimise.",
-  img: "shoes"
-}];
-const SLIDES = [{
-  n: "JAZZ",
-  title: "JAZZ, YOUR WHATSAPP ASSISTANT",
-  text: "Answers order, tracking and product questions in short numbered steps, then hands over to your team the moment a person is needed.",
-  specs: [["Languages", "English, Hindi, Hinglish"], ["Replies", "Instant, 24/7"], ["Handover", "One click"]],
-  img: "boxes-plant",
-  cta: "See order tracking"
-}, {
-  n: "SCRAPPER",
-  title: "PRODUCT SCRAPPER",
-  text: "Find new products on other sites, skip what you already sell, and download a sheet with name, description, link and a BRAND-MODEL SKU, plus images grouped by SKU.",
-  specs: [["CSV", "Name, description, link, SKU"], ["Images", "ZIP, one folder per SKU"], ["Naming", "1, 2, 3 ..."]],
-  img: "shelf",
-  cta: "Try the scrapper"
-}, {
-  n: "ORDER SHEET",
-  title: "ORDER UPDATE SHEET",
-  text: "Orders and a Google Sheet stay in sync by day, week, month and year, colour-coded by status, with room for dispatch, AWB and COD details.",
-  specs: [["Sync", "Google Sheets"], ["Periods", "Day to year"], ["Manual rows", "Supported"]],
-  img: "desk-lamp",
-  cta: "Open the sheet"
-}, {
-  n: "SEO",
-  title: "SEO FIXER AND IMAGE EDITOR",
-  text: "Score every product, fix titles, descriptions and alt text in bulk, and clean up product photos with background removal. Review first, undo any time.",
-  specs: [["Score", "Per product"], ["Fix", "Bulk, via CSV"], ["Undo", "Any batch"]],
-  img: "monitor",
-  cta: "Improve my store"
-}];
-const TOOLS = [{
-  label: "ORDER SHEET",
-  img: "desk-lamp",
-  pos: "50% 40%"
-}, {
-  label: "PRODUCT SCRAPPER",
-  img: "shoes",
-  pos: "50% 30%"
-}, {
-  label: "IMAGE EDITOR",
-  img: "parcel-label",
-  pos: "50% 55%"
-}, {
-  label: "SEO FIXER",
-  img: "monitor",
-  pos: "55% 45%"
-}, {
-  label: "AUTO REPLIES",
-  img: "phone-night",
-  pos: "50% 55%"
-}];
-const STEPS = [{
-  n: "01",
-  title: "Install on your store",
-  text: "Enter your Shopify store address and approve the app. No coding, no passwords to create."
-}, {
-  n: "02",
-  title: "Link WhatsApp",
-  text: "Scan one QR code. JAZZ starts answering the same minute."
-}, {
-  n: "03",
-  title: "Relax, then step in",
-  text: "JAZZ handles the routine questions. Your team gets an alert when a person is needed."
-}];
-const FAQ = [{
-  q: "Will JAZZ reply to my friends and family?",
-  a: "No. Numbers saved in your phone are ignored. A saved contact can still talk to JAZZ by starting the message with !, # or $ (for example #W0000)."
-}, {
-  q: "Is my customers' order data safe?",
-  a: "Order details are shared only when the customer's order number and registered phone number match. Nothing else is revealed."
-}, {
-  q: "Which languages does JAZZ speak?",
-  a: "English, Hindi and Hinglish out of the box. Messages in other languages are translated, answered, and translated back."
-}, {
-  q: "How does Delhivery tracking work?",
-  a: "JAZZ sends the courier, the tracking ID and a Delhivery link. The link opens Delhivery with the tracking ID already filled in."
-}, {
-  q: "Can a person take over a chat?",
-  a: "Yes. Open the Live Inbox, reply as an agent, and JAZZ stays quiet until you hand the chat back."
-}];
-const DEMO = [{
-  who: "me",
-  lines: "Hi"
-}, {
-  who: "bot",
-  lines: /* @__PURE__ */ jsxs(Fragment, {
-    children: ["Hi, I'm JAZZ! 👋 Welcome to WERY.", /* @__PURE__ */ jsx("br", {}), "How can I help you today?", /* @__PURE__ */ jsx("br", {}), /* @__PURE__ */ jsx("br", {}), "1. Find a Product", /* @__PURE__ */ jsx("br", {}), "2. Check Order Status", /* @__PURE__ */ jsx("br", {}), "3. Track My Shipment"]
-  })
-}, {
-  who: "me",
-  lines: "#W0000"
-}, {
-  who: "bot",
-  lines: /* @__PURE__ */ jsxs(Fragment, {
-    children: ["Your order details: 📦", /* @__PURE__ */ jsx("br", {}), "1. Order Number: #W0000", /* @__PURE__ */ jsx("br", {}), "2. Fulfillment: Fulfilled", /* @__PURE__ */ jsx("br", {}), "3. Total: ₹1,499", /* @__PURE__ */ jsx("br", {}), /* @__PURE__ */ jsx("br", {}), "Tracking 🚚", /* @__PURE__ */ jsx("br", {}), "1. Courier: Delhivery", /* @__PURE__ */ jsx("br", {}), "2. Tracking ID: DL123456789", /* @__PURE__ */ jsx("br", {}), "3. Link: ", /* @__PURE__ */ jsx("u", {
-      children: "delhivery.com/track-v2/package/DL123456789"
-    })]
-  })
-}];
-function useDemo() {
-  const [shown, setShown] = useState(DEMO.length);
-  const [typing, setTyping] = useState(false);
-  useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    let dead = false;
-    const timers = [];
-    const at = (ms, fn) => timers.push(window.setTimeout(() => !dead && fn(), ms));
-    const play = () => {
-      setShown(0);
-      setTyping(false);
-      at(700, () => setShown(1));
-      at(1300, () => setTyping(true));
-      at(2700, () => {
-        setTyping(false);
-        setShown(2);
-      });
-      at(5200, () => setShown(3));
-      at(5800, () => setTyping(true));
-      at(7400, () => {
-        setTyping(false);
-        setShown(4);
-      });
-      at(13500, play);
-    };
-    play();
-    return () => {
-      dead = true;
-      timers.forEach(clearTimeout);
-    };
-  }, []);
-  return {
-    shown,
-    typing
-  };
+const SUPPORT_EMAIL = "support@wery.in";
+const SUPPORT_PHONE = "+91 92118 90093";
+const SUPPORT_TEL = "+919211890093";
+const ICON = {
+  chat: '<path d="M21 12a8.5 8.5 0 0 1-12.4 7.5L3 21l1.6-5.4A8.5 8.5 0 1 1 21 12Z"/>',
+  bag: '<path d="M5 8h14l-1 12H6L5 8Z"/><path d="M9 8a3 3 0 0 1 6 0"/>',
+  truck: '<path d="M3 6h11v10H3zM14 9h4l3 3v4h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/>',
+  sheet: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 3v18"/>',
+  bell: '<path d="M6 9a6 6 0 0 1 12 0c0 6 2 7 2 7H4s2-1 2-7ZM10 20a2 2 0 0 0 4 0"/>',
+  box: '<path d="M21 8 12 3 3 8l9 5 9-5ZM3 8v8l9 5 9-5V8M12 13v8"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  lang: '<path d="M4 5h9M8.5 3v2M6 5c1 4 3 6 6 8M11 5c-1 4-3 6-6 8M13 20l4-10 4 10M14.5 17h5"/>',
+  seo: '<path d="M3 17 9 11l4 4 8-9M15 6h6v6"/>',
+  img: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-8 8"/>',
+  scrape: '<path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2M8 12h8"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  shield: '<path d="M12 3 5 6v6c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6l-7-3Z"/><path d="m9 12 2 2 4-4"/>',
+  user: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c1-4 4-6 7-6s6 2 7 6"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+  phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2Z"/>',
+  check: '<path d="m5 12 4.5 4.5L19 7"/>',
+  out: '<path d="M7 17 17 7M8 7h9v9"/>',
+  down: '<path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/>'
+};
+function Ico({
+  n,
+  w = 1.8
+}) {
+  return /* @__PURE__ */ jsx("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: w,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    "aria-hidden": "true",
+    dangerouslySetInnerHTML: {
+      __html: ICON[n]
+    }
+  });
 }
-function usePageMotion(root2) {
+const SKILLS = [["box", "Order status", "Instant", 98], ["truck", "Delhivery tracking", "Pre-filled link", 95], ["search", "Product search", "With photos", 92], ["lang", "Hindi & Hinglish", "Automatic", 90], ["bell", "Support alerts", "Live", 100], ["sheet", "Order sheet sync", "Google Sheets", 94], ["seo", "SEO fixer", "In bulk", 88], ["img", "Image editor", "In bulk", 86], ["scrape", "Product scrapper", "CSV + ZIP", 90]];
+const TOOLS = [["chat", "WhatsApp"], ["bag", "Shopify"], ["truck", "Delhivery"], ["sheet", "Google Sheets"]];
+const SAYS = ["Hi! 👋 I'm JAZZ.", "Order #W0000 is on the way 🚚", "Total ₹1,499 · Delhivery", "नमस्ते! मैं मदद करूँ?", "Need a person? I'll alert your team 🔔"];
+const ROLES = ["answer orders on WhatsApp.", "track parcels for customers.", "speak Hindi, English & Hinglish.", "call you when it matters."];
+const CODE = ['<span class="c">// customer</span>\n<span class="k">message</span>: <span class="s">"#W0000"</span>', '<span class="k">jazz</span>.verify(<span class="n">phone</span>)  <span class="s">✔ match</span>', '<span class="k">status</span>: <span class="s">"In transit"</span>', '<span class="k">courier</span>: <span class="s">"Delhivery"</span>', '<span class="k">track</span>: <span class="s">"DL123456789"</span>', '<span class="k">total</span>: <span class="n">₹1,499</span>'];
+const reduced = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+function Typed() {
+  const [text2, setText] = useState(ROLES[0]);
   useEffect(() => {
-    const el = root2.current;
-    if (!el) return;
-    const items = Array.from(el.querySelectorAll("[data-reveal]"));
-    const show = (n) => n.classList.add(styles$2.in);
-    const vh = window.innerHeight;
-    items.forEach((n) => n.getBoundingClientRect().top < vh * 0.95 && show(n));
-    el.classList.add(styles$2.ready);
-    const io = new IntersectionObserver((entries) => entries.forEach((e) => {
-      if (e.isIntersecting) {
-        show(e.target);
-        io.unobserve(e.target);
+    if (reduced()) return;
+    let li = 0, ci = 0, del = false, t;
+    const step2 = () => {
+      const full = ROLES[li];
+      setText(full.slice(0, ci));
+      if (!del && ci < full.length) {
+        ci++;
+        t = window.setTimeout(step2, 55);
+      } else if (!del) {
+        del = true;
+        t = window.setTimeout(step2, 1500);
+      } else if (ci > 0) {
+        ci--;
+        t = window.setTimeout(step2, 24);
+      } else {
+        del = false;
+        li = (li + 1) % ROLES.length;
+        t = window.setTimeout(step2, 300);
       }
-    }), {
-      threshold: 0.12
-    });
-    items.forEach((n) => !n.classList.contains(styles$2.in) && io.observe(n));
-    let raf = 0;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const onScroll = () => {
-      if (reduce || raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        el.style.setProperty("--py", `${Math.min(window.scrollY, 900) * 0.25}px`);
-        el.dataset.stuck = window.scrollY > 40 ? "1" : "0";
-      });
     };
-    onScroll();
-    window.addEventListener("scroll", onScroll, {
-      passive: true
-    });
-    return () => {
-      io.disconnect();
-      window.removeEventListener("scroll", onScroll);
-      cancelAnimationFrame(raf);
-    };
-  }, [root2]);
+    step2();
+    return () => clearTimeout(t);
+  }, []);
+  return /* @__PURE__ */ jsxs(Fragment, {
+    children: [/* @__PURE__ */ jsx("span", {
+      className: "typed",
+      children: text2
+    }), /* @__PURE__ */ jsx("span", {
+      className: "caret"
+    })]
+  });
+}
+function Say() {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (reduced()) return;
+    const t = window.setInterval(() => setI((n) => (n + 1) % SAYS.length), 3200);
+    return () => clearInterval(t);
+  }, []);
+  return /* @__PURE__ */ jsx("div", {
+    className: "say",
+    children: SAYS[i]
+  }, i);
+}
+function CodeCard() {
+  const [n, setN] = useState(CODE.length);
+  useEffect(() => {
+    if (reduced()) return;
+    let k = 0;
+    const t = window.setInterval(() => {
+      k = (k + 1) % (CODE.length + 3);
+      setN(Math.min(k, CODE.length));
+    }, 1100);
+    return () => clearInterval(t);
+  }, []);
+  return /* @__PURE__ */ jsxs("div", {
+    className: "card-code",
+    "aria-hidden": "true",
+    children: [/* @__PURE__ */ jsxs("header", {
+      children: [/* @__PURE__ */ jsx("span", {
+        children: "</> live chat"
+      }), /* @__PURE__ */ jsx("i", {})]
+    }), /* @__PURE__ */ jsx("pre", {
+      dangerouslySetInnerHTML: {
+        __html: CODE.slice(0, n).join("\n") + (n < CODE.length ? '<span class="caret" style="height:1em;width:2px"></span>' : "")
+      }
+    })]
+  });
+}
+function DotNav() {
+  const [on, setOn] = useState(0);
+  useEffect(() => {
+    if (reduced()) return;
+    const t = window.setInterval(() => setOn((n) => (n + 1) % 3), 2600);
+    return () => clearInterval(t);
+  }, []);
+  return /* @__PURE__ */ jsx("div", {
+    className: "dotnav",
+    "aria-hidden": "true",
+    children: [0, 1, 2].map((i) => /* @__PURE__ */ jsx("i", {
+      className: i === on ? "on" : ""
+    }, i))
+  });
 }
 function LoginForm({
   errors,
   id: id2
 }) {
   return /* @__PURE__ */ jsxs(Form, {
-    className: styles$2.form,
+    className: "login",
     method: "post",
     children: [/* @__PURE__ */ jsxs("div", {
-      className: styles$2.formRow,
+      className: "loginrow",
       children: [/* @__PURE__ */ jsx("input", {
         id: id2,
-        className: styles$2.input,
         type: "text",
         name: "shop",
         placeholder: "your-store.myshopify.com",
@@ -3961,14 +3784,15 @@ function LoginForm({
         autoComplete: "off",
         spellCheck: false
       }), /* @__PURE__ */ jsxs("button", {
-        className: styles$2.button,
+        className: "btn primary",
         type: "submit",
-        children: ["START WITH SHOPIFY ", /* @__PURE__ */ jsx(ArrowRight, {
-          size: 15
+        children: ["Install on Shopify ", /* @__PURE__ */ jsx(Ico, {
+          n: "out",
+          w: 2.2
         })]
       })]
     }), /* @__PURE__ */ jsx("span", {
-      className: styles$2.hint,
+      className: "hint",
       role: (errors == null ? void 0 : errors.shop) ? "alert" : void 0,
       "data-error": (errors == null ? void 0 : errors.shop) ? "1" : void 0,
       children: (errors == null ? void 0 : errors.shop) ?? "Enter your store address, for example my-shop.myshopify.com"
@@ -3982,466 +3806,760 @@ const route = UNSAFE_withComponentProps(function App2() {
   const actionData = useActionData();
   const errors = actionData == null ? void 0 : actionData.errors;
   const root2 = useRef(null);
-  usePageMotion(root2);
-  const {
-    shown,
-    typing
-  } = useDemo();
-  const [slide2, setSlide] = useState(0);
-  const [hover, setHover] = useState(false);
-  const go = useCallback((d) => setSlide((s) => (s + d + SLIDES.length) % SLIDES.length), []);
   useEffect(() => {
-    if (hover || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const t = window.setInterval(() => go(1), 6500);
-    return () => clearInterval(t);
-  }, [hover, go, slide2]);
+    const el = root2.current;
+    if (!el) return;
+    const reduce = reduced();
+    const countUp = (n) => {
+      const to = Number(n.dataset.count), t0 = performance.now();
+      if (reduce) {
+        n.textContent = String(to);
+        return;
+      }
+      const tick = (t) => {
+        const p = Math.min(1, (t - t0) / 1400);
+        n.textContent = String(Math.round(to * (1 - Math.pow(1 - p, 3))));
+        if (p < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    };
+    const reveal = (n) => {
+      n.classList.add("in");
+      n.querySelectorAll("[data-count]").forEach(countUp);
+      const bar = n.querySelector(".bar i");
+      if (bar) bar.style.width = `${bar.dataset.w}%`;
+    };
+    el.querySelectorAll("[data-count]").forEach((n) => {
+      if (!reduce) n.textContent = "0";
+    });
+    const items = Array.from(el.querySelectorAll(".reveal"));
+    const vh = window.innerHeight;
+    el.classList.add("ready");
+    items.forEach((n) => n.getBoundingClientRect().top < vh * 0.95 && reveal(n));
+    const io = new IntersectionObserver((es) => es.forEach((e) => {
+      if (e.isIntersecting) {
+        reveal(e.target);
+        io.unobserve(e.target);
+      }
+    }), {
+      threshold: 0.15
+    });
+    items.forEach((n) => !n.classList.contains("in") && io.observe(n));
+    const bot = el.querySelector("#bot");
+    const eyes = el.querySelector("#eyes");
+    const onMove = (e) => {
+      if (!bot || !eyes) return;
+      const r = bot.getBoundingClientRect();
+      const dx = Math.max(-1, Math.min(1, (e.clientX - (r.left + r.width / 2)) / 400));
+      const dy = Math.max(-1, Math.min(1, (e.clientY - (r.top + r.height * 0.38)) / 400));
+      eyes.style.transform = `translate(${dx * 8}px, ${dy * 6}px)`;
+    };
+    const onEnter = () => bot == null ? void 0 : bot.animate([{
+      transform: "scale(1)"
+    }, {
+      transform: "scale(1.05) rotate(-1.5deg)"
+    }, {
+      transform: "scale(1)"
+    }], {
+      duration: 500,
+      easing: "ease-out"
+    });
+    if (!reduce) {
+      window.addEventListener("pointermove", onMove);
+      bot == null ? void 0 : bot.addEventListener("pointerenter", onEnter);
+    }
+    const tilts = [];
+    if (!reduce) el.querySelectorAll(".pcard").forEach((c) => {
+      const move = (e) => {
+        const r = c.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
+        c.style.transform = `rotateY(${x * 9}deg) rotateX(${-y * 9}deg) translateY(-6px)`;
+      };
+      const leave = () => {
+        c.style.transform = "";
+      };
+      c.addEventListener("pointermove", move);
+      c.addEventListener("pointerleave", leave);
+      tilts.push([c, move, leave]);
+    });
+    const links2 = Array.from(el.querySelectorAll(".links a"));
+    const secs = links2.map((a) => el.querySelector(a.getAttribute("href") ?? ""));
+    const onScroll = () => {
+      let cur = 0;
+      secs.forEach((s, i) => {
+        if (s && s.getBoundingClientRect().top < window.innerHeight * 0.4) cur = i;
+      });
+      links2.forEach((a, i) => a.classList.toggle("on", i === cur));
+    };
+    window.addEventListener("scroll", onScroll, {
+      passive: true
+    });
+    onScroll();
+    return () => {
+      io.disconnect();
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("scroll", onScroll);
+      bot == null ? void 0 : bot.removeEventListener("pointerenter", onEnter);
+      tilts.forEach(([c, m, l]) => {
+        c.removeEventListener("pointermove", m);
+        c.removeEventListener("pointerleave", l);
+      });
+    };
+  }, []);
   return /* @__PURE__ */ jsxs("div", {
-    className: styles$2.page,
+    className: "jp",
     ref: root2,
-    children: [/* @__PURE__ */ jsxs("header", {
-      className: styles$2.nav,
-      children: [/* @__PURE__ */ jsxs("a", {
-        className: styles$2.brand,
-        href: "#top",
-        "aria-label": "ShopPilot home",
-        children: [/* @__PURE__ */ jsx("span", {
-          className: styles$2.wordmark,
-          children: "SHOPPILOT"
-        }), /* @__PURE__ */ jsx("small", {
-          children: "WHATSAPP · ORDERS · STORE TOOLS"
-        })]
-      }), /* @__PURE__ */ jsxs("nav", {
-        className: styles$2.navLinks,
-        "aria-label": "Sections",
-        children: [/* @__PURE__ */ jsx("a", {
-          href: "#features",
-          children: "FEATURES"
-        }), /* @__PURE__ */ jsx("a", {
-          href: "#spotlight",
-          children: "SPOTLIGHT"
-        }), /* @__PURE__ */ jsx("a", {
-          href: "#tools",
-          children: "TOOLS"
-        }), /* @__PURE__ */ jsx("a", {
-          href: "#how",
-          children: "HOW IT WORKS"
-        }), /* @__PURE__ */ jsx("a", {
-          href: "#faq",
-          children: "FAQ"
-        })]
-      }), /* @__PURE__ */ jsx("a", {
-        className: styles$2.navCta,
-        href: "#start",
-        children: "GET STARTED"
-      })]
-    }), /* @__PURE__ */ jsxs("main", {
-      id: "top",
-      children: [/* @__PURE__ */ jsxs("section", {
-        className: styles$2.hero,
-        children: [/* @__PURE__ */ jsx("div", {
-          className: styles$2.heroBg,
-          "aria-hidden": "true",
-          style: {
-            backgroundImage: `url(${IMG}/hero.jpg)`
-          }
-        }), /* @__PURE__ */ jsx("div", {
-          className: styles$2.heroShade,
-          "aria-hidden": "true"
-        }), /* @__PURE__ */ jsxs("div", {
-          className: styles$2.heroInner,
-          children: [/* @__PURE__ */ jsxs("div", {
-            className: styles$2.heroText,
-            children: [/* @__PURE__ */ jsx("span", {
-              className: `${styles$2.kicker} ${styles$2.rise}`,
-              children: "SHOPPILOT / WHATSAPP + STORE TOOLS"
-            }), /* @__PURE__ */ jsxs("h1", {
-              className: `${styles$2.title} ${styles$2.rise}`,
-              style: {
-                animationDelay: "90ms"
-              },
-              children: ["YOUR STORE,", /* @__PURE__ */ jsx("br", {}), "ALWAYS ", /* @__PURE__ */ jsx("em", {
-                children: "ANSWERING."
-              })]
-            }), /* @__PURE__ */ jsx("p", {
-              className: `${styles$2.lead} ${styles$2.rise}`,
-              style: {
-                animationDelay: "180ms"
-              },
-              children: "JAZZ replies to order, tracking and product questions on WhatsApp, day and night, while your team gets the tools to run the store."
-            }), /* @__PURE__ */ jsx("div", {
-              id: "start",
-              className: `${styles$2.startBox} ${styles$2.rise}`,
-              style: {
-                animationDelay: "270ms"
-              },
-              children: showForm && /* @__PURE__ */ jsx(LoginForm, {
-                errors,
-                id: "shop-hero"
+    children: [/* @__PURE__ */ jsxs("div", {
+      className: "ambient",
+      "aria-hidden": "true",
+      children: [/* @__PURE__ */ jsx("i", {}), /* @__PURE__ */ jsx("i", {}), /* @__PURE__ */ jsx("i", {})]
+    }), /* @__PURE__ */ jsx("nav", {
+      className: "top",
+      children: /* @__PURE__ */ jsxs("div", {
+        className: "wrap",
+        children: [/* @__PURE__ */ jsxs("a", {
+          className: "logo",
+          href: "#home",
+          "aria-label": "ShopPilot home",
+          children: [/* @__PURE__ */ jsxs("svg", {
+            viewBox: "0 0 40 40",
+            "aria-hidden": "true",
+            children: [/* @__PURE__ */ jsx("defs", {
+              children: /* @__PURE__ */ jsxs("linearGradient", {
+                id: "lg",
+                x1: "0",
+                y1: "0",
+                x2: "1",
+                y2: "1",
+                children: [/* @__PURE__ */ jsx("stop", {
+                  offset: "0",
+                  stopColor: "#ead3ad"
+                }), /* @__PURE__ */ jsx("stop", {
+                  offset: "1",
+                  stopColor: "#b8935f"
+                })]
               })
-            }), /* @__PURE__ */ jsxs("a", {
-              className: `${styles$2.scroll} ${styles$2.rise}`,
-              style: {
-                animationDelay: "380ms"
-              },
-              href: "#features",
-              children: ["SCROLL DOWN", /* @__PURE__ */ jsx("i", {})]
+            }), /* @__PURE__ */ jsx("rect", {
+              x: "4",
+              y: "8",
+              width: "32",
+              height: "26",
+              rx: "10",
+              fill: "url(#lg)"
+            }), /* @__PURE__ */ jsx("rect", {
+              x: "9",
+              y: "13",
+              width: "22",
+              height: "14",
+              rx: "6",
+              fill: "#1a120c"
+            }), /* @__PURE__ */ jsx("circle", {
+              cx: "16",
+              cy: "20",
+              r: "2.6",
+              fill: "#ffd89a"
+            }), /* @__PURE__ */ jsx("circle", {
+              cx: "24",
+              cy: "20",
+              r: "2.6",
+              fill: "#ffd89a"
+            }), /* @__PURE__ */ jsx("rect", {
+              x: "19",
+              y: "2",
+              width: "2",
+              height: "7",
+              rx: "1",
+              fill: "#d9b98a"
+            }), /* @__PURE__ */ jsx("circle", {
+              cx: "20",
+              cy: "3",
+              r: "2.4",
+              fill: "#ead3ad"
+            })]
+          }), "ShopPilot"]
+        }), /* @__PURE__ */ jsxs("div", {
+          className: "links",
+          children: [/* @__PURE__ */ jsx("a", {
+            href: "#home",
+            className: "on",
+            children: "Home"
+          }), /* @__PURE__ */ jsx("a", {
+            href: "#about",
+            children: "About"
+          }), /* @__PURE__ */ jsx("a", {
+            href: "#skills",
+            children: "Skills"
+          }), /* @__PURE__ */ jsx("a", {
+            href: "#work",
+            children: "Features"
+          }), /* @__PURE__ */ jsx("a", {
+            href: "#contact",
+            children: "Contact"
+          })]
+        }), /* @__PURE__ */ jsxs("a", {
+          className: "btn primary",
+          href: "#start",
+          children: ["Install App ", /* @__PURE__ */ jsx(Ico, {
+            n: "out",
+            w: 2.2
+          })]
+        })]
+      })
+    }), /* @__PURE__ */ jsx("header", {
+      className: "hero",
+      id: "home",
+      children: /* @__PURE__ */ jsxs("div", {
+        className: "wrap",
+        children: [/* @__PURE__ */ jsxs("div", {
+          children: [/* @__PURE__ */ jsx("span", {
+            className: "pill",
+            children: "I'M A WHATSAPP ASSISTANT"
+          }), /* @__PURE__ */ jsxs("h1", {
+            children: ["Hi, I'm ", /* @__PURE__ */ jsx("span", {
+              className: "name",
+              children: "JAZZ"
+            })]
+          }), /* @__PURE__ */ jsxs("h2", {
+            children: ["I ", /* @__PURE__ */ jsx(Typed, {})]
+          }), /* @__PURE__ */ jsx("p", {
+            className: "lead",
+            children: "I'm the assistant inside ShopPilot. I answer your customers' order, tracking and product questions on WhatsApp, day and night, and call you in when a person is needed."
+          }), /* @__PURE__ */ jsx("div", {
+            className: "cta",
+            id: "start",
+            children: showForm ? /* @__PURE__ */ jsx(LoginForm, {
+              errors,
+              id: "shop-hero"
+            }) : /* @__PURE__ */ jsxs("a", {
+              className: "btn primary",
+              href: "#work",
+              children: ["See What I Do ", /* @__PURE__ */ jsx(Ico, {
+                n: "out",
+                w: 2.2
+              })]
+            })
+          }), /* @__PURE__ */ jsx("div", {
+            className: "cta",
+            children: /* @__PURE__ */ jsxs("a", {
+              className: "btn ghost",
+              href: "#work",
+              children: ["See What I Do ", /* @__PURE__ */ jsx(Ico, {
+                n: "out",
+                w: 2.2
+              })]
+            })
+          }), /* @__PURE__ */ jsxs("div", {
+            className: "stack",
+            children: [/* @__PURE__ */ jsx("small", {
+              children: "THINGS I WORK WITH"
+            }), /* @__PURE__ */ jsxs("div", {
+              className: "tools",
+              children: [TOOLS.map(([i, label2]) => /* @__PURE__ */ jsxs("span", {
+                className: "tool",
+                children: [/* @__PURE__ */ jsx(Ico, {
+                  n: i
+                }), /* @__PURE__ */ jsx("em", {
+                  children: label2
+                })]
+              }, label2)), /* @__PURE__ */ jsxs("span", {
+                className: "tool",
+                children: [/* @__PURE__ */ jsx("b", {
+                  children: "₹"
+                }), /* @__PURE__ */ jsx("em", {
+                  children: "Prices in rupees"
+                })]
+              }), /* @__PURE__ */ jsxs("span", {
+                className: "tool",
+                children: [/* @__PURE__ */ jsx("b", {
+                  children: "अ"
+                }), /* @__PURE__ */ jsx("em", {
+                  children: "Hindi + Hinglish"
+                })]
+              }), /* @__PURE__ */ jsxs("span", {
+                className: "tool",
+                children: [/* @__PURE__ */ jsx(Ico, {
+                  n: "bell"
+                }), /* @__PURE__ */ jsx("em", {
+                  children: "Support alerts"
+                })]
+              })]
+            })]
+          })]
+        }), /* @__PURE__ */ jsxs("div", {
+          className: "art",
+          children: [/* @__PURE__ */ jsx("div", {
+            className: "halo"
+          }), /* @__PURE__ */ jsx("div", {
+            className: "dots"
+          }), /* @__PURE__ */ jsx("svg", {
+            className: "doodle",
+            viewBox: "0 0 90 110",
+            "aria-hidden": "true",
+            children: /* @__PURE__ */ jsx("path", {
+              d: "M62 6C28 14 10 52 36 76c10 9 26 10 36-2M72 74l-4-16M72 74l-17-2"
+            })
+          }), /* @__PURE__ */ jsx(Say, {}), /* @__PURE__ */ jsx("div", {
+            className: "botwrap",
+            dangerouslySetInnerHTML: {
+              __html: MASCOT_SVG
+            }
+          }), /* @__PURE__ */ jsx(CodeCard, {})]
+        })]
+      })
+    }), /* @__PURE__ */ jsx("section", {
+      className: "about alt",
+      id: "about",
+      children: /* @__PURE__ */ jsxs("div", {
+        className: "wrap",
+        children: [/* @__PURE__ */ jsxs("div", {
+          className: "reveal",
+          children: [/* @__PURE__ */ jsx("span", {
+            className: "tag",
+            children: "ABOUT ME"
+          }), /* @__PURE__ */ jsxs("h2", {
+            children: ["I'm passionate about", /* @__PURE__ */ jsx("br", {}), "answering your customers"]
+          }), /* @__PURE__ */ jsx("p", {
+            children: "I never sleep, I never get tired, and I always check the order number against the registered phone before I share anything. When a person is needed, I tell your team with an alert."
+          }), /* @__PURE__ */ jsxs("a", {
+            className: "btn ghost",
+            href: "#skills",
+            children: ["Learn More About Me ", /* @__PURE__ */ jsx(Ico, {
+              n: "user",
+              w: 2.2
+            })]
+          })]
+        }), /* @__PURE__ */ jsxs("div", {
+          className: "stats reveal",
+          children: [/* @__PURE__ */ jsxs("div", {
+            className: "stat",
+            children: [/* @__PURE__ */ jsx("span", {
+              className: "ic",
+              children: /* @__PURE__ */ jsx(Ico, {
+                n: "clock"
+              })
+            }), /* @__PURE__ */ jsxs("div", {
+              children: [/* @__PURE__ */ jsxs("b", {
+                children: [/* @__PURE__ */ jsx("span", {
+                  "data-count": "24",
+                  children: "24"
+                }), "/7"]
+              }), /* @__PURE__ */ jsx("span", {
+                children: "Always on"
+              })]
             })]
           }), /* @__PURE__ */ jsxs("div", {
-            className: `${styles$2.phoneWrap} ${styles$2.rise}`,
+            className: "stat",
+            children: [/* @__PURE__ */ jsx("span", {
+              className: "ic",
+              children: /* @__PURE__ */ jsx(Ico, {
+                n: "lang"
+              })
+            }), /* @__PURE__ */ jsxs("div", {
+              children: [/* @__PURE__ */ jsx("b", {
+                "data-count": "3",
+                children: "3"
+              }), /* @__PURE__ */ jsx("span", {
+                children: "Languages"
+              })]
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: "stat",
+            children: [/* @__PURE__ */ jsx("span", {
+              className: "ic",
+              children: /* @__PURE__ */ jsx(Ico, {
+                n: "grid"
+              })
+            }), /* @__PURE__ */ jsxs("div", {
+              children: [/* @__PURE__ */ jsxs("b", {
+                children: [/* @__PURE__ */ jsx("span", {
+                  "data-count": "8",
+                  children: "8"
+                }), "+"]
+              }), /* @__PURE__ */ jsx("span", {
+                children: "Tools in one app"
+              })]
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: "stat",
+            children: [/* @__PURE__ */ jsx("span", {
+              className: "ic",
+              children: /* @__PURE__ */ jsx(Ico, {
+                n: "shield"
+              })
+            }), /* @__PURE__ */ jsxs("div", {
+              children: [/* @__PURE__ */ jsxs("b", {
+                children: [/* @__PURE__ */ jsx("span", {
+                  "data-count": "100",
+                  children: "100"
+                }), "%"]
+              }), /* @__PURE__ */ jsx("span", {
+                children: "Phone-verified orders"
+              })]
+            })]
+          })]
+        })]
+      })
+    }), /* @__PURE__ */ jsx("section", {
+      className: "skills",
+      id: "skills",
+      children: /* @__PURE__ */ jsxs("div", {
+        className: "wrap",
+        children: [/* @__PURE__ */ jsxs("div", {
+          className: "head reveal",
+          children: [/* @__PURE__ */ jsx("span", {
+            className: "tag",
+            children: "MY SKILLS"
+          }), /* @__PURE__ */ jsx("h2", {
+            children: "Things I Master"
+          })]
+        }), /* @__PURE__ */ jsx("div", {
+          className: "sgrid",
+          children: SKILLS.map(([i, name, note, pct2]) => /* @__PURE__ */ jsxs("div", {
+            className: "skill reveal",
+            children: [/* @__PURE__ */ jsxs("div", {
+              className: "row",
+              children: [/* @__PURE__ */ jsx("span", {
+                className: "ic",
+                children: /* @__PURE__ */ jsx(Ico, {
+                  n: i,
+                  w: 1.9
+                })
+              }), /* @__PURE__ */ jsx("b", {
+                children: name
+              }), /* @__PURE__ */ jsx("span", {
+                className: "note",
+                children: note
+              })]
+            }), /* @__PURE__ */ jsx("div", {
+              className: "bar",
+              children: /* @__PURE__ */ jsx("i", {
+                style: {
+                  "--w": `${pct2}%`
+                },
+                "data-w": pct2
+              })
+            })]
+          }, name))
+        })]
+      })
+    }), /* @__PURE__ */ jsx("section", {
+      className: "work alt",
+      id: "work",
+      children: /* @__PURE__ */ jsxs("div", {
+        className: "wrap",
+        children: [/* @__PURE__ */ jsxs("div", {
+          className: "head reveal",
+          children: [/* @__PURE__ */ jsx("span", {
+            className: "tag",
+            children: "FEATURED TOOLS"
+          }), /* @__PURE__ */ jsx("h2", {
+            children: "Some of My Recent Work"
+          })]
+        }), /* @__PURE__ */ jsxs("div", {
+          className: "cards",
+          children: [/* @__PURE__ */ jsxs("article", {
+            className: "pcard reveal",
+            children: [/* @__PURE__ */ jsxs("div", {
+              className: "shot",
+              children: [/* @__PURE__ */ jsx("span", {
+                className: "num",
+                children: "01"
+              }), /* @__PURE__ */ jsxs("div", {
+                className: "m-chat",
+                children: [/* @__PURE__ */ jsx("div", {
+                  className: "me",
+                  children: "#W0000"
+                }), /* @__PURE__ */ jsx("div", {
+                  className: "jz",
+                  children: "Order #W0000 · Fulfilled · ₹1,499"
+                }), /* @__PURE__ */ jsx("div", {
+                  className: "jz",
+                  children: "Delhivery · DL123456789"
+                }), /* @__PURE__ */ jsx("div", {
+                  className: "jz",
+                  style: {
+                    color: "#80664f"
+                  },
+                  children: "delhivery.com/track-v2/…"
+                })]
+              })]
+            }), /* @__PURE__ */ jsxs("div", {
+              className: "pbody",
+              children: [/* @__PURE__ */ jsx("h3", {
+                children: "WhatsApp Order Bot"
+              }), /* @__PURE__ */ jsx("p", {
+                children: "Status, courier, tracking ID and a pre-filled Delhivery link in short numbered steps."
+              }), /* @__PURE__ */ jsxs("a", {
+                href: "#start",
+                children: ["View Feature ", /* @__PURE__ */ jsx(Ico, {
+                  n: "out",
+                  w: 2.4
+                })]
+              })]
+            })]
+          }), /* @__PURE__ */ jsxs("article", {
+            className: "pcard reveal",
             style: {
-              animationDelay: "220ms"
+              transitionDelay: ".1s"
             },
             children: [/* @__PURE__ */ jsxs("div", {
-              className: styles$2.phone,
-              role: "img",
-              "aria-label": "Demo chat: a customer tracks order W0000 and JAZZ replies with the Delhivery tracking link",
-              children: [/* @__PURE__ */ jsxs("div", {
-                className: styles$2.phoneTop,
-                children: [/* @__PURE__ */ jsx("span", {
-                  className: styles$2.avatar,
-                  children: "J"
+              className: "shot",
+              children: [/* @__PURE__ */ jsx("span", {
+                className: "num",
+                children: "02"
+              }), /* @__PURE__ */ jsxs("div", {
+                className: "m-sheet",
+                children: [/* @__PURE__ */ jsxs("div", {
+                  className: "r h",
+                  children: [/* @__PURE__ */ jsx("span", {
+                    children: "ORDER"
+                  }), /* @__PURE__ */ jsx("span", {
+                    children: "CUSTOMER"
+                  }), /* @__PURE__ */ jsx("span", {
+                    children: "STATUS"
+                  })]
                 }), /* @__PURE__ */ jsxs("div", {
-                  children: [/* @__PURE__ */ jsx("b", {
-                    children: "JAZZ"
-                  }), /* @__PURE__ */ jsxs("small", {
-                    children: [/* @__PURE__ */ jsx("i", {
-                      className: styles$2.online
-                    }), " online"]
+                  className: "r",
+                  children: [/* @__PURE__ */ jsx("span", {
+                    children: "#W0000"
+                  }), /* @__PURE__ */ jsx("span", {
+                    children: "Asha K."
+                  }), /* @__PURE__ */ jsx("span", {
+                    children: /* @__PURE__ */ jsx("i", {
+                      className: "chip g",
+                      children: "Delivered"
+                    })
+                  })]
+                }), /* @__PURE__ */ jsxs("div", {
+                  className: "r",
+                  children: [/* @__PURE__ */ jsx("span", {
+                    children: "#W0001"
+                  }), /* @__PURE__ */ jsx("span", {
+                    children: "Rohit S."
+                  }), /* @__PURE__ */ jsx("span", {
+                    children: /* @__PURE__ */ jsx("i", {
+                      className: "chip b",
+                      children: "In transit"
+                    })
+                  })]
+                }), /* @__PURE__ */ jsxs("div", {
+                  className: "r",
+                  children: [/* @__PURE__ */ jsx("span", {
+                    children: "#W0002"
+                  }), /* @__PURE__ */ jsx("span", {
+                    children: "Meera P."
+                  }), /* @__PURE__ */ jsx("span", {
+                    children: /* @__PURE__ */ jsx("i", {
+                      className: "chip y",
+                      children: "Pending"
+                    })
+                  })]
+                }), /* @__PURE__ */ jsxs("div", {
+                  className: "r",
+                  children: [/* @__PURE__ */ jsx("span", {
+                    children: "#W0003"
+                  }), /* @__PURE__ */ jsx("span", {
+                    children: "Dev T."
+                  }), /* @__PURE__ */ jsx("span", {
+                    children: /* @__PURE__ */ jsx("i", {
+                      className: "chip g",
+                      children: "Delivered"
+                    })
                   })]
                 })]
-              }), /* @__PURE__ */ jsxs("div", {
-                className: styles$2.chat,
-                children: [DEMO.slice(0, shown).map((m, i) => /* @__PURE__ */ jsx("div", {
-                  className: `${styles$2.bubble} ${m.who === "me" ? styles$2.me : styles$2.bot}`,
-                  children: m.lines
-                }, i)), typing && /* @__PURE__ */ jsxs("div", {
-                  className: `${styles$2.bubble} ${styles$2.bot} ${styles$2.dots}`,
-                  "aria-hidden": "true",
-                  children: [/* @__PURE__ */ jsx("i", {}), /* @__PURE__ */ jsx("i", {}), /* @__PURE__ */ jsx("i", {})]
-                })]
-              }), /* @__PURE__ */ jsx("div", {
-                className: styles$2.compose,
-                children: "Type a message"
               })]
             }), /* @__PURE__ */ jsxs("div", {
-              className: `${styles$2.floaty} ${styles$2.f1}`,
-              children: [/* @__PURE__ */ jsx(Truck, {
-                size: 15
-              }), " Delhivery link, pre-filled"]
-            }), /* @__PURE__ */ jsxs("div", {
-              className: `${styles$2.floaty} ${styles$2.f2}`,
-              children: [/* @__PURE__ */ jsx(BellRing, {
-                size: 15
-              }), " Support request alert"]
-            })]
-          })]
-        })]
-      }), /* @__PURE__ */ jsx("section", {
-        className: styles$2.strip,
-        "aria-label": "Highlights",
-        children: STRIP.map((s, i) => /* @__PURE__ */ jsxs("div", {
-          "data-reveal": true,
-          className: styles$2.stripItem,
-          style: {
-            transitionDelay: `${i * 80}ms`
-          },
-          children: [/* @__PURE__ */ jsx(s.icon, {
-            size: 22,
-            strokeWidth: 1.4
-          }), /* @__PURE__ */ jsx("b", {
-            children: s.title
-          }), /* @__PURE__ */ jsx("span", {
-            children: s.text
-          })]
-        }, s.title))
-      }), /* @__PURE__ */ jsxs("section", {
-        id: "features",
-        className: styles$2.collections,
-        children: [/* @__PURE__ */ jsxs("div", {
-          "data-reveal": true,
-          className: styles$2.collHead,
-          children: [/* @__PURE__ */ jsx("span", {
-            className: styles$2.kicker,
-            children: "THE APP"
-          }), /* @__PURE__ */ jsxs("h2", {
-            children: ["DESIGNED FOR", /* @__PURE__ */ jsx("br", {}), "MODERN SELLING."]
-          }), /* @__PURE__ */ jsxs("a", {
-            href: "#tools",
-            className: styles$2.viewAll,
-            children: ["VIEW ALL TOOLS ", /* @__PURE__ */ jsx(ArrowRight, {
-              size: 13
-            })]
-          })]
-        }), /* @__PURE__ */ jsx("div", {
-          className: styles$2.collGrid,
-          children: CARDS.map((c, i) => /* @__PURE__ */ jsxs("a", {
-            href: "#spotlight",
-            "data-reveal": true,
-            className: styles$2.coll,
-            style: {
-              transitionDelay: `${i * 90}ms`
-            },
-            children: [/* @__PURE__ */ jsx("img", {
-              src: `${IMG}/${c.img}.jpg`,
-              alt: "",
-              loading: "lazy"
-            }), /* @__PURE__ */ jsxs("span", {
-              className: styles$2.collText,
-              children: [/* @__PURE__ */ jsx("b", {
-                children: c.title
-              }), /* @__PURE__ */ jsx("small", {
-                children: c.text
-              })]
-            }), /* @__PURE__ */ jsx(ArrowUpRight, {
-              className: styles$2.collArrow,
-              size: 18
-            })]
-          }, c.title))
-        })]
-      }), /* @__PURE__ */ jsxs("section", {
-        id: "spotlight",
-        className: styles$2.spot,
-        onMouseEnter: () => setHover(true),
-        onMouseLeave: () => setHover(false),
-        children: [/* @__PURE__ */ jsx("div", {
-          className: styles$2.slides,
-          children: SLIDES.map((s, i) => /* @__PURE__ */ jsxs("article", {
-            className: `${styles$2.slide} ${i === slide2 ? styles$2.active : ""}`,
-            "aria-hidden": i !== slide2,
-            children: [/* @__PURE__ */ jsx("div", {
-              className: styles$2.slideImg,
-              style: {
-                backgroundImage: `url(${IMG}/${s.img}.jpg)`
-              }
-            }), /* @__PURE__ */ jsxs("div", {
-              className: styles$2.slideText,
-              children: [/* @__PURE__ */ jsxs("span", {
-                className: styles$2.count,
-                children: ["0", i + 1, " / 0", SLIDES.length]
-              }), /* @__PURE__ */ jsx("h2", {
-                children: s.title
+              className: "pbody",
+              children: [/* @__PURE__ */ jsx("h3", {
+                children: "Order Update Sheet"
               }), /* @__PURE__ */ jsx("p", {
-                children: s.text
-              }), /* @__PURE__ */ jsx("dl", {
-                className: styles$2.specs,
-                children: s.specs.map(([k, v]) => /* @__PURE__ */ jsxs("div", {
-                  children: [/* @__PURE__ */ jsx("dt", {
-                    children: k
-                  }), /* @__PURE__ */ jsx("dd", {
-                    children: v
-                  })]
-                }, k))
-              }), /* @__PURE__ */ jsxs("div", {
-                className: styles$2.slideActions,
-                children: [/* @__PURE__ */ jsx("a", {
-                  className: styles$2.ghost,
-                  href: "#start",
-                  tabIndex: i === slide2 ? 0 : -1,
-                  children: s.cta.toUpperCase()
-                }), /* @__PURE__ */ jsxs("span", {
-                  className: styles$2.arrows,
-                  children: [/* @__PURE__ */ jsx("button", {
-                    type: "button",
-                    onClick: () => go(-1),
-                    "aria-label": "Previous",
-                    children: /* @__PURE__ */ jsx(ChevronLeft, {
-                      size: 16
-                    })
-                  }), /* @__PURE__ */ jsx("button", {
-                    type: "button",
-                    onClick: () => go(1),
-                    "aria-label": "Next",
-                    children: /* @__PURE__ */ jsx(ChevronRight, {
-                      size: 16
-                    })
-                  })]
+                children: "Orders and a Google Sheet stay in sync, colour-coded, with room for AWB and COD details."
+              }), /* @__PURE__ */ jsxs("a", {
+                href: "#start",
+                children: ["View Feature ", /* @__PURE__ */ jsx(Ico, {
+                  n: "out",
+                  w: 2.4
                 })]
               })]
             })]
-          }, s.n))
-        }), /* @__PURE__ */ jsx("div", {
-          className: styles$2.dotsNav,
-          role: "tablist",
-          "aria-label": "Spotlight",
-          children: SLIDES.map((s, i) => /* @__PURE__ */ jsx("button", {
-            type: "button",
-            role: "tab",
-            "aria-selected": i === slide2,
-            className: i === slide2 ? styles$2.on : "",
-            onClick: () => setSlide(i),
-            children: s.n
-          }, s.n))
-        })]
-      }), /* @__PURE__ */ jsxs("section", {
-        id: "tools",
-        className: styles$2.tools,
+          }), /* @__PURE__ */ jsxs("article", {
+            className: "pcard reveal",
+            style: {
+              transitionDelay: ".2s"
+            },
+            children: [/* @__PURE__ */ jsxs("div", {
+              className: "shot",
+              children: [/* @__PURE__ */ jsx("span", {
+                className: "num",
+                children: "03"
+              }), /* @__PURE__ */ jsxs("div", {
+                className: "m-seo",
+                children: [/* @__PURE__ */ jsxs("div", {
+                  className: "ring",
+                  children: [/* @__PURE__ */ jsxs("svg", {
+                    viewBox: "0 0 88 88",
+                    children: [/* @__PURE__ */ jsx("defs", {
+                      children: /* @__PURE__ */ jsxs("linearGradient", {
+                        id: "rg",
+                        x1: "0",
+                        y1: "0",
+                        x2: "1",
+                        y2: "1",
+                        children: [/* @__PURE__ */ jsx("stop", {
+                          offset: "0",
+                          stopColor: "#ead3ad"
+                        }), /* @__PURE__ */ jsx("stop", {
+                          offset: "1",
+                          stopColor: "#b8935f"
+                        })]
+                      })
+                    }), /* @__PURE__ */ jsx("circle", {
+                      className: "bg",
+                      cx: "44",
+                      cy: "44",
+                      r: "36"
+                    }), /* @__PURE__ */ jsx("circle", {
+                      className: "fg",
+                      cx: "44",
+                      cy: "44",
+                      r: "36"
+                    })]
+                  }), /* @__PURE__ */ jsx("b", {
+                    children: "86"
+                  })]
+                }), /* @__PURE__ */ jsx("div", {
+                  className: "mini",
+                  children: [0.9, 0.7, 0.85, 0.55].map((w) => /* @__PURE__ */ jsx("div", {
+                    children: /* @__PURE__ */ jsx("i", {
+                      style: {
+                        "--w": w
+                      }
+                    })
+                  }, w))
+                })]
+              })]
+            }), /* @__PURE__ */ jsxs("div", {
+              className: "pbody",
+              children: [/* @__PURE__ */ jsx("h3", {
+                children: "SEO Fixer"
+              }), /* @__PURE__ */ jsx("p", {
+                children: "Score every product, fix titles, descriptions and alt text in bulk, and undo any batch."
+              }), /* @__PURE__ */ jsxs("a", {
+                href: "#start",
+                children: ["View Feature ", /* @__PURE__ */ jsx(Ico, {
+                  n: "out",
+                  w: 2.4
+                })]
+              })]
+            })]
+          })]
+        }), /* @__PURE__ */ jsx(DotNav, {})]
+      })
+    }), /* @__PURE__ */ jsx("section", {
+      className: "contact",
+      id: "contact",
+      children: /* @__PURE__ */ jsxs("div", {
+        className: "wrap",
         children: [/* @__PURE__ */ jsxs("div", {
-          "data-reveal": true,
-          className: styles$2.toolsHead,
-          children: [/* @__PURE__ */ jsxs("h2", {
-            children: ["EVERYTHING", /* @__PURE__ */ jsx("br", {}), "INCLUDED."]
+          className: "box reveal",
+          children: [/* @__PURE__ */ jsx("span", {
+            className: "tag",
+            children: "LET'S WORK TOGETHER"
+          }), /* @__PURE__ */ jsx("h3", {
+            children: "Have a store in mind?"
           }), /* @__PURE__ */ jsx("p", {
-            children: "Eight tools, one app. Support, tracking, catalogue work and SEO, built to save your team hours every day."
-          }), /* @__PURE__ */ jsx("a", {
-            className: styles$2.ghost,
-            href: "#start",
-            children: "EXPLORE THE APP"
-          })]
-        }), /* @__PURE__ */ jsx("div", {
-          className: styles$2.toolsRow,
-          children: TOOLS.map((t, i) => /* @__PURE__ */ jsxs("div", {
-            "data-reveal": true,
-            className: styles$2.tool,
-            style: {
-              transitionDelay: `${i * 80}ms`
-            },
-            children: [/* @__PURE__ */ jsx("img", {
-              src: `${IMG}/${t.img}.jpg`,
-              alt: "",
-              loading: "lazy",
-              style: {
-                objectPosition: t.pos
-              }
-            }), /* @__PURE__ */ jsx("span", {
-              children: t.label
-            })]
-          }, t.label))
-        })]
-      }), /* @__PURE__ */ jsxs("section", {
-        className: styles$2.split,
-        children: [/* @__PURE__ */ jsxs("div", {
-          "data-reveal": true,
-          className: styles$2.splitText,
-          children: [/* @__PURE__ */ jsx("span", {
-            className: styles$2.kicker,
-            children: "ORDER TRACKING THAT CLOSES THE LOOP"
-          }), /* @__PURE__ */ jsxs("h2", {
-            children: ["“WHERE IS MY ORDER?”", /* @__PURE__ */ jsx("br", {}), "ANSWERED IN SECONDS."]
-          }), /* @__PURE__ */ jsx("p", {
-            children: "The customer sends the order number. JAZZ checks it against the registered phone, then replies with the status, courier, tracking ID and a link that opens Delhivery with the ID already typed in."
-          }), /* @__PURE__ */ jsxs("ul", {
-            className: styles$2.ticks,
-            children: [/* @__PURE__ */ jsxs("li", {
-              children: [/* @__PURE__ */ jsx(Check, {
-                size: 15
-              }), " Prices always in ₹"]
-            }), /* @__PURE__ */ jsxs("li", {
-              children: [/* @__PURE__ */ jsx(Check, {
-                size: 15
-              }), " Short numbered replies, no walls of text"]
-            }), /* @__PURE__ */ jsxs("li", {
-              children: [/* @__PURE__ */ jsx(Check, {
-                size: 15
-              }), " Works with #W0000, W0000 or a registered phone number"]
-            }), /* @__PURE__ */ jsxs("li", {
-              children: [/* @__PURE__ */ jsx(Languages, {
-                size: 15
-              }), " English, Hindi and Hinglish"]
-            })]
-          })]
-        }), /* @__PURE__ */ jsx("div", {
-          "data-reveal": true,
-          className: styles$2.flow,
-          "aria-hidden": "true",
-          children: ["Customer sends #W0000", "JAZZ verifies the phone", "Order + Delhivery link sent"].map((t, i) => /* @__PURE__ */ jsxs("div", {
-            className: styles$2.flowStep,
-            style: {
-              animationDelay: `${i * 1.1}s`
-            },
-            children: [/* @__PURE__ */ jsx("span", {
-              children: i + 1
-            }), t]
-          }, t))
-        })]
-      }), /* @__PURE__ */ jsxs("section", {
-        id: "how",
-        className: styles$2.how,
-        children: [/* @__PURE__ */ jsxs("div", {
-          "data-reveal": true,
-          className: styles$2.centerHead,
-          children: [/* @__PURE__ */ jsx("span", {
-            className: styles$2.kicker,
-            children: "LIVE IN MINUTES"
-          }), /* @__PURE__ */ jsx("h2", {
-            children: "HOW IT WORKS"
-          })]
-        }), /* @__PURE__ */ jsx("ol", {
-          className: styles$2.steps,
-          children: STEPS.map((s, i) => /* @__PURE__ */ jsxs("li", {
-            "data-reveal": true,
-            style: {
-              transitionDelay: `${i * 100}ms`
-            },
-            children: [/* @__PURE__ */ jsx("span", {
-              className: styles$2.stepNo,
-              children: s.n
-            }), /* @__PURE__ */ jsx("h3", {
-              children: s.title
-            }), /* @__PURE__ */ jsx("p", {
-              children: s.text
-            })]
-          }, s.n))
-        })]
-      }), /* @__PURE__ */ jsxs("section", {
-        id: "faq",
-        className: styles$2.how,
-        children: [/* @__PURE__ */ jsxs("div", {
-          "data-reveal": true,
-          className: styles$2.centerHead,
-          children: [/* @__PURE__ */ jsx("span", {
-            className: styles$2.kicker,
-            children: "GOOD TO KNOW"
-          }), /* @__PURE__ */ jsx("h2", {
-            children: "QUESTIONS, ANSWERED"
-          })]
-        }), /* @__PURE__ */ jsx("div", {
-          className: styles$2.faq,
-          children: FAQ.map((f, i) => /* @__PURE__ */ jsxs("details", {
-            "data-reveal": true,
-            style: {
-              transitionDelay: `${i * 60}ms`
-            },
-            children: [/* @__PURE__ */ jsx("summary", {
-              children: f.q
-            }), /* @__PURE__ */ jsx("p", {
-              children: f.a
-            })]
-          }, f.q))
-        })]
-      }), /* @__PURE__ */ jsxs("section", {
-        className: styles$2.cta,
-        "data-reveal": true,
-        style: {
-          backgroundImage: `url(${IMG}/boxes-plant.jpg)`
-        },
-        children: [/* @__PURE__ */ jsx("div", {
-          className: styles$2.ctaShade
-        }), /* @__PURE__ */ jsxs("div", {
-          className: styles$2.ctaInner,
-          children: [/* @__PURE__ */ jsx("span", {
-            className: styles$2.kicker,
-            children: "READY WHEN YOU ARE"
-          }), /* @__PURE__ */ jsxs("h2", {
-            children: ["LET JAZZ TAKE", /* @__PURE__ */ jsx("br", {}), "THE FIRST REPLY."]
-          }), /* @__PURE__ */ jsx("p", {
-            children: "Connect your store and see it answer a real order question."
-          }), showForm && /* @__PURE__ */ jsx(LoginForm, {
+            children: "I'm always ready to take the first reply. Connect your Shopify store and let's get started."
+          }), showForm ? /* @__PURE__ */ jsx(LoginForm, {
             errors,
-            id: "shop-cta"
+            id: "shop-contact"
+          }) : null]
+        }), /* @__PURE__ */ jsxs("div", {
+          className: "box reveal",
+          style: {
+            transitionDelay: ".1s"
+          },
+          children: [/* @__PURE__ */ jsx("span", {
+            className: "tag",
+            children: "WHY STORES CHOOSE JAZZ"
+          }), /* @__PURE__ */ jsx("h3", {
+            children: "Replies that close the loop"
+          }), /* @__PURE__ */ jsxs("ul", {
+            className: "ticks",
+            children: [/* @__PURE__ */ jsxs("li", {
+              children: [/* @__PURE__ */ jsx(Ico, {
+                n: "check",
+                w: 2.6
+              }), " Order details only after the phone number matches"]
+            }), /* @__PURE__ */ jsxs("li", {
+              children: [/* @__PURE__ */ jsx(Ico, {
+                n: "check",
+                w: 2.6
+              }), " Prices in ₹, short numbered answers"]
+            }), /* @__PURE__ */ jsxs("li", {
+              children: [/* @__PURE__ */ jsx(Ico, {
+                n: "check",
+                w: 2.6
+              }), " Delhivery link opens with the ID filled in"]
+            }), /* @__PURE__ */ jsxs("li", {
+              children: [/* @__PURE__ */ jsx(Ico, {
+                n: "check",
+                w: 2.6
+              }), " A person can take over any chat"]
+            })]
+          })]
+        }), /* @__PURE__ */ jsxs("div", {
+          className: "box follow reveal",
+          style: {
+            transitionDelay: ".2s"
+          },
+          children: [/* @__PURE__ */ jsx("span", {
+            className: "tag",
+            children: "CONTACT US"
+          }), /* @__PURE__ */ jsx("h3", {
+            children: "We're here to help"
+          }), /* @__PURE__ */ jsxs("a", {
+            className: "reach",
+            href: `mailto:${SUPPORT_EMAIL}`,
+            children: [/* @__PURE__ */ jsx("span", {
+              className: "ic",
+              children: /* @__PURE__ */ jsx(Ico, {
+                n: "mail"
+              })
+            }), /* @__PURE__ */ jsxs("span", {
+              children: [/* @__PURE__ */ jsx("small", {
+                children: "Email"
+              }), /* @__PURE__ */ jsx("b", {
+                children: SUPPORT_EMAIL
+              })]
+            })]
+          }), /* @__PURE__ */ jsxs("a", {
+            className: "reach",
+            href: `tel:${SUPPORT_TEL}`,
+            children: [/* @__PURE__ */ jsx("span", {
+              className: "ic",
+              children: /* @__PURE__ */ jsx(Ico, {
+                n: "phone"
+              })
+            }), /* @__PURE__ */ jsxs("span", {
+              children: [/* @__PURE__ */ jsx("small", {
+                children: "Phone"
+              }), /* @__PURE__ */ jsx("b", {
+                children: SUPPORT_PHONE
+              })]
+            })]
           })]
         })]
-      })]
-    }), /* @__PURE__ */ jsxs("footer", {
-      className: styles$2.footer,
-      children: [/* @__PURE__ */ jsx("span", {
-        className: styles$2.wordmark,
-        children: "SHOPPILOT"
-      }), /* @__PURE__ */ jsx("span", {
-        children: "WhatsApp bot, order updates and store tools for your Shopify store."
-      }), /* @__PURE__ */ jsx("span", {
-        className: styles$2.credit,
-        children: "Photos: Pexels"
-      })]
+      })
+    }), /* @__PURE__ */ jsx("footer", {
+      children: /* @__PURE__ */ jsxs("div", {
+        className: "wrap",
+        children: [/* @__PURE__ */ jsx("span", {
+          children: "© 2026 ShopPilot. All rights reserved."
+        }), /* @__PURE__ */ jsxs("span", {
+          children: ["Made with ", /* @__PURE__ */ jsx("em", {
+            children: "♥"
+          }), " by JAZZ"]
+        })]
+      })
     })]
   });
 });
@@ -4678,19 +4796,19 @@ function htmlToPlain(html) {
 }
 const UNIT = /^\d+(\.\d+)?(gb|tb|mb|kb|inch|in|hz|mah|w|mp|kg|g|ml|l|cm|mm|ghz|v|gen|pcs|pack|bit)$/i;
 const NOT_MODEL = /^(hd|fhd|uhd|4k|5g|4g|3g|wifi|usb|led|lcd|oled|ssd|hdd|ram|rom|pro|max|plus|mini|ultra)$/i;
-function modelFromTitle(title2, brand2) {
-  const b = norm(brand2);
-  const tokens2 = String(title2 ?? "").split(/[\s,()/|]+/).map((t) => t.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, "")).filter(Boolean);
+function modelFromTitle(title, brand) {
+  const b = norm(brand);
+  const tokens2 = String(title ?? "").split(/[\s,()/|]+/).map((t) => t.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, "")).filter(Boolean);
   const mixed = tokens2.filter((t) => /[A-Za-z]/.test(t) && /\d/.test(t) && t.length >= 3 && t.length <= 24 && !UNIT.test(t) && norm(t) !== b);
   if (mixed.length) return mixed[0];
   const words = tokens2.filter((t) => !NOT_MODEL.test(t) && norm(t) !== b && /^[A-Za-z0-9-]+$/.test(t));
   return words.slice(0, 2).join("-");
 }
-function makeSku(brand2, title2, model = "") {
+function makeSku(brand, title, model = "") {
   const clean = (t) => t.replace(/[^A-Za-z0-9-]+/g, "").replace(/^-+|-+$/g, "");
-  let b = clean(String(brand2 ?? "").trim().split(/\s+/)[0] ?? "").toUpperCase();
-  if (!b) b = clean(String(title2 ?? "").trim().split(/\s+/)[0] ?? "").toUpperCase();
-  const m = clean(String(model ?? "").trim().replace(/\s+/g, "-")) || clean(modelFromTitle(title2, brand2 || b));
+  let b = clean(String(brand ?? "").trim().split(/\s+/)[0] ?? "").toUpperCase();
+  if (!b) b = clean(String(title ?? "").trim().split(/\s+/)[0] ?? "").toUpperCase();
+  const m = clean(String(model ?? "").trim().replace(/\s+/g, "-")) || clean(modelFromTitle(title, brand || b));
   return [b || "ITEM", m].filter(Boolean).join("-");
 }
 function num(s) {
@@ -4774,10 +4892,10 @@ function listingGeneric(html, base) {
       return;
     }
     if (!PRODUCT_HINT.test(path2)) return;
-    const title2 = $(el).attr("title") || $(el).text().replace(/\s+/g, " ").trim() || $(el).find("img").attr("alt") || "";
-    if (title2.length < 8) return;
+    const title = $(el).attr("title") || $(el).text().replace(/\s+/g, " ").trim() || $(el).find("img").attr("alt") || "";
+    if (title.length < 8) return;
     seen.add(link);
-    out.push({ title: title2, link });
+    out.push({ title, link });
   });
   return out;
 }
@@ -4940,7 +5058,7 @@ async function getJson(url) {
   const res = await fetch(url, { headers: { "user-agent": UA, accept: "application/json" }, signal: AbortSignal.timeout(3e4) });
   return { status: res.status, json: await res.json().catch(() => ({})) };
 }
-async function scrapeShopify(site, category, brand2, limit, ctx) {
+async function scrapeShopify(site, category, brand, limit, ctx) {
   const base = assertPublicUrl(site).origin;
   let currency = "";
   try {
@@ -4950,8 +5068,8 @@ async function scrapeShopify(site, category, brand2, limit, ctx) {
   const words = norm(category).split(" ").filter(Boolean);
   let seen = 0;
   let found = 0;
-  for (let page2 = 1; found < limit && page2 <= 40 && !ctx.stopped(); page2++) {
-    const { status, json: json2 } = await getJson(`${base}/products.json?limit=250&page=${page2}`);
+  for (let page = 1; found < limit && page <= 40 && !ctx.stopped(); page++) {
+    const { status, json: json2 } = await getJson(`${base}/products.json?limit=250&page=${page}`);
     if (status !== 200) throw new Error(`Could not read ${base}/products.json (HTTP ${status}). This does not look like a Shopify store.`);
     const items = json2.products ?? [];
     if (!items.length) break;
@@ -4959,7 +5077,7 @@ async function scrapeShopify(site, category, brand2, limit, ctx) {
       if (found >= limit || ctx.stopped()) break;
       const tags = Array.isArray(p.tags) ? p.tags.join(" ") : String(p.tags ?? "");
       const blob = norm([p.title, p.vendor, p.product_type, tags].join(" "));
-      if (brand2 && !blob.includes(norm(brand2))) continue;
+      if (brand && !blob.includes(norm(brand))) continue;
       if (words.length && !words.every((w) => blob.includes(w))) continue;
       ctx.checked(++seen);
       const available = (p.variants ?? []).filter((v2) => v2.available);
@@ -4979,7 +5097,7 @@ async function scrapeShopify(site, category, brand2, limit, ctx) {
       });
       if (ok) found++;
     }
-    ctx.log(`Scanned page ${page2}: ${found} new in-stock products so far`);
+    ctx.log(`Scanned page ${page}: ${found} new in-stock products so far`);
   }
 }
 async function launchBrowser() {
@@ -4997,25 +5115,25 @@ async function launchBrowser() {
   }
 }
 const BLOCKED = /captcha|robot check|enter the characters|are you a human|access denied|unusual traffic/i;
-async function scrapeBrowser(searchUrl, brand2, limit, pages, ctx) {
+async function scrapeBrowser(searchUrl, brand, limit, pages, ctx) {
   assertPublicUrl(searchUrl.replace("{query}", "x").replace("{page}", "1"));
   const browser = await launchBrowser();
   try {
-    const page2 = await (await browser.newContext({ userAgent: UA, locale: "en-IN" })).newPage();
+    const page = await (await browser.newContext({ userAgent: UA, locale: "en-IN" })).newPage();
     const candidates = [];
     const seen = /* @__PURE__ */ new Set();
     for (let n = 1; n <= pages && !ctx.stopped(); n++) {
       let url = searchUrl.replace("{page}", String(n));
       if (n > 1 && !searchUrl.includes("{page}")) url += `${url.includes("?") ? "&" : "?"}page=${n}`;
       ctx.log(`Loading search page ${n}`);
-      await page2.goto(url, { waitUntil: "domcontentloaded", timeout: 6e4 });
-      await page2.waitForTimeout(2500);
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 6e4 });
+      await page.waitForTimeout(2500);
       for (let i = 0; i < 6; i++) {
-        await page2.mouse.wheel(0, 2500);
-        await page2.waitForTimeout(400);
+        await page.mouse.wheel(0, 2500);
+        await page.waitForTimeout(400);
       }
-      const html = await page2.content();
-      if (BLOCKED.test(await page2.title() + " " + html.slice(0, 3e3))) {
+      const html = await page.content();
+      if (BLOCKED.test(await page.title() + " " + html.slice(0, 3e3))) {
         ctx.log("The website showed a robot check, so it stopped. Try again later, or use another website.");
         break;
       }
@@ -5024,7 +5142,7 @@ async function scrapeBrowser(searchUrl, brand2, limit, pages, ctx) {
       const items = u.host.includes("amazon.") ? listingAmazon(html, base) : listingGeneric(html, base);
       let added = 0;
       for (const it of items) {
-        if (seen.has(it.link) || brand2 && !norm(it.title).includes(norm(brand2))) continue;
+        if (seen.has(it.link) || brand && !norm(it.title).includes(norm(brand))) continue;
         seen.add(it.link);
         candidates.push(it);
         added++;
@@ -5039,15 +5157,15 @@ async function scrapeBrowser(searchUrl, brand2, limit, pages, ctx) {
       ctx.log(`Checking ${i + 1}/${candidates.length}: ${c.title.slice(0, 60)}`);
       let d;
       try {
-        await page2.goto(c.link, { waitUntil: "domcontentloaded", timeout: 6e4 });
-        await page2.waitForTimeout(1500);
-        d = parseDetail(await page2.content(), c.link);
+        await page.goto(c.link, { waitUntil: "domcontentloaded", timeout: 6e4 });
+        await page.waitForTimeout(1500);
+        d = parseDetail(await page.content(), c.link);
       } catch (e) {
         ctx.log(`Skipped (page error): ${String(e.message).slice(0, 80)}`);
         continue;
       }
       if (!d.inStock || !d.images.length) continue;
-      if (await ctx.emit({ title: d.title || c.title, brand: d.brand || brand2, price: d.price, comparePrice: d.comparePrice, link: c.link, images: d.images, description: d.description, model: d.model })) found++;
+      if (await ctx.emit({ title: d.title || c.title, brand: d.brand || brand, price: d.price, comparePrice: d.comparePrice, link: c.link, images: d.images, description: d.description, model: d.model })) found++;
       await sleep(300);
     }
   } finally {
@@ -5121,7 +5239,7 @@ async function loadCatalog(shop, onPage) {
   var _a2, _b, _c;
   const out = [];
   let after = null;
-  for (let page2 = 1; page2 <= 100; page2++) {
+  for (let page = 1; page <= 100; page++) {
     const data = await gql(
       shop,
       `query($after: String) { products(first: 100, after: $after) {
@@ -5399,8 +5517,8 @@ const clampInt = (v, lo, hi, d) => {
 };
 const pick = (v, allowed, d) => allowed.includes(v) ? v : d;
 const bool = (v, d) => typeof v === "boolean" ? v : v === "true" || v === "on" ? true : v === "false" ? false : d;
-function normalizeOptions(input2) {
-  const o = input2 && typeof input2 === "object" ? input2 : {};
+function normalizeOptions(input) {
+  const o = input && typeof input === "object" ? input : {};
   const d = DEFAULT_OPTIONS;
   const color = typeof o.color === "string" && /^#[0-9a-fA-F]{6}$/.test(o.color) ? o.color.toLowerCase() : d.color;
   return {
@@ -5872,10 +5990,10 @@ async function stageUpload(ctx, bytes2, filename, ext) {
   const err = msg$2((_a2 = data.stagedUploadsCreate) == null ? void 0 : _a2.userErrors);
   const target2 = (_c = (_b = data.stagedUploadsCreate) == null ? void 0 : _b.stagedTargets) == null ? void 0 : _c[0];
   if (err || !(target2 == null ? void 0 : target2.url) || !(target2 == null ? void 0 : target2.resourceUrl)) throw new Error(`Shopify did not accept the upload${err ? `: ${err}` : "."}`);
-  const form2 = new FormData();
-  for (const p of target2.parameters) form2.append(p.name, p.value);
-  form2.append("file", new Blob([new Uint8Array(bytes2)], { type: mimeType }), filename);
-  const res = await (ctx.fetch ?? fetch)(target2.url, { method: "POST", body: form2, signal: AbortSignal.timeout(12e4) });
+  const form = new FormData();
+  for (const p of target2.parameters) form.append(p.name, p.value);
+  form.append("file", new Blob([new Uint8Array(bytes2)], { type: mimeType }), filename);
+  const res = await (ctx.fetch ?? fetch)(target2.url, { method: "POST", body: form, signal: AbortSignal.timeout(12e4) });
   if (!res.ok) throw new Error(`Uploading the image to Shopify failed (HTTP ${res.status}).`);
   return target2.resourceUrl;
 }
@@ -6066,7 +6184,7 @@ async function uploadProductImages(ctx, productId, mode, images, label2 = "image
   if (list.length > MAX_IMAGES_PER_PRODUCT) throw new Error(`Too many images for one product (maximum ${MAX_IMAGES_PER_PRODUCT}).`);
   const before = (await ctx.gql(MEDIA, { id: productId })).product;
   if (!before) throw new Error("The product no longer exists in Shopify.");
-  const title2 = before.title ?? "";
+  const title = before.title ?? "";
   const old = (((_a2 = before.media) == null ? void 0 : _a2.nodes) ?? []).filter((m) => m.mediaContentType === "IMAGE").map((m) => m.id);
   const known = new Set((((_b = before.media) == null ? void 0 : _b.nodes) ?? []).map((m) => m.id));
   const failed = [];
@@ -6076,7 +6194,7 @@ async function uploadProductImages(ctx, productId, mode, images, label2 = "image
       if (img.bytes.length > MAX_BYTES) throw new Error("The image is larger than 25 MB.");
       if (sniffImage(img.bytes) !== img.ext) throw new Error("The file is not a valid JPG, PNG or WebP image.");
       const resourceUrl = await stageUpload(ctx, img.bytes, `${label2}-${img.position}.${img.ext}`, img.ext);
-      const data = await ctx.gql(ADD, { product: { id: productId }, media: [{ originalSource: resourceUrl, alt: title2.slice(0, 250), mediaContentType: "IMAGE" }] });
+      const data = await ctx.gql(ADD, { product: { id: productId }, media: [{ originalSource: resourceUrl, alt: title.slice(0, 250), mediaContentType: "IMAGE" }] });
       const err = msg$1((_c = data.productUpdate) == null ? void 0 : _c.userErrors);
       if (err) throw new Error(`Shopify refused the image: ${err}`);
       const fresh = (((_f = (_e = (_d = data.productUpdate) == null ? void 0 : _d.product) == null ? void 0 : _e.media) == null ? void 0 : _f.nodes) ?? []).find((m) => !known.has(m.id));
@@ -6087,7 +6205,7 @@ async function uploadProductImages(ctx, productId, mode, images, label2 = "image
       failed.push({ position: img.position, error: e.message });
     }
   }
-  const ready2 = /* @__PURE__ */ new Set();
+  const ready = /* @__PURE__ */ new Set();
   const pending = new Set(created.map((c) => c.id));
   const deadline = Date.now() + (ctx.timeoutMs ?? 9e4);
   let wait = 800;
@@ -6098,21 +6216,21 @@ async function uploadProductImages(ctx, productId, mode, images, label2 = "image
     for (const n of nodes) {
       if (!n) continue;
       if (n.status === "READY") {
-        ready2.add(n.id);
+        ready.add(n.id);
         pending.delete(n.id);
       } else if (n.status === "FAILED") pending.delete(n.id);
     }
     for (const id2 of [...pending]) if (!nodes.some((n) => (n == null ? void 0 : n.id) === id2)) pending.delete(id2);
   }
-  for (const c of created) if (!ready2.has(c.id)) failed.push({ position: c.position, error: "Shopify could not process this image." });
+  for (const c of created) if (!ready.has(c.id)) failed.push({ position: c.position, error: "Shopify could not process this image." });
   let removed = 0;
-  if (mode === "replace" && ready2.size > 0 && old.length > 0) {
+  if (mode === "replace" && ready.size > 0 && old.length > 0) {
     const data = await ctx.gql(DROP, { files: old.map((id2) => ({ id: id2, referencesToRemove: [productId] })) });
     const err = msg$1((_g = data.fileUpdate) == null ? void 0 : _g.userErrors);
     if (err) failed.push({ position: 0, error: `The new images were added, but the old ones could not be removed: ${err}` });
     else removed = old.length;
   }
-  return { productId, title: title2, added: ready2.size, failed: failed.sort((a, b) => a.position - b.position), removed };
+  return { productId, title, added: ready.size, failed: failed.sort((a, b) => a.position - b.position), removed };
 }
 const shopifyCtx = (shop) => ({ shop, gql: (query, variables) => gql(shop, query, variables ?? {}) });
 const json$2 = (body, status = 200) => Response.json(body, {
@@ -6275,12 +6393,12 @@ const action$b = async ({
       });
     }
     if (op === "bulk-product") {
-      const form2 = await request.formData();
-      const productId = String(form2.get("productId") ?? "");
-      const sku = String(form2.get("sku") ?? "image").replace(/[^\w.-]+/g, "_").slice(0, 60) || "image";
-      const mode = form2.get("mode") === "replace" ? "replace" : "append";
+      const form = await request.formData();
+      const productId = String(form.get("productId") ?? "");
+      const sku = String(form.get("sku") ?? "image").replace(/[^\w.-]+/g, "_").slice(0, 60) || "image";
+      const mode = form.get("mode") === "replace" ? "replace" : "append";
       const images = [];
-      for (const [key2, value] of form2.entries()) {
+      for (const [key2, value] of form.entries()) {
         const m = /^image-(\d{1,3})$/.exec(key2);
         if (!m || !(value instanceof File) || images.length >= MAX_IMAGES_PER_PRODUCT) continue;
         const bytes2 = Buffer.from(await value.arrayBuffer());
@@ -6320,15 +6438,15 @@ const action$b = async ({
       if (Number(request.headers.get("content-length") ?? 0) > LIMITS$1.maxFileBytes + 1024 * 1024) return json$2({
         error: "The file is too large."
       }, 413);
-      const form2 = await request.formData();
-      const file = form2.get("file");
+      const form = await request.formData();
+      const file = form.get("file");
       if (!(file instanceof File)) return json$2({
         error: "No file received."
       }, 400);
       const id2 = await addUpload(shop, jobId, {
         name: file.name,
         bytes: Buffer.from(await file.arrayBuffer()),
-        folder: String(form2.get("folder") ?? "")
+        folder: String(form.get("folder") ?? "")
       });
       return json$2({
         id: id2
@@ -6465,8 +6583,8 @@ const action$a = async ({
       error: "Body must be JSON"
     }, 400);
   }
-  const phone2 = normalizePhone(body == null ? void 0 : body.to);
-  if (!phone2) return json$1({
+  const phone = normalizePhone(body == null ? void 0 : body.to);
+  if (!phone) return json$1({
     ok: false,
     error: "Invalid phone number"
   }, 400);
@@ -6480,13 +6598,13 @@ const action$a = async ({
     ok: false,
     error: "This route needs the QR (WhatsApp Web) connection"
   }, 501);
-  const r = await bridgeSendText(phone2, text2);
+  const r = await bridgeSendText(phone, text2);
   await logEvent({
     source: "whatsapp",
     event: "ims_send",
     level: r.ok ? "info" : "error",
     // never write the whole number or the text into the log
-    detail: `${ref || "message"} -> ${phone2.slice(0, -4)}****${r.ok ? "" : `: ${r.error}`}`
+    detail: `${ref || "message"} -> ${phone.slice(0, -4)}****${r.ok ? "" : `: ${r.error}`}`
   });
   if (!r.ok) return json$1({
     ok: false,
@@ -6868,7 +6986,7 @@ async function runScan(shop, ctx, scanId) {
     startTask(shop, "seoscan", "Reading and checking your products", await countProducts(ctx) || null);
     let after = null;
     let n = 0;
-    for (let page2 = 0; page2 < MAX_PAGES; page2++) {
+    for (let page = 0; page < MAX_PAGES; page++) {
       const res = await fetchProductsPage(ctx, after);
       await prisma.$transaction(
         res.products.map((p) => {
@@ -7073,7 +7191,7 @@ async function step(shop, ctx, batchId, dir, limit) {
           for (const c of list) await fail(c.id, "The product no longer exists in Shopify.");
           continue;
         }
-        let title2 = live.seoTitle;
+        let title = live.seoTitle;
         let desc = live.seoDescription;
         const ok = [];
         for (const c of list) {
@@ -7082,12 +7200,12 @@ async function step(shop, ctx, batchId, dir, limit) {
             await fail(c.id, dir === "apply" ? "Changed in Shopify after the preview. Nothing was overwritten." : "Changed again after it was applied. Not restored.");
             continue;
           }
-          if (c.kind === "seoTitle") title2 = target(c, dir);
+          if (c.kind === "seoTitle") title = target(c, dir);
           else desc = target(c, dir);
           ok.push(c);
         }
         if (!ok.length) continue;
-        await setProductSeo(ctx, productId, title2, desc);
+        await setProductSeo(ctx, productId, title, desc);
         for (const c of ok) {
           await done(c.id, to);
           await patchSnapshot(shop, c, target(c, dir));
@@ -7606,7 +7724,7 @@ function Shell({ data, children }) {
       return !c;
     });
   };
-  const page2 = CRUMBS[pathname.split("/")[2] ?? ""];
+  const page = CRUMBS[pathname.split("/")[2] ?? ""];
   const name = data.shop.replace(/\.myshopify\.com$/, "");
   return /* @__PURE__ */ jsxs("div", { className: `orderly shell${collapsed ? " is-collapsed" : ""}${mobileOpen ? " is-open" : ""}`, children: [
     /* @__PURE__ */ jsxs("aside", { className: "sb", "aria-label": "Main navigation", children: [
@@ -7640,11 +7758,11 @@ function Shell({ data, children }) {
         /* @__PURE__ */ jsx("button", { className: "tb-icon tb-burger", onClick: () => setMobileOpen((o) => !o), "aria-label": "Toggle menu", children: mobileOpen ? /* @__PURE__ */ jsx(X, { size: 18 }) : /* @__PURE__ */ jsx(Menu, { size: 18 }) }),
         /* @__PURE__ */ jsxs("nav", { className: "tb-crumbs", "aria-label": "Breadcrumb", children: [
           /* @__PURE__ */ jsx(Link, { to: "/app", children: "ShopPilot" }),
-          page2 && /* @__PURE__ */ jsxs(Fragment, { children: [
+          page && /* @__PURE__ */ jsxs(Fragment, { children: [
             /* @__PURE__ */ jsx("span", { children: "/" }),
-            /* @__PURE__ */ jsx("b", { children: page2 })
+            /* @__PURE__ */ jsx("b", { children: page })
           ] }),
-          !page2 && /* @__PURE__ */ jsxs(Fragment, { children: [
+          !page && /* @__PURE__ */ jsxs(Fragment, { children: [
             /* @__PURE__ */ jsx("span", { children: "/" }),
             /* @__PURE__ */ jsx("b", { children: "Dashboard" })
           ] })
@@ -7655,11 +7773,11 @@ function Shell({ data, children }) {
     ] })
   ] });
 }
-function Page({ title: title2, subtitle, actions, children }) {
+function Page({ title, subtitle, actions, children }) {
   return /* @__PURE__ */ jsxs("div", { className: "o-page", children: [
     /* @__PURE__ */ jsxs("header", { className: "o-head", children: [
       /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("h1", { className: "o-title", children: title2 }),
+        /* @__PURE__ */ jsx("h1", { className: "o-title", children: title }),
         subtitle && /* @__PURE__ */ jsx("p", { className: "o-sub", children: subtitle })
       ] }),
       actions && /* @__PURE__ */ jsx("div", { className: "o-row", children: actions })
@@ -7667,10 +7785,10 @@ function Page({ title: title2, subtitle, actions, children }) {
     children
   ] });
 }
-function Card({ title: title2, action: action2, children }) {
+function Card({ title, action: action2, children }) {
   return /* @__PURE__ */ jsxs("section", { className: "o-card", children: [
-    (title2 || action2) && /* @__PURE__ */ jsxs("div", { className: "o-card-head", children: [
-      title2 && /* @__PURE__ */ jsx("h2", { children: title2 }),
+    (title || action2) && /* @__PURE__ */ jsxs("div", { className: "o-card-head", children: [
+      title && /* @__PURE__ */ jsx("h2", { children: title }),
       action2
     ] }),
     children
@@ -9499,9 +9617,9 @@ const action$7 = async ({
   const {
     session
   } = await authenticate.admin(request);
-  const form2 = await request.formData();
-  const intent = String(form2.get("intent"));
-  const id2 = String(form2.get("id") ?? "");
+  const form = await request.formData();
+  const intent = String(form.get("intent"));
+  const id2 = String(form.get("id") ?? "");
   const conv = await prisma.conversation.findFirst({
     where: {
       id: id2,
@@ -9594,8 +9712,8 @@ const action$7 = async ({
         ok: false,
         message: "Slow down: too many replies."
       };
-      const body = String(form2.get("body") ?? "").trim().slice(0, 1500);
-      const file = form2.get("file");
+      const body = String(form.get("body") ?? "").trim().slice(0, 1500);
+      const file = form.get("file");
       const hasFile = file instanceof File && file.size > 0;
       if (!body && !hasFile) return {
         ok: false,
@@ -9787,9 +9905,9 @@ const app_conversations = UNSAFE_withComponentProps(function Conversations() {
     canSendFiles
   } = useLoaderData();
   const result = useActionData();
-  const nav2 = useNavigation();
+  const nav = useNavigation();
   const shopify2 = useAppBridge();
-  const busy2 = nav2.state !== "idle";
+  const busy2 = nav.state !== "idle";
   const replyForm = useRef(null);
   const textarea = useRef(null);
   const fileInput = useRef(null);
@@ -10128,7 +10246,7 @@ const loader$e = async ({
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") ?? "").trim().slice(0, 60);
   const filter = ["found", "missing"].includes(url.searchParams.get("filter") ?? "") ? url.searchParams.get("filter") : "all";
-  const page2 = Math.max(1, Number(url.searchParams.get("page")) || 1);
+  const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
   const where = {
     shop
   };
@@ -10156,7 +10274,7 @@ const loader$e = async ({
       createdAt: "desc"
     },
     take: PAGE_SIZE$1,
-    skip: (page2 - 1) * PAGE_SIZE$1
+    skip: (page - 1) * PAGE_SIZE$1
   }), prisma.productEnquiry.count({
     where
   }), prisma.productEnquiry.count({
@@ -10195,7 +10313,7 @@ const loader$e = async ({
   return {
     q,
     filter,
-    page: page2,
+    page,
     total,
     pages: Math.max(1, Math.ceil(total / PAGE_SIZE$1)),
     all,
@@ -10472,17 +10590,17 @@ function parseZip(bytes2) {
   const folders = [...bySku.values()].map((f) => ({ sku: f.sku, images: f.images.sort((a, b) => a.position - b.position) })).sort((a, b) => a.sku.localeCompare(b.sku, void 0, { numeric: true }));
   return { folders, problems };
 }
-function ImageTabs({ active: active2 }) {
+function ImageTabs({ active }) {
   return /* @__PURE__ */ jsxs("div", { className: "ie-tabs", role: "tablist", "aria-label": "Image Editor", children: [
-    /* @__PURE__ */ jsxs(NavLink, { role: "tab", "aria-selected": active2 === "upload", className: active2 === "upload" ? "on" : "", to: "/app/image-editor", children: [
+    /* @__PURE__ */ jsxs(NavLink, { role: "tab", "aria-selected": active === "upload", className: active === "upload" ? "on" : "", to: "/app/image-editor", children: [
       /* @__PURE__ */ jsx(ImagePlus, { size: 15 }),
       " Editor"
     ] }),
-    /* @__PURE__ */ jsxs(NavLink, { role: "tab", "aria-selected": active2 === "store", className: active2 === "store" ? "on" : "", to: "/app/image-products", children: [
+    /* @__PURE__ */ jsxs(NavLink, { role: "tab", "aria-selected": active === "store", className: active === "store" ? "on" : "", to: "/app/image-products", children: [
       /* @__PURE__ */ jsx(Store, { size: 15 }),
       " Store products"
     ] }),
-    /* @__PURE__ */ jsxs(NavLink, { role: "tab", "aria-selected": active2 === "bulk", className: active2 === "bulk" ? "on" : "", to: "/app/image-bulk", children: [
+    /* @__PURE__ */ jsxs(NavLink, { role: "tab", "aria-selected": active === "bulk", className: active === "bulk" ? "on" : "", to: "/app/image-bulk", children: [
       /* @__PURE__ */ jsx(FileArchive, { size: 15 }),
       " Bulk upload (ZIP)"
     ] })
@@ -10579,7 +10697,7 @@ const app_imageBulk = UNSAFE_withComponentProps(function BulkUpload() {
   const [error, setError] = useState(null);
   const [drag, setDrag] = useState(false);
   const [queue, setQueue] = useState([]);
-  const input2 = useRef(null);
+  const input = useRef(null);
   const patch = (sku, p) => setRows((cur) => cur.map((r) => r.sku === sku ? {
     ...r,
     ...p
@@ -10636,16 +10754,16 @@ const app_imageBulk = UNSAFE_withComponentProps(function BulkUpload() {
       removed: 0
     });
     try {
-      const form2 = new FormData();
-      form2.set("productId", r.match.productId);
-      form2.set("sku", r.sku);
-      form2.set("mode", mode);
-      for (const img of r.images) form2.set(`image-${img.position}`, new File([img.data], img.name, {
+      const form = new FormData();
+      form.set("productId", r.match.productId);
+      form.set("sku", r.sku);
+      form.set("mode", mode);
+      for (const img of r.images) form.set(`image-${img.position}`, new File([img.data], img.name, {
         type: `image/${img.ext === "jpg" ? "jpeg" : img.ext}`
       }));
       const res = await fetch("/api/image-editor/bulk-product", {
         method: "POST",
-        body: form2
+        body: form
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error ?? `Request failed (${res.status})`);
@@ -10758,7 +10876,7 @@ The old images are removed from those products and cannot be restored from this 
           children: [/* @__PURE__ */ jsx(FileArchive, {
             size: 14
           }), " Choose ZIP", /* @__PURE__ */ jsx("input", {
-            ref: input2,
+            ref: input,
             type: "file",
             accept: ".zip,application/zip",
             hidden: true,
@@ -11057,18 +11175,18 @@ async function loadImageEditor(shop, url, kind = "upload") {
     })
   };
 }
-function Compare({ before, after, onClose, title: title2 }) {
+function Compare({ before, after, onClose, title }) {
   const [pos, setPos] = useState(50);
   useEffect(() => {
     const k = (e) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
   }, [onClose]);
-  return /* @__PURE__ */ jsxs("div", { className: "ie-modal", role: "dialog", "aria-modal": "true", "aria-label": `Compare ${title2}`, children: [
+  return /* @__PURE__ */ jsxs("div", { className: "ie-modal", role: "dialog", "aria-modal": "true", "aria-label": `Compare ${title}`, children: [
     /* @__PURE__ */ jsx("button", { type: "button", className: "ie-backdrop", "aria-label": "Close preview", onClick: onClose }),
     /* @__PURE__ */ jsxs("div", { className: "ie-modal-box", children: [
       /* @__PURE__ */ jsxs("div", { className: "ie-modal-head", children: [
-        /* @__PURE__ */ jsx("b", { children: title2 }),
+        /* @__PURE__ */ jsx("b", { children: title }),
         /* @__PURE__ */ jsx("button", { className: "ghost", onClick: onClose, "aria-label": "Close", children: /* @__PURE__ */ jsx(X, { size: 14 }) })
       ] }),
       /* @__PURE__ */ jsxs("div", { className: "ie-compare", children: [
@@ -11086,26 +11204,26 @@ function Compare({ before, after, onClose, title: title2 }) {
 }
 const PRESET_ICONS = [ShoppingBag, Store, Camera, Scissors, Minimize2];
 const SWATCHES = ["#ffffff", "#f5efe6", "#e9e9e9", "#c9b8a3", "#111111"];
-function Switch({ checked, onChange, label: label2, hint: hint2, disabled }) {
+function Switch({ checked, onChange, label: label2, hint, disabled }) {
   return /* @__PURE__ */ jsxs("label", { className: `ox-switch${disabled ? " off" : ""}`, children: [
     /* @__PURE__ */ jsx("input", { type: "checkbox", checked, disabled, onChange: (e) => onChange(e.target.checked) }),
     /* @__PURE__ */ jsx("i", { "aria-hidden": "true" }),
     /* @__PURE__ */ jsxs("span", { children: [
       /* @__PURE__ */ jsx("b", { children: label2 }),
-      hint2 && /* @__PURE__ */ jsx("small", { children: hint2 })
+      hint && /* @__PURE__ */ jsx("small", { children: hint })
     ] })
   ] });
 }
 function Seg({ value, options, onChange, label: label2, disabled }) {
   return /* @__PURE__ */ jsx("div", { className: "ox-seg", role: "radiogroup", "aria-label": label2, children: options.map((o) => /* @__PURE__ */ jsx("button", { type: "button", role: "radio", "aria-checked": value === o.v, className: value === o.v ? "on" : "", disabled, onClick: () => onChange(o.v), children: o.label }, o.v)) });
 }
-function Panel({ icon: Icon, title: title2, summary, children }) {
+function Panel({ icon: Icon, title, summary, children }) {
   const [open, setOpen] = useState(false);
   return /* @__PURE__ */ jsxs("section", { className: `ox-panel${open ? " open" : ""}`, children: [
     /* @__PURE__ */ jsxs("button", { type: "button", className: "ox-head", "aria-expanded": open, onClick: () => setOpen((o) => !o), children: [
       /* @__PURE__ */ jsx("span", { className: "ox-ico", children: /* @__PURE__ */ jsx(Icon, { size: 16 }) }),
       /* @__PURE__ */ jsxs("span", { className: "ox-head-text", children: [
-        /* @__PURE__ */ jsx("b", { children: title2 }),
+        /* @__PURE__ */ jsx("b", { children: title }),
         /* @__PURE__ */ jsx("small", { children: summary })
       ] }),
       /* @__PURE__ */ jsx(ChevronDown, { size: 16, className: "ox-chev" })
@@ -11254,10 +11372,10 @@ const loader$c = async ({
 const bytes = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`;
 const tone$2 = (s) => s === "done" ? "success" : s === "running" ? "info" : s === "error" ? "critical" : s === "stopped" ? "warning" : void 0;
 const eta = (seconds) => seconds < 60 ? `${Math.max(1, Math.round(seconds))}s` : seconds < 3600 ? `${Math.round(seconds / 60)} min` : `${(seconds / 3600).toFixed(1)} h`;
-async function api$1(path2, body, form2) {
-  const res = await fetch(`/api/image-editor/${path2}`, form2 ? {
+async function api$1(path2, body, form) {
+  const res = await fetch(`/api/image-editor/${path2}`, form ? {
     method: "POST",
-    body: form2
+    body: form
   } : {
     method: "POST",
     headers: {
@@ -11360,11 +11478,11 @@ const app_imageEditor = UNSAFE_withComponentProps(function ImageEditor() {
       const lane = async () => {
         while (next < picked.length) {
           const p = picked[next++];
-          const form2 = new FormData();
-          form2.set("file", p.file);
-          form2.set("folder", p.folder);
+          const form = new FormData();
+          form.set("file", p.file);
+          form.set("folder", p.folder);
           try {
-            await api$1(`upload/${id2}`, void 0, form2);
+            await api$1(`upload/${id2}`, void 0, form);
           } catch {
             failed++;
           }
@@ -12757,7 +12875,7 @@ const PAGE_SIZE = 50;
 async function loadOrderSheet(shop, url) {
   const q = (url.searchParams.get("q") ?? "").trim().slice(0, 60);
   const status = SHEET_STATUSES.includes(url.searchParams.get("status")) ? url.searchParams.get("status") : "";
-  const page2 = Math.max(1, Number(url.searchParams.get("page")) || 1);
+  const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
   const kind = PERIOD_KINDS.includes(url.searchParams.get("period")) ? url.searchParams.get("period") : "week";
   const from = parseDay(url.searchParams.get("from"));
   const to = parseDay(url.searchParams.get("to"));
@@ -12768,7 +12886,7 @@ async function loadOrderSheet(shop, url) {
   }
   const where = status ? { ...base, status } : base;
   const [rows, listed, counts, sync, everything, gs, windowOrders] = await Promise.all([
-    prisma.orderSheet.findMany({ where, orderBy: [{ orderDate: "desc" }, { createdAt: "desc" }], take: PAGE_SIZE, skip: (page2 - 1) * PAGE_SIZE }),
+    prisma.orderSheet.findMany({ where, orderBy: [{ orderDate: "desc" }, { createdAt: "desc" }], take: PAGE_SIZE, skip: (page - 1) * PAGE_SIZE }),
     prisma.orderSheet.count({ where }),
     statusCounts(base),
     prisma.orderSyncState.findUnique({ where: { shop } }),
@@ -12796,7 +12914,7 @@ async function loadOrderSheet(shop, url) {
     })),
     q,
     status,
-    page: page2,
+    page,
     listed,
     pages: Math.max(1, Math.ceil(listed / PAGE_SIZE)),
     counts,
@@ -13045,8 +13163,8 @@ const action$4 = async ({
     session
   } = await authenticate.admin(request);
   const shop = session.shop;
-  const form2 = await request.formData();
-  const intent = String(form2.get("intent"));
+  const form = await request.formData();
+  const intent = String(form.get("intent"));
   if (intent === "sync" || intent === "full") {
     void runSync(shop, intent === "full" ? "full" : "auto");
     return {
@@ -13055,7 +13173,7 @@ const action$4 = async ({
     };
   }
   if (intent === "gs-connect-script") {
-    const url = String(form2.get("scriptUrl") ?? "").trim();
+    const url = String(form.get("scriptUrl") ?? "").trim();
     if (!isScriptUrl(url)) return {
       ok: false,
       message: "Paste the Web app link Google gave after Deploy (it starts with https://script.google.com/macros/s/ and ends with /exec)."
@@ -13099,8 +13217,8 @@ const action$4 = async ({
     };
   }
   if (intent === "gs-connect") {
-    const sa = parseServiceAccount(String(form2.get("key") ?? ""));
-    const id22 = spreadsheetIdFrom(String(form2.get("url") ?? ""));
+    const sa = parseServiceAccount(String(form.get("key") ?? ""));
+    const id22 = spreadsheetIdFrom(String(form.get("url") ?? ""));
     if (!sa) return {
       ok: false,
       message: "That doesn't look like a Google service-account key (the .json file). Paste its full contents."
@@ -13180,7 +13298,7 @@ const action$4 = async ({
       message: "Row added at the top."
     };
   }
-  const id2 = String(form2.get("id") ?? "");
+  const id2 = String(form.get("id") ?? "");
   const row = await prisma.orderSheet.findFirst({
     where: {
       id: id2,
@@ -13208,8 +13326,8 @@ const action$4 = async ({
     };
   }
   if (intent === "edit") {
-    const field = String(form2.get("field") ?? "");
-    const raw = String(form2.get("value") ?? "").trim().slice(0, 1e3);
+    const field = String(form.get("field") ?? "");
+    const raw = String(form.get("value") ?? "").trim().slice(0, 1e3);
     if (field === "remarks") {
       if (!row.isManual || !SHEET_STATUSES.includes(raw)) return {
         ok: false,
@@ -13342,8 +13460,8 @@ const app_orderSheet = UNSAFE_withComponentProps(function OrderSheet() {
   var _a2, _b, _c;
   const d = useLoaderData();
   const result = useActionData();
-  const nav2 = useNavigation();
-  const busy2 = nav2.state !== "idle";
+  const nav = useNavigation();
+  const busy2 = nav.state !== "idle";
   useAutoRefresh(d.tasks.some((t) => t.running) ? 1500 : 2e4);
   const link = (patch) => {
     const p = new URLSearchParams({
@@ -13705,14 +13823,14 @@ const app_orderSheet = UNSAFE_withComponentProps(function OrderSheet() {
             })
           }), /* @__PURE__ */ jsx("tbody", {
             children: d.periods.map((r) => {
-              const on2 = d.from === r.from && d.to === r.to;
+              const on = d.from === r.from && d.to === r.to;
               return /* @__PURE__ */ jsxs("tr", {
-                className: `${r.current ? "cur" : ""}${on2 ? " on" : ""}`,
+                className: `${r.current ? "cur" : ""}${on ? " on" : ""}`,
                 children: [/* @__PURE__ */ jsxs("td", {
                   children: [/* @__PURE__ */ jsx(Link, {
                     to: link({
-                      from: on2 ? "" : r.from,
-                      to: on2 ? "" : r.to,
+                      from: on ? "" : r.from,
+                      to: on ? "" : r.to,
                       status: "",
                       page: "1"
                     }),
@@ -14832,9 +14950,9 @@ const action$2 = async ({
     session
   } = await authenticate.admin(request);
   const shop = session.shop;
-  const form2 = await request.formData();
-  const intent = String(form2.get("intent"));
-  const id2 = clip(form2.get("id"), 40);
+  const form = await request.formData();
+  const intent = String(form.get("intent"));
+  const id2 = clip(form.get("id"), 40);
   if (intent === "delete") {
     await prisma.faq.deleteMany({
       where: {
@@ -14868,12 +14986,12 @@ const action$2 = async ({
     };
   }
   const data = {
-    title: clip(form2.get("title"), 80),
-    keywords: clip(form2.get("keywords"), 2e5),
-    replyEn: clip(form2.get("replyEn"), 1500),
-    replyHi: clip(form2.get("replyHi"), 1500),
-    replyHinglish: clip(form2.get("replyHinglish"), 1500),
-    questions: clip(form2.get("questions"), 2e4)
+    title: clip(form.get("title"), 80),
+    keywords: clip(form.get("keywords"), 2e5),
+    replyEn: clip(form.get("replyEn"), 1500),
+    replyHi: clip(form.get("replyHi"), 1500),
+    replyHinglish: clip(form.get("replyHinglish"), 1500),
+    questions: clip(form.get("questions"), 2e4)
   };
   const anyReply = !!(data.replyEn || data.replyHi || data.replyHinglish);
   if (!data.title || !data.keywords && !data.questions) {
@@ -14931,23 +15049,23 @@ const action$2 = async ({
   };
 };
 function FaqForm({
-  faq: faq2,
+  faq,
   busy: busy2
 }) {
-  const editing = !!(faq2 == null ? void 0 : faq2.id);
+  const editing = !!(faq == null ? void 0 : faq.id);
   return /* @__PURE__ */ jsxs(Form, {
     method: "post",
     children: [editing && /* @__PURE__ */ jsx("input", {
       type: "hidden",
       name: "id",
-      value: faq2.id
+      value: faq.id
     }), /* @__PURE__ */ jsxs("label", {
       className: "o-field",
       children: [/* @__PURE__ */ jsx("span", {
         children: "Title (for you only)"
       }), /* @__PURE__ */ jsx("input", {
         name: "title",
-        defaultValue: faq2 == null ? void 0 : faq2.title,
+        defaultValue: faq == null ? void 0 : faq.title,
         required: true,
         maxLength: 80,
         style: {
@@ -14960,8 +15078,8 @@ function FaqForm({
         children: "Keywords: sent when the message contains any of these (comma separated; English, Hindi or Hinglish)"
       }), /* @__PURE__ */ jsx("textarea", {
         name: "keywords",
-        rows: (faq2 == null ? void 0 : faq2.keywords) && faq2.keywords.length > 300 ? 6 : 2,
-        defaultValue: faq2 == null ? void 0 : faq2.keywords
+        rows: (faq == null ? void 0 : faq.keywords) && faq.keywords.length > 300 ? 6 : 2,
+        defaultValue: faq == null ? void 0 : faq.keywords
       })]
     }), /* @__PURE__ */ jsxs("label", {
       className: "o-field",
@@ -14969,8 +15087,8 @@ function FaqForm({
         children: "Questions, one per line (matched even if the customer words it differently)"
       }), /* @__PURE__ */ jsx("textarea", {
         name: "questions",
-        rows: (faq2 == null ? void 0 : faq2.questions) && faq2.questions.length > 200 ? 5 : 3,
-        defaultValue: faq2 == null ? void 0 : faq2.questions
+        rows: (faq == null ? void 0 : faq.questions) && faq.questions.length > 200 ? 5 : 3,
+        defaultValue: faq == null ? void 0 : faq.questions
       })]
     }), /* @__PURE__ */ jsxs("label", {
       className: "o-field",
@@ -14979,7 +15097,7 @@ function FaqForm({
       }), /* @__PURE__ */ jsx("textarea", {
         name: "replyEn",
         rows: 3,
-        defaultValue: faq2 == null ? void 0 : faq2.replyEn,
+        defaultValue: faq == null ? void 0 : faq.replyEn,
         maxLength: 1500
       })]
     }), /* @__PURE__ */ jsxs("label", {
@@ -14989,7 +15107,7 @@ function FaqForm({
       }), /* @__PURE__ */ jsx("textarea", {
         name: "replyHinglish",
         rows: 3,
-        defaultValue: faq2 == null ? void 0 : faq2.replyHinglish,
+        defaultValue: faq == null ? void 0 : faq.replyHinglish,
         maxLength: 1500
       })]
     }), /* @__PURE__ */ jsxs("label", {
@@ -14999,7 +15117,7 @@ function FaqForm({
       }), /* @__PURE__ */ jsx("textarea", {
         name: "replyHi",
         rows: 3,
-        defaultValue: faq2 == null ? void 0 : faq2.replyHi,
+        defaultValue: faq == null ? void 0 : faq.replyHi,
         maxLength: 1500
       })]
     }), /* @__PURE__ */ jsxs("div", {
@@ -15016,7 +15134,7 @@ function FaqForm({
           value: "toggle",
           disabled: busy2,
           formNoValidate: true,
-          children: faq2.enabled ? "Turn off" : "Turn on"
+          children: faq.enabled ? "Turn off" : "Turn on"
         }), /* @__PURE__ */ jsx("button", {
           className: "danger",
           name: "intent",
@@ -15030,7 +15148,7 @@ function FaqForm({
         })]
       })]
     })]
-  }, (faq2 == null ? void 0 : faq2.id) ?? "new");
+  }, (faq == null ? void 0 : faq.id) ?? "new");
 }
 const app_quickReplies = UNSAFE_withComponentProps(function QuickReplies() {
   const {
@@ -15100,9 +15218,9 @@ const loader$3 = async ({
   const q = (url.searchParams.get("q") ?? "").trim().slice(0, 80);
   const f = FILTERS.some(([k]) => k === url.searchParams.get("f")) ? url.searchParams.get("f") : "all";
   const rule = ruleById(url.searchParams.get("rule") ?? "") ? url.searchParams.get("rule") : "";
-  const page2 = Math.max(1, Number(url.searchParams.get("page")) || 1);
+  const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
   const askedTab = url.searchParams.get("tab") ?? "";
-  const tab = TABS.some(([k]) => k === askedTab) ? askedTab : q || rule || f !== "all" || page2 > 1 ? "products" : "overview";
+  const tab = TABS.some(([k]) => k === askedTab) ? askedTab : q || rule || f !== "all" || page > 1 ? "products" : "overview";
   const all = await prisma.seoProduct.findMany({
     where: {
       shop
@@ -15176,7 +15294,7 @@ const loader$3 = async ({
     }, {
       title: "asc"
     }],
-    skip: (page2 - 1) * PAGE,
+    skip: (page - 1) * PAGE,
     take: PAGE
   })]);
   const batches = await prisma.seoBatch.findMany({
@@ -15210,7 +15328,7 @@ const loader$3 = async ({
     q,
     f,
     rule,
-    page: page2,
+    page,
     pages: Math.max(1, Math.ceil(total / PAGE)),
     total,
     stats: {
@@ -15531,17 +15649,17 @@ function BatchPanel({
   });
 }
 function Importer({
-  ready: ready2
+  ready
 }) {
   const rv = useRevalidator();
-  const input2 = useRef(null);
+  const input = useRef(null);
   const [name, setName] = useState("");
   const [pv, setPv] = useState(null);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState(null);
   const reset = () => {
     setPv(null);
-    if (input2.current) input2.current.value = "";
+    if (input.current) input.current.value = "";
   };
   const pick2 = async (file) => {
     setError(null);
@@ -15568,7 +15686,7 @@ function Importer({
       tone: "critical",
       children: error
     }), !pv && /* @__PURE__ */ jsxs("label", {
-      className: `seo-drop ${ready2 && !checking ? "" : "off"}`,
+      className: `seo-drop ${ready && !checking ? "" : "off"}`,
       children: [/* @__PURE__ */ jsx(FileUp, {
         size: 22
       }), /* @__PURE__ */ jsx("b", {
@@ -15576,10 +15694,10 @@ function Importer({
       }), /* @__PURE__ */ jsx("span", {
         children: "Only the new_* columns are read. Nothing changes in Shopify yet: you see a preview first."
       }), /* @__PURE__ */ jsx("input", {
-        ref: input2,
+        ref: input,
         type: "file",
         accept: ".csv,text/csv",
-        disabled: !ready2 || checking,
+        disabled: !ready || checking,
         onChange: (e) => {
           var _a2;
           return ((_a2 = e.target.files) == null ? void 0 : _a2[0]) && pick2(e.target.files[0]);
@@ -15822,7 +15940,7 @@ function Meter({
   });
 }
 function Serp({
-  title: title2,
+  title,
   description,
   handle,
   shop
@@ -15842,7 +15960,7 @@ function Serp({
       })]
     }), /* @__PURE__ */ jsx("div", {
       className: "seo-serp-title",
-      children: title2
+      children: title
     }), /* @__PURE__ */ jsx("div", {
       className: "seo-serp-desc",
       children: description || /* @__PURE__ */ jsx("em", {
@@ -16493,11 +16611,11 @@ const action$1 = async ({
   const {
     session
   } = await authenticate.admin(request);
-  const form2 = await request.formData();
-  const intent = String(form2.get("intent") ?? "settings");
+  const form = await request.formData();
+  const intent = String(form.get("intent") ?? "settings");
   if (intent === "ai_save") {
     try {
-      await saveAiConfig(session.shop, form2);
+      await saveAiConfig(session.shop, form);
       return {
         ok: true,
         message: "AI settings saved."
@@ -16526,7 +16644,7 @@ const action$1 = async ({
       message: `Test failed: ${r.error}`
     };
   }
-  await saveSettings(session.shop, form2);
+  await saveSettings(session.shop, form);
   return {
     ok: true,
     message: "Settings saved"
@@ -16926,7 +17044,7 @@ const route34 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePrope
   headers,
   loader
 }, Symbol.toStringTag, { value: "Module" }));
-const serverManifest = { "entry": { "module": "/assets/entry.client-De-QXFzv.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-Bgn1TnLL.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index/route": { "id": "routes/_index/route", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-CYLeRfu0.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/bell-ring-CRKXtSW5.js", "/assets/zap-CNy5rcdW.js", "/assets/arrow-right-B_uRSdyZ.js", "/assets/arrow-up-right-BK7HNfeb.js", "/assets/check-CGWzhlUJ.js"], "css": ["/assets/route-2YDWwR1i.css"], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/health": { "id": "routes/health", "parentId": "root", "path": "health", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/health-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.cancelled": { "id": "routes/webhooks.orders.cancelled", "parentId": "root", "path": "webhooks/orders/cancelled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.cancelled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.create": { "id": "routes/webhooks.orders.create", "parentId": "root", "path": "webhooks/orders/create", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.create-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.updated": { "id": "routes/webhooks.orders.updated", "parentId": "root", "path": "webhooks/orders/updated", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.updated-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.products.update": { "id": "routes/webhooks.products.update", "parentId": "root", "path": "webhooks/products/update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.products.update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.avatar.$id": { "id": "routes/api.avatar.$id", "parentId": "root", "path": "api/avatar/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.avatar._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.finder.$": { "id": "routes/api.finder.$", "parentId": "root", "path": "api/finder/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.finder._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.image-editor.$": { "id": "routes/api.image-editor.$", "parentId": "root", "path": "api/image-editor/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.image-editor._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.media.$id": { "id": "routes/api.media.$id", "parentId": "root", "path": "api/media/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.media._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.send": { "id": "routes/api.send", "parentId": "root", "path": "api/send", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.send-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.seo.$": { "id": "routes/api.seo.$", "parentId": "root", "path": "api/seo/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.seo._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.webhooks.whatsapp": { "id": "routes/api.webhooks.whatsapp", "parentId": "root", "path": "api/webhooks/whatsapp", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.webhooks.whatsapp-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-UXTpoJXJ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/bell-ring-CRKXtSW5.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/wand-sparkles-wxyp7cgH.js", "/assets/scan-search-B8PBngg6.js", "/assets/zap-CNy5rcdW.js", "/assets/sparkles-xFG9LRwy.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-BBxBaZcE.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/wand-sparkles-wxyp7cgH.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/bell-ring-CRKXtSW5.js", "/assets/circle-check-C3rt3n8w.js", "/assets/arrow-right-B_uRSdyZ.js", "/assets/arrow-up-right-BK7HNfeb.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.conversations": { "id": "routes/app.conversations", "parentId": "routes/app", "path": "conversations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.conversations-BNXOjWJh.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.enquiries": { "id": "routes/app.enquiries", "parentId": "routes/app", "path": "enquiries", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.enquiries-COB6tued.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-bulk": { "id": "routes/app.image-bulk", "parentId": "routes/app", "path": "image-bulk", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-bulk-DqWooGbZ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-editor": { "id": "routes/app.image-editor", "parentId": "routes/app", "path": "image-editor", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-editor-oLxol0EM.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BdrjVghj.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/chevron-down-DgceB_EA.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/check-CGWzhlUJ.js", "/assets/sparkles-xFG9LRwy.js", "/assets/x-DIQ7-F4l.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-products": { "id": "routes/app.image-products", "parentId": "routes/app", "path": "image-products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-products-BRAmRHXP.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BdrjVghj.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/check-CGWzhlUJ.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/chevron-down-DgceB_EA.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.integrations": { "id": "routes/app.integrations", "parentId": "routes/app", "path": "integrations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.integrations-C5bXxipA.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.logs": { "id": "routes/app.logs", "parentId": "routes/app", "path": "logs", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.logs-lqPVshDm.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.order-sheet": { "id": "routes/app.order-sheet", "parentId": "routes/app", "path": "order-sheet", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.order-sheet-AP8WeaL_.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/x-DIQ7-F4l.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.orders": { "id": "routes/app.orders", "parentId": "routes/app", "path": "orders", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.orders-Dn87TNmU.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.product-scrapper": { "id": "routes/app.product-scrapper", "parentId": "routes/app", "path": "product-scrapper", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.product-scrapper-CpJb0ZY2.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/search-Brt88N_W.js", "/assets/trash-B5HXC6TW.js", "/assets/download-2kZZwBYa.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.products": { "id": "routes/app.products", "parentId": "routes/app", "path": "products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.products-bWC2Cbow.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.quick-replies": { "id": "routes/app.quick-replies", "parentId": "routes/app", "path": "quick-replies", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.quick-replies-C0KLsZI0.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.seo": { "id": "routes/app.seo", "parentId": "routes/app", "path": "seo", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.seo-BsTh6JKt.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/scan-search-B8PBngg6.js", "/assets/arrow-right-B_uRSdyZ.js", "/assets/circle-check-C3rt3n8w.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/chevron-down-DgceB_EA.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/rotate-ccw-B15igVXZ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.settings": { "id": "routes/app.settings", "parentId": "routes/app", "path": "settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.settings-7p8iI1f7.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.waiting": { "id": "routes/app.waiting", "parentId": "routes/app", "path": "waiting", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/app.waiting-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.whatsapp-web": { "id": "routes/app.whatsapp-web", "parentId": "routes/app", "path": "whatsapp-web", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.whatsapp-web-rkKNcRIT.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-0c154465.js", "version": "0c154465", "sri": void 0 };
+const serverManifest = { "entry": { "module": "/assets/entry.client-De-QXFzv.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-Bgn1TnLL.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index/route": { "id": "routes/_index/route", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-DhYL3arP.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/health": { "id": "routes/health", "parentId": "root", "path": "health", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/health-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.cancelled": { "id": "routes/webhooks.orders.cancelled", "parentId": "root", "path": "webhooks/orders/cancelled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.cancelled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.create": { "id": "routes/webhooks.orders.create", "parentId": "root", "path": "webhooks/orders/create", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.create-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.updated": { "id": "routes/webhooks.orders.updated", "parentId": "root", "path": "webhooks/orders/updated", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.updated-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.products.update": { "id": "routes/webhooks.products.update", "parentId": "root", "path": "webhooks/products/update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.products.update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.avatar.$id": { "id": "routes/api.avatar.$id", "parentId": "root", "path": "api/avatar/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.avatar._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.finder.$": { "id": "routes/api.finder.$", "parentId": "root", "path": "api/finder/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.finder._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.image-editor.$": { "id": "routes/api.image-editor.$", "parentId": "root", "path": "api/image-editor/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.image-editor._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.media.$id": { "id": "routes/api.media.$id", "parentId": "root", "path": "api/media/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.media._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.send": { "id": "routes/api.send", "parentId": "root", "path": "api/send", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.send-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.seo.$": { "id": "routes/api.seo.$", "parentId": "root", "path": "api/seo/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.seo._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.webhooks.whatsapp": { "id": "routes/api.webhooks.whatsapp", "parentId": "root", "path": "api/webhooks/whatsapp", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.webhooks.whatsapp-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-DV989wRF.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/wand-sparkles-BdPk82tl.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/sparkles-xFG9LRwy.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-DtrZvsik.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/wand-sparkles-BdPk82tl.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/circle-check-CgxXrolP.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.conversations": { "id": "routes/app.conversations", "parentId": "routes/app", "path": "conversations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.conversations-BNXOjWJh.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.enquiries": { "id": "routes/app.enquiries", "parentId": "routes/app", "path": "enquiries", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.enquiries-COB6tued.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-bulk": { "id": "routes/app.image-bulk", "parentId": "routes/app", "path": "image-bulk", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-bulk-DqWooGbZ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-editor": { "id": "routes/app.image-editor", "parentId": "routes/app", "path": "image-editor", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-editor-DecPYZBZ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-CYr-TWIU.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/chevron-down-DgceB_EA.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js", "/assets/x-DIQ7-F4l.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-products": { "id": "routes/app.image-products", "parentId": "routes/app", "path": "image-products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-products-gnF-_YWP.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-CYr-TWIU.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/chevron-down-DgceB_EA.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.integrations": { "id": "routes/app.integrations", "parentId": "routes/app", "path": "integrations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.integrations-C5bXxipA.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.logs": { "id": "routes/app.logs", "parentId": "routes/app", "path": "logs", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.logs-lqPVshDm.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.order-sheet": { "id": "routes/app.order-sheet", "parentId": "routes/app", "path": "order-sheet", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.order-sheet-AP8WeaL_.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/x-DIQ7-F4l.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.orders": { "id": "routes/app.orders", "parentId": "routes/app", "path": "orders", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.orders-Dn87TNmU.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.product-scrapper": { "id": "routes/app.product-scrapper", "parentId": "routes/app", "path": "product-scrapper", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.product-scrapper-CpJb0ZY2.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/search-Brt88N_W.js", "/assets/trash-B5HXC6TW.js", "/assets/download-2kZZwBYa.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.products": { "id": "routes/app.products", "parentId": "routes/app", "path": "products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.products-bWC2Cbow.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.quick-replies": { "id": "routes/app.quick-replies", "parentId": "routes/app", "path": "quick-replies", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.quick-replies-C0KLsZI0.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.seo": { "id": "routes/app.seo", "parentId": "routes/app", "path": "seo", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.seo-eZqunjrD.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/scan-search-B8PBngg6.js", "/assets/circle-check-CgxXrolP.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/chevron-down-DgceB_EA.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/rotate-ccw-B15igVXZ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.settings": { "id": "routes/app.settings", "parentId": "routes/app", "path": "settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.settings-7p8iI1f7.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.waiting": { "id": "routes/app.waiting", "parentId": "routes/app", "path": "waiting", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/app.waiting-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.whatsapp-web": { "id": "routes/app.whatsapp-web", "parentId": "routes/app", "path": "whatsapp-web", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.whatsapp-web-rkKNcRIT.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-2e63c9d1.js", "version": "2e63c9d1", "sri": void 0 };
 const assetsBuildDirectory = "build/client";
 const basename = "/";
 const future = { "unstable_optimizeDeps": false, "v8_passThroughRequests": false, "v8_trailingSlashAwareDataRequests": false, "unstable_previewServerPrerendering": false, "v8_middleware": false, "v8_splitRouteModules": false, "v8_viteEnvironmentApi": false };
