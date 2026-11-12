@@ -7,7 +7,7 @@ import { normalizePhone } from "./phone";
 import { clip, shortDate } from "./reply-format";
 import { resolveTrackingUrl } from "./tracking";
 
-export type Notice = { key: string; kind: "confirmed" | "dispatched" | "delivered"; text: string };
+export type Notice = { key: string; kind: "confirmed" | "dispatched" | "delivered" | "cancelled"; text: string };
 
 const MIN = 60_000;
 /** An order is "new" for this long after it was placed. Older orders never get a "confirmed" message (a full sync must not message old customers). */
@@ -55,7 +55,7 @@ const list = (rows: (string | null)[]) => {
 export function buildOrderNotices(o: any, now: number = Date.now()): { phone: string | null; notices: Notice[] } {
   const phone = orderPhone(o);
   const notices: Notice[] = [];
-  if (!o || o.cancelledAt) return { phone, notices };
+  if (!o) return { phone, notices };
 
   const name = firstName(o);
   const hello = name ? `, ${name}` : "";
@@ -66,6 +66,22 @@ export function buildOrderNotices(o: any, now: number = Date.now()): { phone: st
   const pay = paymentType(o);
   const payment = pay === "COD" ? "Pay on delivery (COD)" : pay === "Prepaid" ? "Paid" : "Payment pending";
   const brand = "WERY";
+
+  // 0. cancelled: one message, only right after the cancellation; a cancelled order gets no other message
+  if (o.cancelledAt) {
+    if (now - when(o.cancelledAt) < NEW_ORDER_MS) {
+      notices.push({
+        key: "cancelled",
+        kind: "cancelled",
+        text: [
+          `Hi${hello}, this is JAZZ from ${brand}. Your order ${orderName} has been cancelled. ❌`,
+          list([point(1, "Order Number", orderName), point(2, "Items", items), point(3, "Total", total)]),
+          `${pay === "Prepaid" ? "Since you paid online, the refund goes back to your original payment method. 💳\n" : ""}If this was not expected or you need any help, just reply here and we will look into it. 💬`,
+        ].join("\n\n"),
+      });
+    }
+    return { phone, notices };
+  }
 
   // 1. order confirmed
   if (when(o.createdAt) && now - when(o.createdAt) < NEW_ORDER_MS) {

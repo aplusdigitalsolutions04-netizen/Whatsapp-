@@ -613,7 +613,12 @@ test("order messages: a new order gets a confirmation from JAZZ", async () => {
 test("order messages: old orders, cancelled orders and orders without a phone are handled safely", async () => {
   const { buildOrderNotices }: any = await loadApp("/app/lib/order-notice.ts");
   assert.equal(buildOrderNotices(sample({ createdAt: ago(60 * 24 * 30) }), NOW).notices.length, 0, "an old order is never announced again");
-  assert.equal(buildOrderNotices(sample({ cancelledAt: ago(1) }), NOW).notices.length, 0);
+  const cancelled = buildOrderNotices(sample({ cancelledAt: ago(1) }), NOW);
+  assert.deepEqual(cancelled.notices.map((n: any) => n.key), ["cancelled"], "a just-cancelled order gets one cancellation message and nothing else");
+  assert.match(cancelled.notices[0].text, /has been cancelled/);
+  assert.match(cancelled.notices[0].text, /refund goes back to your original payment method/);
+  assert.equal(buildOrderNotices(sample({ createdAt: ago(60 * 24 * 5), cancelledAt: ago(60 * 24 * 4) }), NOW).notices.length, 0, "an old cancellation is not announced again");
+  assert.ok(!/refund/.test(buildOrderNotices(sample({ cancelledAt: ago(1), displayFinancialStatus: "PENDING", paymentGatewayNames: ["Cash on Delivery (COD)"] }), NOW).notices[0].text), "no refund line for a COD order");
   const none = buildOrderNotices(sample({ shippingAddress: { name: "X" } }), NOW);
   assert.equal(none.phone, null);
 });
