@@ -56,6 +56,7 @@ export default function WhatsAppWeb() {
           </Banner>
         )}
         {s.state === "error" && <Banner tone="critical">{s.error}</Banner>}
+        {s.state !== "error" && s.error && <Banner tone="warning">{s.error}</Banner>}
         {s.state === "starting" && <p className="o-p">Starting… a QR code will appear in a few seconds.</p>}
         {s.state === "stopped" && (
           <p className="o-p">{s.paired ? "Linked but not running." : "Not linked yet."} Click Connect to start.</p>

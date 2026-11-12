@@ -659,3 +659,19 @@ test("order messages: notifyOrder stores one message per event, never twice, and
   assert.equal(await prisma.conversation.count({ where: { shop: SHOP, phone: "+919811100002" } }), 0, "switched off: nothing is sent");
   await prisma.botSettings.deleteMany({ where: { shop: SHOP } });
 });
+
+test("WhatsApp bridge: a second copy of the app waits instead of fighting for the same login", async () => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const os = await import("node:os");
+  const file = `${mkdtempSync(`${os.tmpdir()}/wa-lock-`)}/bridge.lock`;
+  const { lockedByOther }: any = await loadApp("/app/lib/bridge.server.ts");
+  assert.equal(lockedByOther(file), false, "no lock file: free to connect");
+  writeFileSync(file, JSON.stringify({ pid: process.ppid, at: Date.now() }));
+  assert.equal(lockedByOther(file), true, "another live process holds a fresh lock");
+  writeFileSync(file, JSON.stringify({ pid: process.pid, at: Date.now() }));
+  assert.equal(lockedByOther(file), false, "our own lock does not block us");
+  writeFileSync(file, JSON.stringify({ pid: process.ppid, at: Date.now() - 120_000 }));
+  assert.equal(lockedByOther(file), false, "a lock nobody refreshed for two minutes is stale");
+  writeFileSync(file, JSON.stringify({ pid: 2_000_000, at: Date.now() }));
+  assert.equal(lockedByOther(file), false, "a lock whose process is gone is ignored");
+});

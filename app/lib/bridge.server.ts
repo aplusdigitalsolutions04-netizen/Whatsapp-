@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/rules-of-hooks, import/no-named-as-default */
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import QRCode from "qrcode";
 import makeWASocket, {
@@ -34,11 +34,17 @@ type Bridge = {
   retries: number;
   lastUpsertAt: number | null; // when WhatsApp last delivered any message event
   received: number;
+  connectedAt: number | null;
+  manualStop: boolean; // the person pressed Disconnect: do not reconnect by itself
+  watchdog: NodeJS.Timeout | null; // gives up on a connection attempt that never answers
+  heartbeat: NodeJS.Timeout | null; // keeps the "this copy of the app owns the login" lock fresh
+  reconnect: NodeJS.Timeout | null;
 };
 
 const g = globalThis as unknown as { __waBridge?: Bridge };
 const bridge: Bridge = (g.__waBridge ??= {
   state: "stopped", qr: null, error: null, number: null, sock: null, jids: new Map(), retries: 0, lastUpsertAt: null, received: 0,
+  connectedAt: null, manualStop: false, watchdog: null, heartbeat: null, reconnect: null,
 });
 
 const AUTH_DIR = path.resolve(process.env.WHATSAPP_AUTH_DIR || ".wa-auth");
@@ -47,6 +53,64 @@ export function activeProvider(): "qr" | "cloud" {
   const p = process.env.WHATSAPP_PROVIDER;
   if (p === "qr" || p === "cloud") return p;
   return process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID ? "cloud" : "qr";
+}
+
+// ---- one copy of the app at a time ----
+// Two copies of the app using the SAME WhatsApp login kick each other off again and again ("connection replaced").
+// This can happen on hosting (old and new process during a redeploy, or several worker processes). A small lock file
+// in the login folder says which process owns the connection; the others wait.
+const LOCK = path.join(AUTH_DIR, "bridge.lock");
+export function lockedByOther(file: string = LOCK): boolean {
+  try {
+    const l = JSON.parse(readFileSync(file, "utf8")) as { pid: number; at: number };
+    if (l.pid === process.pid || Date.now() - l.at > 45_000) return false;
+    try {
+      process.kill(l.pid, 0); // throws when that process is gone
+      return true;
+    } catch {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+}
+function writeLock() {
+  try {
+    mkdirSync(AUTH_DIR, { recursive: true });
+    writeFileSync(LOCK, JSON.stringify({ pid: process.pid, at: Date.now() }));
+  } catch {
+    /* the lock is a safety net, never a reason to fail */
+  }
+}
+function releaseLock() {
+  try {
+    const l = JSON.parse(readFileSync(LOCK, "utf8")) as { pid: number };
+    if (l.pid === process.pid) rmSync(LOCK, { force: true });
+  } catch {
+    /* no lock */
+  }
+}
+process.once("exit", releaseLock);
+
+const clearTimers = () => {
+  for (const k of ["watchdog", "reconnect"] as const) {
+    if (bridge[k]) clearTimeout(bridge[k]!);
+    bridge[k] = null;
+  }
+};
+const hasLogin = () => existsSync(path.join(AUTH_DIR, "creds.json"));
+
+/** Reconnect later. Waits longer after every failure (2 s, 4 s, 8 s ... up to 60 s) and never gives up while the login exists. */
+function scheduleReconnect(why: string, immediate = false) {
+  if (bridge.reconnect) return;
+  const wait = immediate ? 500 : Math.min(60_000, 2000 * 2 ** Math.min(bridge.retries, 5));
+  if (!immediate) bridge.retries++;
+  bridge.state = "stopped";
+  bridge.error = `${why} Reconnecting in ${Math.round(wait / 1000)} s…`;
+  bridge.reconnect = setTimeout(() => {
+    bridge.reconnect = null;
+    void startBridge();
+  }, wait);
 }
 
 export const bridgeStatus = () => ({
@@ -58,8 +122,30 @@ export const bridgeStatus = () => ({
 
 export async function startBridge() {
   if (bridge.state === "starting" || bridge.state === "qr" || bridge.state === "connected") return;
+  if (lockedByOther()) {
+    bridge.state = "stopped";
+    bridge.error = "Another copy of the app is connected to this WhatsApp login right now. Waiting for it to stop…";
+    if (!bridge.reconnect) bridge.reconnect = setTimeout(() => { bridge.reconnect = null; void startBridge(); }, 30_000);
+    return;
+  }
+  clearTimers();
+  bridge.manualStop = false;
   bridge.state = "starting";
   bridge.error = null;
+  writeLock();
+  bridge.heartbeat ??= setInterval(() => (bridge.state === "stopped" || bridge.state === "error" ? undefined : writeLock()), 15_000);
+  bridge.heartbeat.unref?.();
+  // A connection attempt that never answers must not leave the bridge stuck on "starting" forever.
+  bridge.watchdog = setTimeout(() => {
+    if (bridge.state !== "starting") return;
+    try {
+      bridge.sock?.end(undefined);
+    } catch {
+      /* already closed */
+    }
+    bridge.sock = null;
+    scheduleReconnect("WhatsApp did not answer.");
+  }, 90_000);
   try {
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: undefined }));
@@ -79,6 +165,10 @@ export async function startBridge() {
     sock.ev.on("messaging-history.set", (h: any) => rememberContacts(h?.contacts));
 
     sock.ev.on("connection.update", async (u: any) => {
+      if (u.qr || u.connection === "open" || u.connection === "close") {
+        if (bridge.watchdog) clearTimeout(bridge.watchdog);
+        bridge.watchdog = null;
+      }
       if (u.qr) {
         bridge.qr = await QRCode.toDataURL(u.qr, { margin: 1, width: 280 });
         bridge.state = "qr";
@@ -86,27 +176,48 @@ export async function startBridge() {
       if (u.connection === "open") {
         bridge.state = "connected";
         bridge.qr = null;
-        bridge.retries = 0;
+        bridge.error = null;
+        bridge.connectedAt = Date.now();
         bridge.number = String(sock.user?.id ?? "").split(/[:@]/)[0] || null;
         await logEvent({ source: "whatsapp", event: "bridge_connected", detail: bridge.number });
       }
       if (u.connection === "close") {
         const code = (u.lastDisconnect?.error as any)?.output?.statusCode;
         await logEvent({ source: "whatsapp", event: "bridge_closed", detail: `code=${code ?? "?"} ${redact(String((u.lastDisconnect?.error as any)?.message ?? ""), 120)}` });
-        bridge.sock = null;
+        try {
+          sock.end(undefined);
+        } catch {
+          /* already closed */
+        }
+        if (bridge.sock === sock) bridge.sock = null;
         bridge.qr = null;
+        if (bridge.manualStop) {
+          bridge.state = "stopped"; // the person pressed Disconnect; this close is the result, not a failure
+          return;
+        }
+        // A connection that stayed up for a minute was healthy: the next failure starts the waiting times from the beginning.
+        if (bridge.connectedAt && Date.now() - bridge.connectedAt > 60_000) bridge.retries = 0;
+        bridge.connectedAt = null;
         if (code === DisconnectReason.loggedOut) {
           rmSync(AUTH_DIR, { recursive: true, force: true });
           bridge.state = "stopped";
           bridge.number = null;
+          bridge.error = "WhatsApp logged this device out (it was removed in the phone's Linked devices). Scan the QR code again.";
           await logEvent({ source: "whatsapp", event: "bridge_logged_out" });
-        } else if (bridge.retries < 5) {
-          bridge.retries++;
-          bridge.state = "stopped";
-          setTimeout(() => void startBridge(), 2000 * bridge.retries);
-        } else {
+        } else if (code === DisconnectReason.connectionReplaced) {
+          // The same login is open somewhere else (another server, or a copy of the login folder on a PC). Fighting for it
+          // would disconnect both again and again, so stop and say so.
           bridge.state = "error";
-          bridge.error = "Connection lost repeatedly. Click Connect to try again.";
+          bridge.error = "This WhatsApp login was opened somewhere else (another server or your PC). Close it there, then press Connect.";
+          await logEvent({ source: "whatsapp", level: "error", event: "bridge_replaced", detail: bridge.error });
+        } else if (!hasLogin()) {
+          // Never paired: the QR code simply expired. Do not keep making new QR codes forever.
+          bridge.state = "stopped";
+          bridge.error = "The QR code expired. Press Connect to get a new one.";
+        } else if (code === DisconnectReason.restartRequired) {
+          scheduleReconnect("WhatsApp asked for a restart.", true); // normal right after scanning
+        } else {
+          scheduleReconnect(`Disconnected (code ${code ?? "?"}).`);
           await logEvent({ source: "whatsapp", level: "error", event: "bridge_error", detail: bridge.error });
         }
       }
@@ -190,6 +301,11 @@ async function refreshAvatar(from: string, jid: string) {
 export async function stopBridge(logout: boolean) {
   const sock = bridge.sock;
   bridge.sock = null;
+  bridge.manualStop = true;
+  clearTimers();
+  if (bridge.heartbeat) clearInterval(bridge.heartbeat);
+  bridge.heartbeat = null;
+  releaseLock();
   bridge.retries = 99; // suppress auto-reconnect from the close handler
   try {
     if (logout) await sock?.logout();
@@ -201,6 +317,7 @@ export async function stopBridge(logout: boolean) {
   bridge.state = "stopped";
   bridge.qr = null;
   bridge.number = logout ? null : bridge.number;
+  bridge.error = null;
   bridge.retries = 0;
 }
 
@@ -239,7 +356,23 @@ export async function bridgeSendText(
 
 /** Auto-reconnect after a server restart if this device was already paired. */
 export function autostartBridge() {
-  if (activeProvider() === "qr" && existsSync(path.join(AUTH_DIR, "creds.json"))) void startBridge();
+  if (activeProvider() === "qr" && existsSync(path.join(AUTH_DIR, "creds.json"))) {
+    void startBridge();
+    startKeepAlive();
+  }
+}
+
+/**
+ * Some hosting plans stop a Node app that has had no visitors for a while, which would disconnect WhatsApp.
+ * The app therefore opens its own public /health page every few minutes (only on a real https address).
+ */
+function startKeepAlive() {
+  const url = process.env.SHOPIFY_APP_URL;
+  if (!url || !/^https:\/\//.test(url)) return;
+  const g2 = globalThis as unknown as { __waKeepAlive?: NodeJS.Timeout };
+  if (g2.__waKeepAlive) return;
+  g2.__waKeepAlive = setInterval(() => void fetch(`${url}/health`, { signal: AbortSignal.timeout(15_000) }).catch(() => undefined), 4 * 60_000);
+  g2.__waKeepAlive.unref?.();
 }
 
 export async function bridgeSendMedia(
