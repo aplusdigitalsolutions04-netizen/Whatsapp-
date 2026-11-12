@@ -277,7 +277,6 @@ export default function App() {
       <header className="hero" id="home">
         <div className="wrap">
           <div>
-            <span className="pill">I&apos;M A CHAT ASSISTANT</span>
             <h1>Hi, I&apos;m <span className="name">JAZZ</span></h1>
             <h2>I <Typed /></h2>
             <p className="lead">I&apos;m the assistant inside ShopPilot. I answer your customers&apos; order, tracking and product questions in chat, day and night, and call you in when a person is needed.</p>
