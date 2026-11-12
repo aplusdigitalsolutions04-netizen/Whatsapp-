@@ -9,8 +9,8 @@ import { MASCOT_SVG } from "./mascot";
 import pageStyles from "./jazz.css?url";
 
 export const meta: MetaFunction = () => [
-  { title: "ShopPilot: WhatsApp bot, order updates and store tools for Shopify" },
-  { name: "description", content: "Hi, I'm JAZZ. I answer your customers' order, tracking and product questions on WhatsApp 24/7. Plus order sheet, product scrapper, image editor and SEO tools in one Shopify app." },
+  { title: "ShopPilot: chat bot, order updates and store tools for Shopify" },
+  { name: "description", content: "Hi, I'm JAZZ. I answer your customers' order, tracking and product questions in chat 24/7. Plus order sheet, product scrapper, image editor and SEO tools in one Shopify app." },
 ];
 
 export const links: LinksFunction = () => [{ rel: "stylesheet", href: pageStyles }];
@@ -78,11 +78,11 @@ const SKILLS: [string, string, string, number][] = [
 ];
 
 const TOOLS: [string, string][] = [
-  ["chat", "WhatsApp"], ["bag", "Shopify"], ["truck", "Delhivery"], ["sheet", "Google Sheets"],
+  ["chat", "Chat"], ["bag", "Shopify"], ["truck", "Delhivery"], ["sheet", "Google Sheets"],
 ];
 
 const SAYS = ["Hi! 👋 I'm JAZZ.", "Order #W0000 is on the way 🚚", "Total ₹1,499 · Delhivery", "नमस्ते! मैं मदद करूँ?", "Need a person? I'll alert your team 🔔"];
-const ROLES = ["answer orders on WhatsApp.", "track parcels for customers.", "speak Hindi, English & Hinglish.", "call you when it matters."];
+const ROLES = ["answer orders in chat.", "track parcels for customers.", "speak Hindi, English & Hinglish.", "call you when it matters."];
 const CODE = [
   '<span class="c">// customer</span>\n<span class="k">message</span>: <span class="s">"#W0000"</span>',
   '<span class="k">jazz</span>.verify(<span class="n">phone</span>)  <span class="s">✔ match</span>',
@@ -202,13 +202,21 @@ export default function App() {
     /* JAZZ's eyes follow the cursor; a happy hop on hover */
     const bot = el.querySelector<SVGSVGElement>("#bot");
     const eyes = el.querySelector<SVGGElement>("#eyes");
+    let eyeFrame = 0;
     const onMove = (e: PointerEvent) => {
-      if (!bot || !eyes) return;
-      const r = bot.getBoundingClientRect();
-      const dx = Math.max(-1, Math.min(1, (e.clientX - (r.left + r.width / 2)) / 400));
-      const dy = Math.max(-1, Math.min(1, (e.clientY - (r.top + r.height * 0.38)) / 400));
-      eyes.style.transform = `translate(${dx * 8}px, ${dy * 6}px)`;
+      if (!bot || !eyes || eyeFrame) return;
+      const { clientX, clientY } = e;
+      eyeFrame = requestAnimationFrame(() => {
+        eyeFrame = 0;
+        const r = bot.getBoundingClientRect();
+        const dx = Math.max(-1, Math.min(1, (clientX - (r.left + r.width / 2)) / 400));
+        const dy = Math.max(-1, Math.min(1, (clientY - (r.top + r.height * 0.38)) / 400));
+        eyes.style.transform = `translate(${dx * 8}px, ${dy * 6}px)`;
+      });
     };
+    const art = el.querySelector(".art");
+    const heroIo = art ? new IntersectionObserver(([e]) => el.classList.toggle("hero-off", !e.isIntersecting)) : null;
+    if (art) heroIo?.observe(art);
     const onEnter = () => bot?.animate([{ transform: "scale(1)" }, { transform: "scale(1.05) rotate(-1.5deg)" }, { transform: "scale(1)" }], { duration: 500, easing: "ease-out" });
     if (!reduce) { window.addEventListener("pointermove", onMove); bot?.addEventListener("pointerenter", onEnter); }
 
@@ -238,6 +246,8 @@ export default function App() {
 
     return () => {
       io.disconnect();
+      heroIo?.disconnect();
+      cancelAnimationFrame(eyeFrame);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("scroll", onScroll);
       bot?.removeEventListener("pointerenter", onEnter);
@@ -267,10 +277,10 @@ export default function App() {
       <header className="hero" id="home">
         <div className="wrap">
           <div>
-            <span className="pill">I&apos;M A WHATSAPP ASSISTANT</span>
+            <span className="pill">I&apos;M A CHAT ASSISTANT</span>
             <h1>Hi, I&apos;m <span className="name">JAZZ</span></h1>
             <h2>I <Typed /></h2>
-            <p className="lead">I&apos;m the assistant inside ShopPilot. I answer your customers&apos; order, tracking and product questions on WhatsApp, day and night, and call you in when a person is needed.</p>
+            <p className="lead">I&apos;m the assistant inside ShopPilot. I answer your customers&apos; order, tracking and product questions in chat, day and night, and call you in when a person is needed.</p>
             <div className="cta" id="start">
               {showForm ? <LoginForm errors={errors} id="shop-hero" /> : <a className="btn primary" href="#work">See What I Do <Ico n="out" w={2.2} /></a>}
             </div>
@@ -341,7 +351,7 @@ export default function App() {
               <div className="shot"><span className="num">01</span>
                 <div className="m-chat"><div className="me">#W0000</div><div className="jz">Order #W0000 · Fulfilled · ₹1,499</div><div className="jz">Delhivery · DL123456789</div><div className="jz" style={{ color: "#80664f" }}>delhivery.com/track-v2/…</div></div>
               </div>
-              <div className="pbody"><h3>WhatsApp Order Bot</h3><p>Status, courier, tracking ID and a pre-filled Delhivery link in short numbered steps.</p><a href="#start">View Feature <Ico n="out" w={2.4} /></a></div>
+              <div className="pbody"><h3>Chat Order Bot</h3><p>Status, courier, tracking ID and a pre-filled Delhivery link in short numbered steps.</p><a href="#start">View Feature <Ico n="out" w={2.4} /></a></div>
             </article>
             <article className="pcard reveal" style={{ transitionDelay: ".1s" }}>
               <div className="shot"><span className="num">02</span>

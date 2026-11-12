@@ -5,6 +5,7 @@ export const MASCOT_SVG = `<svg id="bot" viewBox="0 0 420 480" role="img" aria-l
           <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a382a"/><stop offset="1" stop-color="#1f1710"/></linearGradient>
           <linearGradient id="visor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0f0a06"/><stop offset="1" stop-color="#1c130c"/></linearGradient>
           <radialGradient id="jet" cx=".5" cy="0" r="1"><stop offset="0" stop-color="#ffd89a" stop-opacity=".95"/><stop offset="1" stop-color="#e8a96b" stop-opacity="0"/></radialGradient>
+          <radialGradient id="eg" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ffd89a" stop-opacity=".55"/><stop offset="1" stop-color="#ffd89a" stop-opacity="0"/></radialGradient>
           <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
         </defs>
 
@@ -30,7 +31,7 @@ export const MASCOT_SVG = `<svg id="bot" viewBox="0 0 420 480" role="img" aria-l
           <rect x="138" y="248" width="144" height="146" rx="50" fill="url(#gold)"/>
           <rect x="152" y="258" width="116" height="22" rx="11" fill="#fff" opacity=".18"/>
           <rect x="160" y="284" width="100" height="66" rx="18" fill="#1a120c"/>
-          <polyline class="beat" points="168,318 188,318 196,300 206,336 216,310 224,318 252,318" fill="none" stroke="#ffd89a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+          <polyline class="beat" points="168,318 188,318 196,300 206,336 216,310 224,318 252,318" fill="none" stroke="#ffd89a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
           <circle cx="210" cy="372" r="12" fill="#2a1f16"/><text x="210" y="377" text-anchor="middle" font-size="14" font-weight="800" fill="#ffd89a" font-family="Inter,Arial">J</text>
 
           <!-- waving right arm (raised) -->
@@ -39,7 +40,7 @@ export const MASCOT_SVG = `<svg id="bot" viewBox="0 0 420 480" role="img" aria-l
           <!-- head -->
           <line x1="210" y1="100" x2="210" y2="66" stroke="url(#gold)" stroke-width="6" stroke-linecap="round"/>
           <circle class="ant" cx="210" cy="54" r="12" fill="#ffd89a"/>
-          <circle cx="210" cy="54" r="12" fill="url(#gold)" filter="url(#glow)"/>
+          <circle cx="210" cy="54" r="12" fill="url(#gold)"/>
           <circle cx="206" cy="50" r="3.5" fill="#fff" opacity=".8"/>
           <path d="M104 150C104 62 316 62 316 150" fill="none" stroke="url(#gold)" stroke-width="9" stroke-linecap="round"/>
           <rect x="108" y="98" width="204" height="152" rx="66" fill="url(#shell)" stroke="#d9b98a" stroke-opacity=".45" stroke-width="1.5"/>
@@ -50,9 +51,9 @@ export const MASCOT_SVG = `<svg id="bot" viewBox="0 0 420 480" role="img" aria-l
           <path d="M313 192C330 240 296 246 270 240" fill="none" stroke="#2a1f16" stroke-width="6" stroke-linecap="round"/>
           <circle cx="266" cy="240" r="8" fill="url(#gold)"/>
           <!-- eyes (follow the cursor) -->
-          <g id="eyes" class="pupil">
-            <rect class="eyeL" x="156" y="146" width="34" height="42" rx="15" fill="#ffd89a" filter="url(#glow)"/>
-            <rect class="eyeR" x="230" y="146" width="34" height="42" rx="15" fill="#ffd89a" filter="url(#glow)"/>
+          <g id="eyes" class="pupil"><ellipse cx="173" cy="167" rx="38" ry="44" fill="url(#eg)"/><ellipse cx="247" cy="167" rx="38" ry="44" fill="url(#eg)"/>
+            <rect class="eyeL" x="156" y="146" width="34" height="42" rx="15" fill="#ffd89a"/>
+            <rect class="eyeR" x="230" y="146" width="34" height="42" rx="15" fill="#ffd89a"/>
             <circle cx="170" cy="160" r="5" fill="#fff" opacity=".85"/><circle cx="244" cy="160" r="5" fill="#fff" opacity=".85"/>
           </g>
           <circle cx="146" cy="204" r="9" fill="#ff9f7a" opacity=".28"/><circle cx="274" cy="204" r="9" fill="#ff9f7a" opacity=".28"/>

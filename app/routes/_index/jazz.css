@@ -334,3 +334,19 @@ html:has(.jp){scroll-behavior:smooth}
 .jp .botwrap{position:relative;z-index:2;width:100%;display:grid;place-items:center}
 body:has(.jp){margin:0;background:#faf8f4}
 html:has(.jp){background:#faf8f4}
+
+/* ===== speed: nothing here repaints big areas on every frame ===== */
+.jp .ambient i{filter:none;opacity:1;will-change:transform}
+.jp .ambient i:nth-child(1){background:radial-gradient(circle,rgba(236,217,192,.9),rgba(236,217,192,0) 68%)}
+.jp .ambient i:nth-child(2){background:radial-gradient(circle,rgba(227,207,182,.8),rgba(227,207,182,0) 68%)}
+.jp .ambient i:nth-child(3){background:radial-gradient(circle,rgba(243,230,208,.9),rgba(243,230,208,0) 68%)}
+.jp nav.top{-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.jp .logo svg{filter:none}
+.jp .halo{animation:halo 9s ease-in-out infinite}
+@keyframes halo{50%{transform:translate(-50%,-52%) scale(1.04)}}
+.jp .tool{animation:none}
+.jp .dots{animation:none}
+.jp .bar i::after{display:none}
+.jp #bot{filter:none;will-change:transform}
+.jp .card-code{-webkit-backdrop-filter:none;backdrop-filter:none;background:rgba(255,255,255,.97)}
+.jp.hero-off .art,.jp.hero-off .art *,.jp.hero-off .art *::before,.jp.hero-off .art *::after{animation-play-state:paused!important}
