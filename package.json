@@ -40,15 +40,13 @@
     "fflate": "^0.8.3",
     "isbot": "^5.1.31",
     "lucide-react": "^1.65.0",
-    "playwright-core": "^1.64.1",
     "prisma": "^6.16.3",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router": "7.18.2",
     "vite-tsconfig-paths": "^5.1.4",
-    "sharp": "0.35.5",
-    "@imgly/background-removal-node": "1.4.5"
+    "sharp": "0.35.5"
   },
   "devDependencies": {
     "@shopify/api-codegen-preset": "^1.2.0",
@@ -90,5 +88,9 @@
       "qs": "^6.16.0"
     }
   },
-  "author": "sharm"
+  "author": "sharm",
+  "optionalDependencies": {
+    "@imgly/background-removal-node": "1.4.5",
+    "playwright-core": "^1.64.1"
+  }
 }

@@ -93,7 +93,12 @@ type PageSource = { kind: "browser" | "http"; load: (url: string, scroll?: boole
 
 async function launchBrowser() {
   if (process.env.FINDER_NO_BROWSER === "1") return null;
-  const { chromium } = await import("playwright-core");
+  let chromium: any;
+  try {
+    ({ chromium } = await import("playwright-core"));
+  } catch {
+    return null; // package not installed: fall back to plain web requests
+  }
   for (const channel of ["chrome", "msedge"]) {
     try {
       return await chromium.launch({ channel, headless: true });

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { existsSync, readdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import prisma from "../db.server";
 
@@ -15,7 +16,13 @@ async function imageLibrary() {
   try {
     const m: any = await import("sharp");
     const sharp = m.default ?? m;
-    return { ok: true, version: String(sharp.versions?.sharp ?? "?") };
+    let backgroundRemoval = true;
+    try {
+      createRequire(import.meta.url).resolve("@imgly/background-removal-node");
+    } catch {
+      backgroundRemoval = false;
+    }
+    return { ok: true, version: String(sharp.versions?.sharp ?? "?"), backgroundRemoval };
   } catch (e) {
     return { ok: false, error: String((e as Error).message ?? e).split("\n")[0].slice(0, 300) };
   }

@@ -139,10 +139,19 @@ export async function processImage(task) {
     .png({ compressionLevel: 1 })
     .toBuffer();
 
-  // 2. background removal
+  // 2. background removal (optional: when the AI package is not installed on this server the photo is still edited)
   let subject = workBuf;
-  if (o.removeBg) {
-    const remove = await getRemover();
+  let removeBg = o.removeBg;
+  let remove = null;
+  if (removeBg) {
+    try {
+      remove = await getRemover();
+    } catch {
+      removeBg = false;
+      note = "Background removal is not available on this server, so the photo was only resized and placed on the background.";
+    }
+  }
+  if (removeBg) {
     const blob = await remove(new Blob([workBuf], { type: "image/png" }), { model: o.bgQuality === "quality" ? "medium" : "small", output: { format: "image/png" } });
     subject = Buffer.from(await blob.arrayBuffer());
     if (!(await hasTransparency(subject))) throw new Error("No background could be removed from this photo. Turn off Remove background for it.");
@@ -150,7 +159,7 @@ export async function processImage(task) {
 
   // 3. enhance + trim
   if (o.enhance) subject = await sharp(subject).normalise().modulate({ brightness: 1.03, saturation: 1.06 }).sharpen({ sigma: 0.6 }).png({ compressionLevel: 1 }).toBuffer();
-  if (o.removeBg) {
+  if (removeBg) {
     const b = await alphaBounds(subject);
     if (!b) throw new Error("Nothing was left after removing the background.");
     if (o.trim) subject = await sharp(subject).extract({ left: b.left, top: b.top, width: b.width, height: b.height }).png({ compressionLevel: 1 }).toBuffer();
@@ -181,7 +190,7 @@ export async function processImage(task) {
 
   const layers = [];
   if (o.shadow !== "none" && o.shadowStrength > 0) {
-    if (!o.removeBg) note = "Shadow needs Remove background (there is no outline to shadow).";
+    if (!removeBg) note = note || "Shadow needs Remove background (there is no outline to shadow).";
     else {
       const s = await shadowLayer(placed.data, w, h, o);
       layers.push({ input: s.buf, left: Math.max(0, left + s.dx), top: Math.max(0, top + s.dy) });

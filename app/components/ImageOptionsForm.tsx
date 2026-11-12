@@ -109,7 +109,7 @@ export function ImageOptionsForm({ opts, setOpts, preset, setPreset, lockFormat 
 
       <div className="ox-grid">
         <Panel icon={Eraser} title="Background removal" summary={opts.removeBg ? `On · ${opts.bgQuality === "quality" ? "better edges" : "faster"}${opts.trim ? " · cropped" : ""}` : "Off · photo kept as it is"}>
-          <Switch checked={opts.removeBg} onChange={(v) => set("removeBg", v)} label="Remove the background" hint="AI does this on your computer, nothing is sent anywhere." />
+          <Switch checked={opts.removeBg} onChange={(v) => set("removeBg", v)} label="Remove the background (optional)" hint="Off by default. Turn it on only when you want the product cut out. It uses a lot of memory, so on a small server keep it off." />
           <div className={`ox-sub${opts.removeBg ? "" : " off"}`}>
             <span className="ox-label">Cut-out quality</span>
             <Seg label="Cut-out quality" value={opts.bgQuality} disabled={!opts.removeBg} onChange={(v) => set("bgQuality", v)} options={[{ v: "quality", label: "Better edges" }, { v: "fast", label: "Faster" }]} />

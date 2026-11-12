@@ -25,7 +25,8 @@ export type ImageOptions = {
 };
 
 export const DEFAULT_OPTIONS: ImageOptions = {
-  removeBg: true,
+  // Off by default: the AI cut-out is optional and needs a lot of memory. The person switches it on when they want it.
+  removeBg: false,
   bgQuality: "quality",
   width: 1600,
   height: 1600,
@@ -34,7 +35,7 @@ export const DEFAULT_OPTIONS: ImageOptions = {
   trim: true,
   background: "color",
   color: "#ffffff",
-  shadow: "floor",
+  shadow: "none",
   shadowStrength: 40,
   enhance: false,
   format: "jpg",
@@ -49,9 +50,9 @@ export const LIMITS = { maxFiles: 500, maxFileBytes: 25 * 1024 * 1024, maxPixels
 export type Preset = { id: string; label: string; hint: string; options: Partial<ImageOptions> };
 
 export const PRESETS: Preset[] = [
-  { id: "shopify", label: "Shopify product", hint: "Square 2048, white background, soft shadow", options: { width: 2048, height: 2048, removeBg: true, background: "color", color: "#ffffff", shadow: "floor", padding: 8, format: "jpg", quality: 90 } },
-  { id: "marketplace", label: "Marketplace (Amazon / Flipkart)", hint: "Square 1600, pure white, no shadow", options: { width: 1600, height: 1600, removeBg: true, background: "color", color: "#ffffff", shadow: "none", padding: 6, format: "jpg", quality: 90, maxKB: 0 } },
-  { id: "instagram", label: "Instagram 4:5", hint: "1080 x 1350, soft studio background", options: { width: 1080, height: 1350, removeBg: true, background: "gradient", shadow: "soft", padding: 10, format: "jpg", quality: 88 } },
+  { id: "shopify", label: "Shopify product", hint: "Square 2048, white background", options: { width: 2048, height: 2048, removeBg: false, background: "color", color: "#ffffff", shadow: "none", padding: 8, format: "jpg", quality: 90 } },
+  { id: "marketplace", label: "Marketplace (Amazon / Flipkart)", hint: "Square 1600, pure white, no shadow", options: { width: 1600, height: 1600, removeBg: false, background: "color", color: "#ffffff", shadow: "none", padding: 6, format: "jpg", quality: 90, maxKB: 0 } },
+  { id: "instagram", label: "Instagram 4:5", hint: "1080 x 1350, soft studio background", options: { width: 1080, height: 1350, removeBg: false, background: "gradient", shadow: "none", padding: 10, format: "jpg", quality: 88 } },
   { id: "cutout", label: "Transparent cut-out", hint: "PNG with no background, tightly cropped", options: { width: 2000, height: 2000, removeBg: true, background: "transparent", shadow: "none", padding: 4, format: "png" } },
   { id: "compress", label: "Resize and compress only", hint: "Keeps the photo as it is, makes it light for the web", options: { width: 1600, height: 1600, removeBg: false, fit: "photo", background: "color", color: "#ffffff", shadow: "none", padding: 0, trim: false, format: "webp", quality: 82, maxKB: 300 } },
 ];
