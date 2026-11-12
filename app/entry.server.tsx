@@ -2,16 +2,24 @@ import { PassThrough } from "stream";
 import { renderToPipeableStream } from "react-dom/server";
 import { ServerRouter } from "react-router";
 import { createReadableStreamFromReadable } from "@react-router/node";
-import { type EntryContext } from "react-router";
+import { type ActionFunctionArgs, type EntryContext, type LoaderFunctionArgs } from "react-router";
 import { isbot } from "isbot";
 import { addDocumentResponseHeaders } from "./shopify.server";
 import { autostartBridge } from "./lib/bridge.server";
 import { startOrderSync } from "./lib/order-sync.server";
+import { rememberError } from "./lib/error-memory.server";
 
 autostartBridge();
 startOrderSync();
 
 export const streamTimeout = 5000;
+
+// Errors thrown in loaders and actions: print them (the host's log) and remember them for /health?debug=1.
+export function handleError(error: unknown, { request }: LoaderFunctionArgs | ActionFunctionArgs) {
+  if (request.signal.aborted) return;
+  rememberError(error, request.url);
+  console.error(error);
+}
 
 export default async function handleRequest(
   request: Request,
@@ -50,6 +58,7 @@ export default async function handleRequest(
         },
         onError(error) {
           responseStatusCode = 500;
+          rememberError(error);
           console.error(error);
         },
       }

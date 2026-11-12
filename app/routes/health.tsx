@@ -2,7 +2,9 @@
 import { existsSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import type { LoaderFunctionArgs } from "react-router";
 import prisma from "../db.server";
+import { recentErrors } from "../lib/error-memory.server";
 
 // GET /health: used by Docker / uptime monitors. Not behind the Shopify login and returns no private data.
 // "assets" is the number of built browser files found next to the server; 0 means the page would load without styles/scripts.
@@ -28,10 +30,22 @@ async function imageLibrary() {
   }
 }
 
-export const loader = async () => {
+/** Do the app's database client and the database itself both know the newest columns? A mismatch makes pages answer 500. */
+async function schemaCheck() {
+  try {
+    await prisma.botSettings.findFirst({ select: { savedNumbers: true } });
+    await prisma.finderProduct.findFirst({ select: { sku: true, description: true } });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String((e as Error).message ?? e).split("\n").filter(Boolean).slice(-2).join(" ").slice(0, 300) };
+  }
+}
+
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const debug = new URL(request.url).searchParams.get("debug") === "1";
   try {
     await prisma.$queryRaw`SELECT 1`;
-    return Response.json({ ok: true, assets: assetCount(), image: await imageLibrary() }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ ok: true, assets: assetCount(), image: await imageLibrary(), schema: await schemaCheck(), ...(debug ? { recentErrors: recentErrors() } : {}) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("[health] database check failed:", error);
     return Response.json({ ok: false, problem: "database" }, { status: 503, headers: { "Cache-Control": "no-store" } });

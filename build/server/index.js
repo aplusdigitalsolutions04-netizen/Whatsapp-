@@ -132,17 +132,17 @@ function parseNumberList(raw) {
   }
   return [...out];
 }
-const inList = (phone, list) => list.some((n) => samePhone(n, phone));
+const inList = (phone, list2) => list2.some((n) => samePhone(n, phone));
 const FILE = path.join(path.resolve(process.env.WHATSAPP_AUTH_DIR || ".wa-auth"), "saved-contacts.json");
-const g$8 = globalThis;
+const g$9 = globalThis;
 function load() {
-  if (g$8.__savedContacts) return g$8.__savedContacts;
+  if (g$9.__savedContacts) return g$9.__savedContacts;
   const set = /* @__PURE__ */ new Set();
   try {
     if (existsSync(FILE)) for (const n of JSON.parse(readFileSync(FILE, "utf8"))) set.add(n);
   } catch {
   }
-  g$8.__savedContacts = set;
+  g$9.__savedContacts = set;
   return set;
 }
 let timer = null;
@@ -167,11 +167,11 @@ function contactNumber(c) {
   }
   return null;
 }
-function rememberContacts(list) {
-  if (!Array.isArray(list)) return;
+function rememberContacts(list2) {
+  if (!Array.isArray(list2)) return;
   const set = load();
   let changed = false;
-  for (const c of list) {
+  for (const c of list2) {
     const n = contactNumber(c);
     if (!n) continue;
     if ((c == null ? void 0 : c.name) && !set.has(n)) {
@@ -522,8 +522,8 @@ function buildIndex$1(faqs) {
       if (tokens2.length < 2) continue;
       const q = { faq, tokens: tokens2 };
       for (const t of tokens2) {
-        const list = byToken.get(t);
-        if (list) list.push(q);
+        const list2 = byToken.get(t);
+        if (list2) list2.push(q);
         else byToken.set(t, [q]);
       }
     }
@@ -2040,12 +2040,12 @@ async function orderOverview(shop, conv, s, deps, lang) {
   if (orders.length === 1) return deliverOrder(shop, conv, orders[0], s);
   const shown = orders.slice(0, 5);
   await update(conv, { state: "awaiting_order_selection", pendingOrders: JSON.stringify(shown.map((o) => o.source === "ims" ? `ims:${o.name}` : o.id)) });
-  const list = numbered(
+  const list2 = numbered(
     shown.map((o) => `${o.name} — ${o.cancelled ? L.cancelled : (lang === "hi" ? statusHi(o.fulfillmentStatus) : null) ?? (titleCase(o.fulfillmentStatus) || L.unknownStatus)} (${shortDate(o.createdAt, L.locale) ?? "—"})`)
   );
   return `${t.chooseOrder}
 
-${list}`;
+${list2}`;
 }
 async function phoneFlow(shop, conv, typed, s, deps, lang) {
   const sender = normalizePhone(conv.phone);
@@ -2468,8 +2468,8 @@ async function processEvent(eventId) {
     await logEvent({ source: "whatsapp", level: "error", event: "event_failed", detail: e.message });
   }
 }
-const g$7 = globalThis;
-const bridge = g$7.__waBridge ?? (g$7.__waBridge = {
+const g$8 = globalThis;
+const bridge = g$8.__waBridge ?? (g$8.__waBridge = {
   state: "stopped",
   qr: null,
   error: null,
@@ -3106,8 +3106,8 @@ function appsScriptCode(token) {
     ""
   ].join("\n");
 }
-const g$6 = globalThis;
-const tasks = g$6.__tasks ?? (g$6.__tasks = /* @__PURE__ */ new Map());
+const g$7 = globalThis;
+const tasks = g$7.__tasks ?? (g$7.__tasks = /* @__PURE__ */ new Map());
 const key = (shop, id2) => `${shop}:${id2}`;
 const STALE_MS = 30 * 6e4;
 const SHOW_DONE_MS = 6e3;
@@ -3139,8 +3139,8 @@ const CHUNK = 1e3;
 const DEBOUNCE_MS = 15e3;
 const b64url = (b) => Buffer.from(b).toString("base64url");
 const sleep$1 = (ms) => new Promise((r) => setTimeout(r, ms));
-const g$5 = globalThis;
-const mem = g$5.__gsheet ?? (g$5.__gsheet = { tokens: /* @__PURE__ */ new Map(), timers: /* @__PURE__ */ new Map(), running: /* @__PURE__ */ new Set(), again: /* @__PURE__ */ new Set() });
+const g$6 = globalThis;
+const mem = g$6.__gsheet ?? (g$6.__gsheet = { tokens: /* @__PURE__ */ new Map(), timers: /* @__PURE__ */ new Map(), running: /* @__PURE__ */ new Set(), again: /* @__PURE__ */ new Set() });
 async function accessToken(email, privateKey) {
   const hit = mem.tokens.get(email);
   if (hit && hit.exp > Date.now() + 6e4) return hit.token;
@@ -3363,8 +3363,8 @@ function scheduleSheetPush(shop, delay = DEBOUNCE_MS) {
 const PAGE$1 = 50;
 const OVERLAP_MS = 10 * 6e4;
 const INTERVAL_MS = 5 * 6e4;
-const g$4 = globalThis;
-const state$1 = g$4.__orderSync ?? (g$4.__orderSync = { running: /* @__PURE__ */ new Set(), timer: null });
+const g$5 = globalThis;
+const state$1 = g$5.__orderSync ?? (g$5.__orderSync = { running: /* @__PURE__ */ new Set(), timer: null });
 const orderGid = (id2) => `gid://shopify/Order/${id2}`;
 async function syncOrderById(shop, gid) {
   const data = await gql(shop, `query($id: ID!) { order(id: $id) { ${ORDER_SHEET_FIELDS} } }`, { id: gid });
@@ -3469,9 +3469,30 @@ function startOrderSync() {
   state$1.timer = setInterval(tick, INTERVAL_MS);
   (_b = (_a2 = state$1.timer).unref) == null ? void 0 : _b.call(_a2);
 }
+const g$4 = globalThis;
+const list = g$4.__lastErrors ?? (g$4.__lastErrors = []);
+function rememberError(error, url) {
+  var _a2;
+  let where = "";
+  try {
+    where = url ? new URL(url).pathname : "";
+  } catch {
+  }
+  const e = error;
+  const text2 = String((e == null ? void 0 : e.message) ?? error ?? "unknown error");
+  const frame = ((_a2 = String((e == null ? void 0 : e.stack) ?? "").split("\n").find((l) => /\/(build|app|node_modules)\//.test(l))) == null ? void 0 : _a2.trim()) ?? "";
+  list.unshift({ at: (/* @__PURE__ */ new Date()).toISOString(), where, message: redact(`${text2} ${frame}`.trim(), 500) });
+  list.length = Math.min(list.length, 5);
+}
+const recentErrors = () => list.slice();
 autostartBridge();
 startOrderSync();
 const streamTimeout = 5e3;
+function handleError(error, { request }) {
+  if (request.signal.aborted) return;
+  rememberError(error, request.url);
+  console.error(error);
+}
 async function handleRequest(request, responseStatusCode, responseHeaders, reactRouterContext) {
   addDocumentResponseHeaders(request, responseHeaders);
   const userAgent = request.headers.get("user-agent");
@@ -3503,6 +3524,7 @@ async function handleRequest(request, responseStatusCode, responseHeaders, react
         },
         onError(error) {
           responseStatusCode = 500;
+          rememberError(error);
           console.error(error);
         }
       }
@@ -3513,6 +3535,7 @@ async function handleRequest(request, responseStatusCode, responseHeaders, react
 const entryServer = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: handleRequest,
+  handleError,
   streamTimeout
 }, Symbol.toStringTag, { value: "Module" }));
 const root = UNSAFE_withComponentProps(function App() {
@@ -4616,13 +4639,43 @@ async function imageLibrary() {
     };
   }
 }
-const loader$q = async () => {
+async function schemaCheck() {
+  try {
+    await prisma.botSettings.findFirst({
+      select: {
+        savedNumbers: true
+      }
+    });
+    await prisma.finderProduct.findFirst({
+      select: {
+        sku: true,
+        description: true
+      }
+    });
+    return {
+      ok: true
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: String(e.message ?? e).split("\n").filter(Boolean).slice(-2).join(" ").slice(0, 300)
+    };
+  }
+}
+const loader$q = async ({
+  request
+}) => {
+  const debug = new URL(request.url).searchParams.get("debug") === "1";
   try {
     await prisma.$queryRaw`SELECT 1`;
     return Response.json({
       ok: true,
       assets: assetCount(),
-      image: await imageLibrary()
+      image: await imageLibrary(),
+      schema: await schemaCheck(),
+      ...debug ? {
+        recentErrors: recentErrors()
+      } : {}
     }, {
       headers: {
         "Cache-Control": "no-store"
@@ -5306,14 +5359,14 @@ async function fetchImage(url, referer) {
 }
 async function downloadImages(urls, dir, referer) {
   mkdirSync(dir, { recursive: true });
-  const list = urls.slice(0, 12);
-  const got = new Array(list.length).fill(null);
+  const list2 = urls.slice(0, 12);
+  const got = new Array(list2.length).fill(null);
   let next = 0;
   await Promise.all(
     Array.from({ length: 6 }, async () => {
-      while (next < list.length) {
+      while (next < list2.length) {
         const i = next++;
-        got[i] = await fetchImage(list[i], referer);
+        got[i] = await fetchImage(list2[i], referer);
       }
     })
   );
@@ -6261,17 +6314,17 @@ async function lookupSkus(ctx, skus) {
       for (const v of ((_b = p.variants) == null ? void 0 : _b.nodes) ?? []) {
         const key2 = String(v.sku ?? "").trim().toLowerCase();
         if (!key2) continue;
-        const list = found.get(key2) ?? [];
-        if (!list.some((x) => x.id === p.id)) list.push({ id: p.id, title: p.title, imageCount: ((_c = p.mediaCount) == null ? void 0 : _c.count) ?? 0 });
-        found.set(key2, list);
+        const list2 = found.get(key2) ?? [];
+        if (!list2.some((x) => x.id === p.id)) list2.push({ id: p.id, title: p.title, imageCount: ((_c = p.mediaCount) == null ? void 0 : _c.count) ?? 0 });
+        found.set(key2, list2);
       }
     }
   }
   return unique.map((sku) => {
-    const list = found.get(sku.toLowerCase()) ?? [];
-    if (list.length === 0) return { sku, state: "missing", productId: "", title: "", imageCount: 0 };
-    if (list.length > 1) return { sku, state: "ambiguous", productId: "", title: list.map((p) => p.title).join(" / "), imageCount: 0 };
-    return { sku, state: "found", productId: list[0].id, title: list[0].title, imageCount: list[0].imageCount };
+    const list2 = found.get(sku.toLowerCase()) ?? [];
+    if (list2.length === 0) return { sku, state: "missing", productId: "", title: "", imageCount: 0 };
+    if (list2.length > 1) return { sku, state: "ambiguous", productId: "", title: list2.map((p) => p.title).join(" / "), imageCount: 0 };
+    return { sku, state: "found", productId: list2[0].id, title: list2[0].title, imageCount: list2[0].imageCount };
   });
 }
 function sniffImage(b) {
@@ -6283,9 +6336,9 @@ function sniffImage(b) {
 async function uploadProductImages(ctx, productId, mode, images, label2 = "image") {
   var _a2, _b, _c, _d, _e, _f, _g;
   if (!PRODUCT_GID.test(productId)) throw new Error("Invalid product.");
-  const list = [...images].sort((a, b) => a.position - b.position);
-  if (list.length === 0) throw new Error("No images to upload.");
-  if (list.length > MAX_IMAGES_PER_PRODUCT) throw new Error(`Too many images for one product (maximum ${MAX_IMAGES_PER_PRODUCT}).`);
+  const list2 = [...images].sort((a, b) => a.position - b.position);
+  if (list2.length === 0) throw new Error("No images to upload.");
+  if (list2.length > MAX_IMAGES_PER_PRODUCT) throw new Error(`Too many images for one product (maximum ${MAX_IMAGES_PER_PRODUCT}).`);
   const before = (await ctx.gql(MEDIA, { id: productId })).product;
   if (!before) throw new Error("The product no longer exists in Shopify.");
   const title = before.title ?? "";
@@ -6293,7 +6346,7 @@ async function uploadProductImages(ctx, productId, mode, images, label2 = "image
   const known = new Set((((_b = before.media) == null ? void 0 : _b.nodes) ?? []).map((m) => m.id));
   const failed = [];
   const created = [];
-  for (const img of list) {
+  for (const img of list2) {
     try {
       if (img.bytes.length > MAX_BYTES) throw new Error("The image is larger than 25 MB.");
       if (sniffImage(img.bytes) !== img.ext) throw new Error("The file is not a valid JPG, PNG or WebP image.");
@@ -7288,17 +7341,17 @@ async function step(shop, ctx, batchId, dir, limit) {
         for (const c of alts) await fail(c.id, String((e == null ? void 0 : e.message) ?? e)).catch(() => void 0);
       }
     }
-    for (const [productId, list] of seo) {
+    for (const [productId, list2] of seo) {
       try {
         const live = await liveSeo(ctx, productId);
         if (!live) {
-          for (const c of list) await fail(c.id, "The product no longer exists in Shopify.");
+          for (const c of list2) await fail(c.id, "The product no longer exists in Shopify.");
           continue;
         }
         let title = live.seoTitle;
         let desc = live.seoDescription;
         const ok = [];
-        for (const c of list) {
+        for (const c of list2) {
           const cur = c.kind === "seoTitle" ? live.seoTitle : live.seoDescription;
           if (cleanText(cur) !== cleanText(expected(c, dir))) {
             await fail(c.id, dir === "apply" ? "Changed in Shopify after the preview. Nothing was overwritten." : "Changed again after it was applied. Not restored.");
@@ -7315,7 +7368,7 @@ async function step(shop, ctx, batchId, dir, limit) {
           await patchSnapshot(shop, c, target(c, dir));
         }
       } catch (e) {
-        for (const c of list) await fail(c.id, String((e == null ? void 0 : e.message) ?? e)).catch(() => void 0);
+        for (const c of list2) await fail(c.id, String((e == null ? void 0 : e.message) ?? e)).catch(() => void 0);
       }
     }
     const p = await batchProgress(shop, batchId);
@@ -7697,7 +7750,7 @@ function SupportAlert({ initial }) {
   const busy2 = useRef(fetcher.state !== "idle");
   load2.current = fetcher.load;
   busy2.current = fetcher.state !== "idle";
-  const list = ((_a2 = fetcher.data) == null ? void 0 : _a2.waiting) ?? initial;
+  const list2 = ((_a2 = fetcher.data) == null ? void 0 : _a2.waiting) ?? initial;
   useEffect(() => setMounted(true), []);
   useEffect(() => {
     const poll = () => {
@@ -7713,7 +7766,7 @@ function SupportAlert({ initial }) {
     };
   }, []);
   useEffect(() => {
-    const ids = list.map((w) => w.id);
+    const ids = list2.map((w) => w.id);
     const before = known.current;
     known.current = new Set(ids);
     setDismissed((d) => d.filter((id2) => ids.includes(id2)));
@@ -7729,9 +7782,9 @@ function SupportAlert({ initial }) {
       return () => clearTimeout(t);
     }
     setFresh((f) => f.filter((id2) => ids.includes(id2)));
-  }, [list]);
+  }, [list2]);
   if (!mounted) return null;
-  const visible = list.filter((w) => !dismissed.includes(w.id));
+  const visible = list2.filter((w) => !dismissed.includes(w.id));
   if (!visible.length) return null;
   const dismiss = (id2) => setDismissed((d) => [...d, id2]);
   return /* @__PURE__ */ jsxs("div", { className: "sa", role: "alert", "aria-live": "assertive", children: [
@@ -9645,7 +9698,7 @@ const loader$f = async ({
   if (filter === "bot") where.mode = "bot";
   if (filter === "closed") where.status = "closed";
   if (filter === "open") where.status = "open";
-  const list = await prisma.conversation.findMany({
+  const list2 = await prisma.conversation.findMany({
     where,
     orderBy: {
       lastMessageAt: "desc"
@@ -9679,7 +9732,7 @@ const loader$f = async ({
     q,
     filter,
     canSendFiles: activeProvider() === "qr",
-    list: list.map((c) => ({
+    list: list2.map((c) => ({
       id: c.id,
       phone: c.phone,
       name: c.customerName,
@@ -10002,7 +10055,7 @@ function Ticks({
 const app_conversations = UNSAFE_withComponentProps(function Conversations() {
   var _a2;
   const {
-    list,
+    list: list2,
     selected,
     q,
     filter,
@@ -10089,13 +10142,13 @@ const app_conversations = UNSAFE_withComponentProps(function Conversations() {
           })]
         }), /* @__PURE__ */ jsxs("div", {
           className: "wa-list",
-          children: [list.length === 0 && /* @__PURE__ */ jsx("p", {
+          children: [list2.length === 0 && /* @__PURE__ */ jsx("p", {
             className: "o-muted",
             style: {
               padding: 16
             },
             children: "No conversations yet. Messages appear here when customers write in on WhatsApp."
-          }), list.map((c) => /* @__PURE__ */ jsxs(Link, {
+          }), list2.map((c) => /* @__PURE__ */ jsxs(Link, {
             className: `wa-item ${(selected == null ? void 0 : selected.id) === c.id ? "active" : ""}`,
             to: `?c=${c.id}&filter=${filter}&q=${encodeURIComponent(q)}`,
             children: [/* @__PURE__ */ jsx(Avatar, {
@@ -11555,9 +11608,9 @@ const app_imageEditor = UNSAFE_withComponentProps(function ImageEditor() {
   const [error, setError] = useState(null);
   const [skipped, setSkipped] = useState(0);
   const [compare, setCompare] = useState(null);
-  const addFiles = useCallback((list) => {
-    const ok = list.filter((p) => isImageName(p.file.name) && p.file.size > 0 && p.file.size <= LIMITS$1.maxFileBytes);
-    setSkipped((n) => n + list.length - ok.length);
+  const addFiles = useCallback((list2) => {
+    const ok = list2.filter((p) => isImageName(p.file.name) && p.file.size > 0 && p.file.size <= LIMITS$1.maxFileBytes);
+    setSkipped((n) => n + list2.length - ok.length);
     setPicked((cur) => [...cur, ...ok].slice(0, LIMITS$1.maxFiles));
   }, []);
   const advice = opts.removeBg ? d.advice.ai : d.advice.plain;
@@ -12079,7 +12132,7 @@ const loader$b = async ({
   const ctx = shopifyCtx(session.shop);
   const q = (url.searchParams.get("q") ?? "").slice(0, 80);
   const base = await loadImageEditor(session.shop, url, "store");
-  let list = {
+  let list2 = {
     products: [],
     hasNext: false,
     endCursor: null
@@ -12087,7 +12140,7 @@ const loader$b = async ({
   let listError = null;
   let canEdit = false;
   try {
-    if (q.trim()) list = await listStoreProducts(ctx, {
+    if (q.trim()) list2 = await listStoreProducts(ctx, {
       q,
       after: url.searchParams.get("after")
     });
@@ -12102,7 +12155,7 @@ const loader$b = async ({
   return {
     ...base,
     q,
-    list,
+    list: list2,
     listError,
     canEdit
   };

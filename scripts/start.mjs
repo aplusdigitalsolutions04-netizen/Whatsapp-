@@ -10,6 +10,7 @@
 // If anything fails, a small status page is served on $PORT instead of the host's generic "503", and the same
 // reason is printed to the log. The status page never prints secret values.
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { createRequire } from "node:module";
@@ -95,10 +96,26 @@ function run(label, script, args) {
 function main() {
   const prismaCli = pkgFile("prisma", "build/index.js");
 
-  // The generated client normally exists after `npm ci` / the image build; generate it only when it is missing.
-  const clientReady = existsSync(path.join(root, "node_modules", ".prisma", "client", "index.js"));
-  if (!clientReady && !run("prisma generate", prismaCli, ["generate"])) {
-    return serveProblem("The database client could not be generated", ["Run `npx prisma generate` on the server and check the log above."]);
+  // The generated database client must match prisma/schema.prisma. A server that keeps an old node_modules between deploys
+  // would otherwise run an old client against the new database and answer every page with a 500. A small marker file
+  // remembers which schema the client was generated from; when it differs (or is missing) the client is generated again.
+  const clientDir = path.join(root, "node_modules", ".prisma", "client");
+  const schemaHash = createHash("sha1").update(readFileSync(path.join(root, "prisma", "schema.prisma"), "utf8").replace(/\r\n/g, "\n")).digest("hex");
+  const markerFile = path.join(clientDir, ".schema-hash");
+  const clientCurrent = existsSync(path.join(clientDir, "index.js")) && existsSync(markerFile) && readFileSync(markerFile, "utf8").trim() === schemaHash;
+  if (!clientCurrent) {
+    console.log("[start] database client is missing or out of date, generating it");
+    if (run("prisma generate", prismaCli, ["generate"])) {
+      try {
+        writeFileSync(markerFile, schemaHash);
+      } catch {
+        /* without the marker the client is simply generated again on the next start */
+      }
+    } else if (!existsSync(path.join(clientDir, "index.js"))) {
+      return serveProblem("The database client could not be generated", ["Run `npx prisma generate` on the server and check the log above."]);
+    } else {
+      console.warn("[start] could not refresh the database client (a file may be in use); starting with the existing one");
+    }
   }
   if (!run("database migration", prismaCli, ["migrate", "deploy"])) {
     return serveProblem("The database could not be prepared", [
