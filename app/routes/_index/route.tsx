@@ -84,7 +84,7 @@ const STEPS = [
 ];
 
 const FAQ: { q: string; a: string }[] = [
-  { q: "Will JAZZ reply to my friends and family?", a: "No. Numbers saved in your phone are ignored. A saved contact can still talk to JAZZ by starting the message with !, # or $ (for example #W1219)." },
+  { q: "Will JAZZ reply to my friends and family?", a: "No. Numbers saved in your phone are ignored. A saved contact can still talk to JAZZ by starting the message with !, # or $ (for example #W0000)." },
   { q: "Is my customers' order data safe?", a: "Order details are shared only when the customer's order number and registered phone number match. Nothing else is revealed." },
   { q: "Which languages does JAZZ speak?", a: "English, Hindi and Hinglish out of the box. Messages in other languages are translated, answered, and translated back." },
   { q: "How does Delhivery tracking work?", a: "JAZZ sends the courier, the tracking ID and a Delhivery link. The link opens Delhivery with the tracking ID already filled in." },
@@ -110,14 +110,14 @@ const DEMO: { who: "me" | "bot"; lines: ReactNode }[] = [
       </>
     ),
   },
-  { who: "me", lines: "#W1219" },
+  { who: "me", lines: "#W0000" },
   {
     who: "bot",
     lines: (
       <>
         Your order details: 📦
         <br />
-        1. Order Number: #W1219
+        1. Order Number: #W0000
         <br />
         2. Fulfillment: Fulfilled
         <br />
@@ -272,7 +272,7 @@ export default function App() {
           </div>
 
           <div className={`${styles.phoneWrap} ${styles.rise}`} style={{ animationDelay: "200ms" }}>
-            <div className={styles.phone} role="img" aria-label="Demo chat: a customer tracks order W1219 and JAZZ replies with the Delhivery tracking link">
+            <div className={styles.phone} role="img" aria-label="Demo chat: a customer tracks order W0000 and JAZZ replies with the Delhivery tracking link">
               <div className={styles.phoneTop}>
                 <span className={styles.avatar}>J</span>
                 <div>
@@ -297,6 +297,18 @@ export default function App() {
         </section>
 
         {/* ------------------------------------------------ numbers */}
+        <div className={styles.marquee} aria-hidden="true">
+          <div className={styles.track}>
+            {[0, 1].map((k) => (
+              <ul key={k}>
+                {["Order status in seconds", "Delhivery links, pre-filled", "English · Hindi · Hinglish", "Live Inbox", "Support alerts", "Order Update sheet", "Product Scrapper", "Image Editor", "SEO fixer"].map((t) => (
+                  <li key={t}><i />{t}</li>
+                ))}
+              </ul>
+            ))}
+          </div>
+        </div>
+
         <section className={styles.stats} aria-label="At a glance">
           <div data-reveal className={styles.stat}><b>24/7</b><span>replies, even at 3 a.m.</span></div>
           <div data-reveal className={styles.stat}><b><Counter to={8} /></b><span>tools in one Shopify app</span></div>
@@ -335,11 +347,11 @@ export default function App() {
               <ul className={styles.ticks}>
                 <li><Check size={16} /> Prices always in ₹</li>
                 <li><Check size={16} /> Short numbered replies, no walls of text</li>
-                <li><Check size={16} /> Works with #W1219, W1219 or a registered phone number</li>
+                <li><Check size={16} /> Works with #W0000, W0000 or a registered phone number</li>
               </ul>
             </div>
             <div data-reveal className={styles.flow} aria-hidden="true">
-              {["Customer sends #W1219", "JAZZ verifies the phone", "Order + Delhivery link sent"].map((t, i) => (
+              {["Customer sends #W0000", "JAZZ verifies the phone", "Order + Delhivery link sent"].map((t, i) => (
                 <div key={t} className={styles.flowStep} style={{ animationDelay: `${i * 1.1}s` }}>
                   <span>{i + 1}</span>{t}
                 </div>
