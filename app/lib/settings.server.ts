@@ -12,6 +12,8 @@ export type Settings = {
   templates: Templates;
   /** Personal numbers (+91...) the bot ignores unless the message starts with ! # or $. */
   savedNumbers: string[];
+  /** Automatic order messages (confirmed, dispatched with tracking, delivered). */
+  orderMessages: boolean;
 };
 
 export async function getSettings(shop: string): Promise<Settings> {
@@ -25,6 +27,7 @@ export async function getSettings(shop: string): Promise<Settings> {
     recommendationRule: row?.recommendationRule === "tag" ? "tag" : "productType",
     templates: mergeTemplates(row?.templates),
     savedNumbers: parseNumberList(row?.savedNumbers),
+    orderMessages: row?.orderMessages ?? true,
   };
 }
 
@@ -55,6 +58,7 @@ export async function saveSettings(shop: string, form: FormData) {
     recommendationRule: form.get("recommendationRule") === "tag" ? "tag" : "productType",
     templates: JSON.stringify(templates),
     savedNumbers: parseNumberList(String(form.get("savedNumbers") ?? "")).join("\n"),
+    orderMessages: form.get("orderMessages") === "on",
   };
   await prisma.botSettings.upsert({
     where: { shop },

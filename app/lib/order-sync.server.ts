@@ -7,6 +7,7 @@ import { resolveShop } from "./settings.server";
 import { scheduleSheetPush } from "./google-sheets.server";
 import { gql } from "./shopify-data.server";
 import { explainShopifyError } from "./shopify-errors";
+import { notifyOrder } from "./order-notify.server";
 import { endTask, startTask, updateTask } from "./progress.server";
 
 const PAGE = 50;
@@ -24,6 +25,7 @@ export async function syncOrderById(shop: string, gid: string) {
   if (!data.order) return "missing" as const;
   const r = await upsertOrder(shop, mapShopifyOrder(data.order));
   if (r !== "skipped") scheduleSheetPush(shop); // keep the Google Sheet in step with the webhook
+  await notifyOrder(shop, data.order); // JAZZ tells the customer: confirmed / dispatched / delivered (once each)
   return r;
 }
 
@@ -64,6 +66,7 @@ export async function syncOrders(shop: string, opts: { since?: Date | null; onPr
       out.fetched++;
       try {
         out[await upsertOrder(shop, mapShopifyOrder(node))]++;
+        await notifyOrder(shop, node);
       } catch (e) {
         out.failed++;
         await logEvent({ shop, source: "shopify", level: "error", event: "order_sync_failed", detail: `${node?.name}: ${(e as Error).message}` });

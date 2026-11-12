@@ -51,6 +51,8 @@ model BotSettings {
   aiKeyEnc               String?
   // Personal numbers typed by the owner (one per line). The bot stays silent for them unless a message starts with ! # or $
   savedNumbers           String   @default("")
+  // JAZZ messages the customer by itself when the order is confirmed, dispatched (with tracking) and delivered
+  orderMessages          Boolean  @default(true)
   updatedAt              DateTime @updatedAt
 }
 

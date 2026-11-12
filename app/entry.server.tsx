@@ -7,10 +7,12 @@ import { isbot } from "isbot";
 import { addDocumentResponseHeaders } from "./shopify.server";
 import { autostartBridge } from "./lib/bridge.server";
 import { startOrderSync } from "./lib/order-sync.server";
+import { startNoticeRetry } from "./lib/order-notify.server";
 import { rememberError } from "./lib/error-memory.server";
 
 autostartBridge();
 startOrderSync();
+startNoticeRetry();
 
 export const streamTimeout = 5000;
 

@@ -10,7 +10,7 @@ export const ORDER_SHEET_FIELDS = `
   billingAddress { name phone }
   shippingLine { originalPriceSet { shopMoney { amount } } }
   lineItems(first: 50) { nodes { title variantTitle quantity currentQuantity } }
-  fulfillments(first: 10) { createdAt displayStatus deliveredAt trackingInfo(first: 3) { company number } }
+  fulfillments(first: 10) { createdAt updatedAt displayStatus deliveredAt estimatedDeliveryAt trackingInfo(first: 3) { company number url } }
 `;
 
 export type SheetStatus = "Cancelled" | "RTO" | "Delivered" | "Fulfilled" | "Unfulfilled";

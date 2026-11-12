@@ -60,6 +60,10 @@ export default function Settings() {
             </label>{" "}
             <small>After this many failures the chat is handed to a human.</small>
           </p>
+          <p>
+            <label><input type="checkbox" name="orderMessages" defaultChecked={settings.orderMessages} /> Send order messages automatically</label>{" "}
+            <small>JAZZ messages the customer when an order is confirmed, when it is dispatched (tracking ID and link) and when it is delivered.</small>
+          </p>
           <p><label><input type="checkbox" name="recommendationsEnabled" defaultChecked={settings.recommendationsEnabled} /> Send product recommendations</label></p>
           <p>
             <label>Max recommendations per reply{" "}

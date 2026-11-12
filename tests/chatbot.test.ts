@@ -586,3 +586,71 @@ test("Delhivery shipments get the direct link with the tracking id", async () =>
   assert.equal(mapped.total, "₹1,499");
   assert.equal(mapped.tracking[0].resolvedUrl, "https://www.delhivery.com/track-v2/package/DL123456789");
 });
+
+// ---------- automatic order messages (confirmed / dispatched / delivered) ----------
+const NOW = Date.parse("2026-11-13T10:00:00Z");
+const ago = (min: number) => new Date(NOW - min * 60_000).toISOString();
+const sample = (over: any = {}) => ({
+  id: "gid://shopify/Order/7001", name: "#W1219", createdAt: ago(5), cancelledAt: null, phone: null,
+  shippingAddress: { name: "Asha Kumari", phone: "98765 43210" }, customer: null, billingAddress: null,
+  lineItems: { nodes: [{ title: "HP LaserJet 1008w", variantTitle: "Default Title", quantity: 1, currentQuantity: 1 }] },
+  currentTotalPriceSet: { shopMoney: { amount: "1499.00", currencyCode: "INR" } },
+  displayFinancialStatus: "PAID", paymentGatewayNames: [], fulfillments: [], ...over,
+});
+const shipped = (over: any = {}) => ({ createdAt: ago(10), updatedAt: ago(10), displayStatus: "IN_TRANSIT", deliveredAt: null, estimatedDeliveryAt: "2026-11-16T00:00:00Z", trackingInfo: [{ company: "Delhivery", number: "DL123456789", url: null }], ...over });
+
+test("order messages: a new order gets a confirmation from JAZZ", async () => {
+  const { buildOrderNotices }: any = await loadApp("/app/lib/order-notice.ts");
+  const r = buildOrderNotices(sample(), NOW);
+  assert.equal(r.phone, "+919876543210");
+  assert.equal(r.notices.length, 1);
+  assert.equal(r.notices[0].key, "confirmed");
+  for (const part of ["Hi, Asha!", "JAZZ", "confirmed", "1. Order Number: #W1219", "HP LaserJet 1008w × 1", "Total: ₹1,499", "Payment: Paid"]) assert.ok(r.notices[0].text.includes(part), part);
+  const cod = buildOrderNotices(sample({ paymentGatewayNames: ["Cash on Delivery (COD)"], displayFinancialStatus: "PENDING" }), NOW);
+  assert.match(cod.notices[0].text, /Payment: Pay on delivery \(COD\)/);
+});
+
+test("order messages: old orders, cancelled orders and orders without a phone are handled safely", async () => {
+  const { buildOrderNotices }: any = await loadApp("/app/lib/order-notice.ts");
+  assert.equal(buildOrderNotices(sample({ createdAt: ago(60 * 24 * 30) }), NOW).notices.length, 0, "an old order is never announced again");
+  assert.equal(buildOrderNotices(sample({ cancelledAt: ago(1) }), NOW).notices.length, 0);
+  const none = buildOrderNotices(sample({ shippingAddress: { name: "X" } }), NOW);
+  assert.equal(none.phone, null);
+});
+
+test("order messages: tracking added -> dispatched message with courier, id and the Delhivery link", async () => {
+  const { buildOrderNotices }: any = await loadApp("/app/lib/order-notice.ts");
+  const r = buildOrderNotices(sample({ createdAt: ago(60 * 24), fulfillments: [shipped()] }), NOW);
+  assert.deepEqual(r.notices.map((n: any) => n.key), ["dispatched:DL123456789"]);
+  const t = r.notices[0].text;
+  for (const part of ["dispatched", "Courier: Delhivery", "Tracking ID: DL123456789", "https://www.delhivery.com/track-v2/package/DL123456789", "Expected Delivery: 16 Nov 2026"]) assert.ok(t.includes(part), part);
+  assert.equal(buildOrderNotices(sample({ createdAt: ago(60 * 24 * 9), fulfillments: [shipped({ createdAt: ago(60 * 24 * 3), updatedAt: ago(60 * 24 * 3) })] }), NOW).notices.length, 0, "an old shipment is not announced again");
+  assert.equal(buildOrderNotices(sample({ createdAt: ago(60 * 24), fulfillments: [shipped({ trackingInfo: [] })] }), NOW).notices.length, 0, "no tracking id, no dispatch message");
+});
+
+test("order messages: delivered -> a proper delivery message, once", async () => {
+  const { buildOrderNotices }: any = await loadApp("/app/lib/order-notice.ts");
+  const f = shipped({ displayStatus: "DELIVERED", deliveredAt: ago(60), updatedAt: ago(60) });
+  const r = buildOrderNotices(sample({ createdAt: ago(60 * 24 * 4), fulfillments: [f] }), NOW);
+  assert.deepEqual(r.notices.map((n: any) => n.key), ["delivered:DL123456789"]);
+  assert.match(r.notices[0].text, /delivered\. 🎉/);
+  assert.match(r.notices[0].text, /Delivered on: 13 Nov 2026/);
+  assert.equal(buildOrderNotices(sample({ createdAt: ago(60 * 24 * 40), fulfillments: [shipped({ displayStatus: "DELIVERED", deliveredAt: ago(60 * 24 * 20), updatedAt: ago(60 * 24 * 20) })] }), NOW).notices.length, 0, "an old delivery is not announced");
+});
+
+test("order messages: notifyOrder stores one message per event, never twice, and obeys the setting", async () => {
+  const { notifyOrder }: any = await loadApp("/app/lib/order-notify.server.ts");
+  const node = sample({ id: "gid://shopify/Order/7002", name: "#W7002", createdAt: new Date().toISOString(), shippingAddress: { name: "Ravi Test", phone: "+919811100001" } });
+  await notifyOrder(SHOP, node);
+  await notifyOrder(SHOP, node); // a second webhook for the same order
+  const conv = await prisma.conversation.findFirst({ where: { shop: SHOP, phone: "+919811100001" }, include: { messages: true } });
+  const sent = conv?.messages.filter((m) => m.inReplyTo?.startsWith("notify:")) ?? [];
+  assert.equal(sent.length, 1, "one confirmation, not two");
+  assert.ok(sent[0].body.includes("JAZZ") && sent[0].body.includes("#W7002"));
+  assert.equal(sent[0].inReplyTo, "notify:gid://shopify/Order/7002:confirmed");
+
+  await prisma.botSettings.upsert({ where: { shop: SHOP }, create: { shop: SHOP, orderMessages: false }, update: { orderMessages: false } });
+  await notifyOrder(SHOP, sample({ id: "gid://shopify/Order/7003", name: "#W7003", createdAt: new Date().toISOString(), shippingAddress: { name: "Meera", phone: "+919811100002" } }));
+  assert.equal(await prisma.conversation.count({ where: { shop: SHOP, phone: "+919811100002" } }), 0, "switched off: nothing is sent");
+  await prisma.botSettings.deleteMany({ where: { shop: SHOP } });
+});
