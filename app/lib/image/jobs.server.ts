@@ -35,17 +35,20 @@ export function resultName(original: string, suffix: string, ext: string) {
 }
 
 // ---------- worker setting ----------
-export async function getWorkers(shop: string): Promise<number> {
-  const row = await prisma.imageSettings.findUnique({ where: { shop } });
-  return Math.min(LIMITS.maxWorkers, Math.max(1, row?.workers ?? 2));
+// The Image Editor works on ONE photo at a time: hosting plans limit processes and threads, and one worker is the safe
+// choice there. (IMAGE_WORKERS can raise it on a strong server of your own; there is no setting in the app for it.)
+export const FIXED_WORKERS = Math.min(LIMITS.maxWorkers, Math.max(1, Math.floor(Number(process.env.IMAGE_WORKERS)) || 1));
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function getWorkers(_shop?: string): Promise<number> {
+  return FIXED_WORKERS;
 }
 
 /** Saves the worker count and applies it to the running pool immediately. */
-export async function setWorkers(shop: string, n: number): Promise<number> {
-  const workers = Math.min(LIMITS.maxWorkers, Math.max(1, Math.round(n) || 1));
-  await prisma.imageSettings.upsert({ where: { shop }, create: { shop, workers }, update: { workers } });
-  pool.setWorkers(workers);
-  return workers;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function setWorkers(_shop: string, _n: number): Promise<number> {
+  pool.setWorkers(FIXED_WORKERS);
+  return FIXED_WORKERS;
 }
 
 // ---------- jobs ----------

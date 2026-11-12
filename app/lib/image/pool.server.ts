@@ -103,11 +103,11 @@ export class ImagePool {
 
   /**
    * Threads each worker may use inside the image library. Hosting plans cap how many threads a process may create
-   * ("glib: Error creating thread: Resource temporarily unavailable"), so the default is small: parallel speed comes
+   * ("glib: Error creating thread: Resource temporarily unavailable"), so the default is ONE: parallel speed comes
    * from several worker processes, not from many threads. IMAGE_THREADS raises it on a strong server.
    */
   private threadsPerWorker() {
-    const cap = Math.max(1, Math.floor(Number(process.env.IMAGE_THREADS)) || 2);
+    const cap = Math.max(1, Math.floor(Number(process.env.IMAGE_THREADS)) || 1);
     return Math.min(cap, Math.max(1, Math.floor(os.cpus().length / Math.max(1, this.target))));
   }
 

@@ -115,7 +115,7 @@ test("the worker count can be raised and lowered while a batch is running", asyn
   await until(() => pool.stats().busy >= 1);
   assert.equal(pool.stats().target, 1);
 
-  await jobs.setWorkers(SHOP, 5);
+  pool.setWorkers(5); // the pool itself can still scale; the app just never asks it to
   let peak = 0;
   const t0 = Date.now();
   while (Date.now() - t0 < 6000 && peak < 4) {
@@ -124,7 +124,7 @@ test("the worker count can be raised and lowered while a batch is running", asyn
   }
   assert.ok(peak >= 4, `expected several workers busy at once, saw ${peak}`);
 
-  await jobs.setWorkers(SHOP, 2);
+  pool.setWorkers(2);
   await until(async () => (await prisma.imageJob.findUniqueOrThrow({ where: { id } })).status === "done");
   assert.equal((await prisma.imageItem.count({ where: { jobId: id, status: "done" } })), 24);
   assert.ok(pool.stats().alive <= 2, "extra workers retire once the target is lowered");
@@ -159,4 +159,10 @@ test("deleting a batch removes its files and rows", async () => {
   assert.ok(!existsSync(input));
   assert.equal(await prisma.imageJob.count({ where: { id } }), 0);
   assert.equal(await prisma.imageItem.count({ where: { jobId: id } }), 0);
+});
+
+test("the app always works with exactly one worker, whatever is asked", async () => {
+  assert.equal(await jobs.getWorkers(SHOP), 1);
+  assert.equal(await jobs.setWorkers(SHOP, 5), 1);
+  assert.equal(await jobs.getWorkers(SHOP), 1);
 });

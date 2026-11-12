@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import type { HeadersFunction, LinksFunction, LoaderFunctionArgs } from "react-router";
 import { Link, useLoaderData, useRevalidator } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { Cpu, Download, FolderPlus, ImagePlus, Play, RotateCcw, Square, Trash2, UploadCloud } from "lucide-react";
+import { Download, FolderPlus, ImagePlus, Play, RotateCcw, Square, Trash2, UploadCloud } from "lucide-react";
 import { authenticate } from "../shopify.server";
 import { loadImageEditor } from "../lib/image/page-data.server";
 import { DEFAULT_OPTIONS, LIMITS, PRESETS, type ImageOptions } from "../lib/image/settings";
 import { useAutoRefresh } from "../components/useAutoRefresh";
-import { Compare, ImageOptionsForm, Panel } from "../components/ImageOptionsForm";
+import { Compare, ImageOptionsForm } from "../components/ImageOptionsForm";
 import { ImageTabs } from "../components/ImageTabs";
 import { Badge, Banner, Card, Page } from "../components/ui";
 import styles from "../styles/image-editor.css?url";
@@ -63,16 +63,6 @@ export default function ImageEditor() {
   const running = d.selected?.status === "running" || d.stats.busy > 0 || d.stats.queued > 0;
   useAutoRefresh(running ? 1500 : 20000);
 
-  // ---- worker slider (applies live, even while a batch runs) ----
-  const [workers, setWorkers] = useState(d.workers);
-  const saving = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => setWorkers(d.workers), [d.workers]);
-  const changeWorkers = (n: number) => {
-    setWorkers(n);
-    if (saving.current) clearTimeout(saving.current);
-    saving.current = setTimeout(() => void api("workers", { workers: n }).then(revalidate).catch(() => undefined), 350);
-  };
-
   // ---- new batch ----
   const [opts, setOpts] = useState<ImageOptions>({ ...DEFAULT_OPTIONS, ...PRESETS[0].options } as ImageOptions);
   const [preset, setPreset] = useState(PRESETS[0].id);
@@ -89,9 +79,6 @@ export default function ImageEditor() {
     setSkipped((n) => n + list.length - ok.length);
     setPicked((cur) => [...cur, ...ok].slice(0, LIMITS.maxFiles));
   }, []);
-
-  const advice = opts.removeBg ? d.advice.ai : d.advice.plain;
-  const warn = workers > d.hardware.cores ? `You have ${d.hardware.cores} CPU cores; more workers than cores only slow things down.` : opts.removeBg && workers > 2 ? advice.note : null;
 
   const startBatch = async () => {
     setError(null);
@@ -156,32 +143,6 @@ export default function ImageEditor() {
       {error && <Banner tone="critical">{error}</Banner>}
       {d.stats.lastError && <Banner tone="warning">{d.stats.lastError}</Banner>}
 
-      {/* workers */}
-      <div className="ie-workers-panel">
-        <Panel icon={Cpu} title="Workers" summary={`${workers} at the same time · ${d.stats.busy} of ${d.stats.alive || 0} busy · ${d.stats.perMinute} photos/min`}>
-          <div className="ie-workers">
-            <div className="ie-slider">
-              <div className="ie-slider-top">
-                <label htmlFor="workers"><Cpu size={15} style={{ verticalAlign: -3 }} /> Workers working at the same time</label>
-                <b className="ie-big">{workers}</b>
-              </div>
-              <input id="workers" type="range" min={1} max={LIMITS.maxWorkers} value={workers} onChange={(e) => changeWorkers(Number(e.target.value))} />
-              <div className="ie-ticks"><span>1</span><span>{d.advice.plain.recommended} (fast jobs)</span><span>{d.hardware.cores} (CPU cores)</span><span>{LIMITS.maxWorkers}</span></div>
-              <p className="ie-hint">
-                Change it any time, even while a batch is running: more workers start at once, fewer workers stop after their current photo.
-                Suggested for this PC: <b>{d.advice.plain.recommended}</b> for resize/compress, <b>{d.advice.ai.recommended}</b> with AI background removal.
-              </p>
-              {warn && <p className="ie-warn">{warn}</p>}
-            </div>
-            <div className="ie-stats">
-              <div><span>Speed</span><b>{d.stats.perMinute}</b><small>photos / min</small></div>
-              <div><span>Avg per photo</span><b>{d.stats.avgMs ? `${(d.stats.avgMs / 1000).toFixed(1)}s` : "-"}</b><small>one worker</small></div>
-              <div><span>Waiting</span><b>{d.stats.queued}</b><small>in the queue</small></div>
-              <div><span>This PC</span><b>{d.hardware.cores}</b><small>cores · {d.hardware.freeGB} GB free</small></div>
-            </div>
-          </div>
-        </Panel>
-      </div>
 
       {/* new batch */}
       <Card title="New batch">
@@ -217,7 +178,7 @@ export default function ImageEditor() {
         <div className="o-row" style={{ marginTop: 14 }}>
           <input placeholder="Batch name (optional)" value={name} onChange={(e) => setName(e.target.value)} style={{ width: 260 }} aria-label="Batch name" />
           <button disabled={!canStart} onClick={startBatch}><Play size={14} style={{ verticalAlign: -2 }} /> {busy ? (phase.step === "uploading" ? `Uploading ${phase.done} / ${phase.total}…` : "Starting…") : `Process ${picked.length || ""} photo${picked.length === 1 ? "" : "s"}`}</button>
-          <span className="o-muted">with {workers} worker{workers === 1 ? "" : "s"}</span>
+          <span className="o-muted">Photos are edited one at a time, so a big batch takes a little longer.</span>
         </div>
         {busy && <div className="ie-progress"><i style={{ width: `${phase.total ? Math.round((phase.done / phase.total) * 100) : 0}%` }} /></div>}
       </Card>
