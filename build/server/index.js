@@ -4581,12 +4581,29 @@ function assetCount() {
   const dir = path.join(process.cwd(), "build", "client", "assets");
   return existsSync(dir) ? readdirSync(dir).length : 0;
 }
+async function imageLibrary() {
+  var _a2;
+  try {
+    const m = await import("sharp");
+    const sharp = m.default ?? m;
+    return {
+      ok: true,
+      version: String(((_a2 = sharp.versions) == null ? void 0 : _a2.sharp) ?? "?")
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: String(e.message ?? e).split("\n")[0].slice(0, 300)
+    };
+  }
+}
 const loader$q = async () => {
   try {
     await prisma.$queryRaw`SELECT 1`;
     return Response.json({
       ok: true,
-      assets: assetCount()
+      assets: assetCount(),
+      image: await imageLibrary()
     }, {
       headers: {
         "Cache-Control": "no-store"
@@ -5707,10 +5724,16 @@ class ImagePool {
     }
   }
   spawn() {
+    var _a2;
     const id2 = this.nextId++;
-    const proc = fork(WORKER_FILE(), [], { execArgv: [], stdio: ["ignore", "inherit", "inherit", "ipc"], env: { ...process.env } });
+    const proc = fork(WORKER_FILE(), [], { execArgv: [], stdio: ["ignore", "inherit", "pipe", "ipc"], env: { ...process.env } });
     const w = { id: id2, proc, ready: false, busy: null, retiring: false, done: 0 };
     this.workers.set(id2, w);
+    let errTail = "";
+    (_a2 = proc.stderr) == null ? void 0 : _a2.on("data", (d) => {
+      process.stderr.write(d);
+      errTail = (errTail + d.toString()).slice(-600);
+    });
     proc.on("message", (m) => {
       if (m.type === "ready") {
         w.ready = true;
@@ -5736,7 +5759,7 @@ class ImagePool {
       }
       this.pump();
     });
-    proc.on("exit", () => {
+    proc.on("exit", (code2, signal) => {
       this.workers.delete(id2);
       const task = w.busy;
       if (task) {
@@ -5749,7 +5772,9 @@ class ImagePool {
         }
       } else if (!w.retiring && !w.ready) {
         this.crashes.push(Date.now());
-        this.lastError = "A worker could not start. Check that the Image Editor packages are installed.";
+        const why = errTail.trim().split("\n").filter(Boolean).slice(-3).join(" | ").slice(0, 300);
+        this.lastError = `A worker could not start (${signal ? `killed by ${signal}` : `exit code ${code2}`})${why ? `: ${why}` : signal === "SIGKILL" ? ". The server probably ran out of memory." : ". Check that the Image Editor packages are installed."}`;
+        console.error("[image-editor]", this.lastError);
       }
       if (this.crashes.filter((t) => Date.now() - t < 2e4).length >= 4 && this.queue.length) {
         const lost = this.queue.splice(0, this.queue.length);

@@ -136,9 +136,15 @@ export class ImagePool {
 
   private spawn() {
     const id = this.nextId++;
-    const proc = fork(WORKER_FILE(), [], { execArgv: [], stdio: ["ignore", "inherit", "inherit", "ipc"], env: { ...process.env } });
+    const proc = fork(WORKER_FILE(), [], { execArgv: [], stdio: ["ignore", "inherit", "pipe", "ipc"], env: { ...process.env } });
     const w: Worker = { id, proc, ready: false, busy: null, retiring: false, done: 0 };
     this.workers.set(id, w);
+    // Keep the last words the worker printed, so "could not start" can say WHY (missing package, out of memory, ...).
+    let errTail = "";
+    proc.stderr?.on("data", (d: Buffer) => {
+      process.stderr.write(d);
+      errTail = (errTail + d.toString()).slice(-600);
+    });
 
     proc.on("message", (m: Record<string, unknown>) => {
       if (m.type === "ready") {
@@ -166,7 +172,7 @@ export class ImagePool {
       this.pump();
     });
 
-    proc.on("exit", () => {
+    proc.on("exit", (code, signal) => {
       this.workers.delete(id);
       const task = w.busy;
       if (task) {
@@ -180,7 +186,9 @@ export class ImagePool {
         }
       } else if (!w.retiring && !w.ready) {
         this.crashes.push(Date.now());
-        this.lastError = "A worker could not start. Check that the Image Editor packages are installed.";
+        const why = errTail.trim().split("\n").filter(Boolean).slice(-3).join(" | ").slice(0, 300);
+        this.lastError = `A worker could not start (${signal ? `killed by ${signal}` : `exit code ${code}`})${why ? `: ${why}` : signal === "SIGKILL" ? ". The server probably ran out of memory." : ". Check that the Image Editor packages are installed."}`;
+        console.error("[image-editor]", this.lastError);
       }
       if (this.crashes.filter((t) => Date.now() - t < 20_000).length >= 4 && this.queue.length) {
         const lost = this.queue.splice(0, this.queue.length); // give up instead of looping forever
