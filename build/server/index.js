@@ -17,8 +17,8 @@ import path from "node:path";
 import QRCode from "qrcode";
 import makeWASocket, { useMultiFileAuthState, fetchLatestBaileysVersion, Browsers, DisconnectReason, downloadMediaMessage } from "@whiskeysockets/baileys";
 import { randomBytes, timingSafeEqual, createHmac, createDecipheriv, scryptSync, createCipheriv, createSign, createHash, randomUUID } from "node:crypto";
-import { useRef, useEffect, useState, Fragment as Fragment$1, useCallback } from "react";
-import { Sparkles, Check, Truck, BellRing, ShieldCheck, Bot, MessagesSquare, PackageSearch, ClipboardList, ScanSearch, WandSparkles, SearchCheck, Download, Zap, Languages, ArrowRight, X, ChevronsRight, ChevronsLeft, Menu, LayoutDashboard, Smartphone, Plug, ScrollText, ShoppingBag, AlertTriangle, CheckCircle2, Users, Phone, ArrowUpRight, ArrowDownRight, Minus, ImagePlus, Store, FileArchive, Play, RotateCcw, ChevronDown, Camera, Scissors, Minimize2, Eraser, Crop, Palette, FileImage, Cpu, UploadCloud, FolderPlus, Square, Trash2, Search, CloudUpload, Undo2, Sheet, ExternalLink, Plus, RefreshCw, ImageOff, FileUp } from "lucide-react";
+import { useRef, useState, useCallback, useEffect, Fragment as Fragment$1 } from "react";
+import { Truck, BellRing, Zap, ShieldCheck, Headset, ArrowRight, ArrowUpRight, ChevronLeft, ChevronRight, Check, Languages, X, ChevronsRight, ChevronsLeft, Menu, LayoutDashboard, MessagesSquare, PackageSearch, ClipboardList, ScanSearch, WandSparkles, SearchCheck, Sparkles, Smartphone, Plug, ScrollText, Bot, ShoppingBag, AlertTriangle, CheckCircle2, Users, Phone, ArrowDownRight, Minus, ImagePlus, Store, FileArchive, Play, RotateCcw, ChevronDown, Camera, Scissors, Minimize2, Eraser, Crop, Palette, FileImage, Cpu, UploadCloud, FolderPlus, Square, Download, Trash2, Search, CloudUpload, Undo2, Sheet, ExternalLink, Plus, RefreshCw, ImageOff, FileUp } from "lucide-react";
 import { readFile } from "node:fs/promises";
 import { zipSync, ZipPassThrough, Zip, unzipSync } from "fflate";
 import * as cheerio from "cheerio";
@@ -287,13 +287,13 @@ function saveMedia(buffer, mime) {
   const m = baseMime(mime);
   if (buffer.length > MAX_MEDIA_BYTES) throw new Error("File is larger than 16 MB");
   mkdirSync(MEDIA_DIR, { recursive: true });
-  const file2 = `${randomBytes(12).toString("hex")}.${EXT$2[m] ?? "bin"}`;
-  writeFileSync(path.join(MEDIA_DIR, file2), buffer);
-  return { file: file2, mime: m };
+  const file = `${randomBytes(12).toString("hex")}.${EXT$2[m] ?? "bin"}`;
+  writeFileSync(path.join(MEDIA_DIR, file), buffer);
+  return { file, mime: m };
 }
-function mediaFilePath(file2) {
-  if (!/^[a-f0-9]{24}\.[a-z0-9]{1,5}$/.test(file2)) return null;
-  const p = path.join(MEDIA_DIR, file2);
+function mediaFilePath(file) {
+  if (!/^[a-f0-9]{24}\.[a-z0-9]{1,5}$/.test(file)) return null;
+  const p = path.join(MEDIA_DIR, file);
   return existsSync(p) ? p : null;
 }
 function key$2() {
@@ -344,9 +344,9 @@ function encryptSecret(plain) {
   const data = Buffer.concat([c.update(plain, "utf8"), c.final()]);
   return [iv, c.getAuthTag(), data].map((b) => b.toString("base64")).join(".");
 }
-function decryptSecret(blob2) {
+function decryptSecret(blob) {
   try {
-    const [iv, tag, data] = blob2.split(".").map((p) => Buffer.from(p, "base64"));
+    const [iv, tag, data] = blob.split(".").map((p) => Buffer.from(p, "base64"));
     const d = createDecipheriv("aes-256-gcm", key$1(), iv);
     d.setAuthTag(tag);
     return Buffer.concat([d.update(data), d.final()]).toString("utf8");
@@ -873,33 +873,33 @@ function extractCombo(p, labels) {
     if (forceOptional || it.optional) optional.push(it.name);
     else if (!items.some((x) => x.name.toLowerCase() === it.name.toLowerCase())) items.push({ name: it.name, qty: label2 });
   };
-  let section2 = "none";
-  let count = 0;
+  let section = "none";
+  let count2 = 0;
   for (const l of lines) {
     const opt = l.text.match(OPTIONAL_HDR);
     const inc = l.text.match(INCLUDED_HDR);
     if (opt) {
-      section2 = "opt";
-      count = 0;
+      section = "opt";
+      count2 = 0;
       for (const part of splitInline(opt[1])) add(part, true);
       continue;
     }
     if (inc && l.text.length <= 140) {
-      section2 = "inc";
-      count = 0;
+      section = "inc";
+      count2 = 0;
       for (const part of splitInline(inc[1])) add(part, false);
       continue;
     }
-    if (section2 === "none") continue;
+    if (section === "none") continue;
     const looksLikeSentence = l.text.length > 90 || /[.!?]\s+\S/.test(l.text);
     const spec = l.text.match(SPEC);
     const quantityRow = !!spec && new RegExp(`^\\d{1,3}\\s*(?:${UNIT$1})?$`, "i").test(spec[2].trim());
-    if (l.blankBefore && count > 0 && !l.bullet || !l.bullet && !!spec && !quantityRow && !/^\d/.test(l.text) || looksLikeSentence) {
-      section2 = "none";
+    if (l.blankBefore && count2 > 0 && !l.bullet || !l.bullet && !!spec && !quantityRow && !/^\d/.test(l.text) || looksLikeSentence) {
+      section = "none";
       continue;
     }
-    count++;
-    add(l.text, section2 === "opt");
+    count2++;
+    add(l.text, section === "opt");
   }
   let main = "";
   const parts = p.title.split(/\s\+\s|\s*\+\s*|\swith\s(?:free\s)?|\s&\s/i).map((x) => x.trim()).filter(Boolean);
@@ -924,14 +924,14 @@ function productPoints(p) {
   const lines = linesOf(p);
   const warranty = warrantyOf(lines);
   const titleKey = p.title.toLowerCase();
-  const specs = [];
+  const specs2 = [];
   const features = [];
   for (const l of lines) {
     if (WARRANTY.test(l.text)) continue;
     if (INCLUDED_HDR.test(l.text) || OPTIONAL_HDR.test(l.text)) continue;
     const m = l.text.match(SPEC);
     if (m && !/^\d/.test(l.text)) {
-      specs.push({ text: `${cap(m[1].trim())}: ${clip$1(m[2], 70)}`, score: IMPORTANT.test(m[1]) ? 2 : 1 });
+      specs2.push({ text: `${cap(m[1].trim())}: ${clip$1(m[2], 70)}`, score: IMPORTANT.test(m[1]) ? 2 : 1 });
     } else if (l.text.length >= 8 && l.text.toLowerCase() !== titleKey) {
       if (l.bullet || l.text.length <= 110) features.push(clip$1(l.text, 110));
       else {
@@ -947,13 +947,13 @@ function productPoints(p) {
     seen.add(k);
     return true;
   });
-  const bestSpecs = uniq([...specs].sort((a, b) => b.score - a.score)).slice(0, 4).map((x) => x.text);
+  const bestSpecs = uniq([...specs2].sort((a, b) => b.score - a.score)).slice(0, 4).map((x) => x.text);
   const room = Math.max(0, 5 - bestSpecs.length);
   const bestFeatures = uniq(features).slice(0, room);
   return { points: [...bestSpecs, ...bestFeatures], warranty };
 }
 function productMessage(p, L) {
-  const head2 = `🛍️ *${p.title}*`;
+  const head = `🛍️ *${p.title}*`;
   const combo = isComboProduct(p) ? extractCombo(p, L) : null;
   const priceLine = (label2) => p.price ? `${label2}: ${p.price}${p.compareAtPrice ? ` (~${p.compareAtPrice}~${p.discountPercent ? `, ${L.save} ${p.discountPercent}%` : ""})` : ""}` : null;
   if (isComboProduct(p)) {
@@ -968,7 +968,7 @@ function productMessage(p, L) {
         points: rows2,
         note: [note, priceLine(L.comboPrice), p.url ? `${L.viewCombo}: ${p.url}` : null].filter(Boolean).join("\n")
       });
-      return { head: head2, body: body3, text: `${head2}
+      return { head, body: body3, text: `${head}
 
 ${body3}` };
     }
@@ -977,7 +977,7 @@ ${body3}` };
       note: [priceLine(L.comboPrice), p.url ? `${L.viewCombo}: ${p.url}` : null].filter(Boolean).join("\n"),
       next: L.askTeam
     });
-    return { head: head2, body: body2, text: `${head2}
+    return { head, body: body2, text: `${head}
 
 ${body2}` };
   }
@@ -992,7 +992,7 @@ ${body2}` };
     note: p.url ? `${L.viewProduct}: ${p.url}` : void 0,
     next: hasInfo ? void 0 : L.askTeam
   });
-  return { head: head2, body, text: `${head2}
+  return { head, body, text: `${head}
 
 ${body}` };
 }
@@ -1725,13 +1725,13 @@ async function testShopifyConnection(shop, fresh = false) {
     const granted = (((_a2 = data.currentAppInstallation) == null ? void 0 : _a2.accessScopes) ?? []).map((s) => s.handle);
     const has = (s) => granted.includes(s) || granted.includes(s.replace("read_", "write_"));
     const probe = await gql(shop, `query { orders(first: 1) { nodes { ${ORDER_FIELDS} } } ordersCount(limit: null) { count } }`);
-    const count = Number((_b = probe.ordersCount) == null ? void 0 : _b.count);
+    const count2 = Number((_b = probe.ordersCount) == null ? void 0 : _b.count);
     value = {
       ok: true,
       shopName: (_c = data.shop) == null ? void 0 : _c.name,
       domain: (_d = data.shop) == null ? void 0 : _d.myshopifyDomain,
       scopes: REQUIRED_SCOPES.map((s) => ({ scope: s, granted: has(s) })),
-      orders: { readable: Number.isFinite(count) ? count : null }
+      orders: { readable: Number.isFinite(count2) ? count2 : null }
     };
   } catch (e) {
     value = { ok: false, error: explainShopifyError(String(e.message ?? e)) };
@@ -2563,8 +2563,8 @@ async function startBridge() {
         const accept = type === "notify" || type === "append" && ageSec < 180;
         if (!accept || !parsed) {
           if (!((_c = m == null ? void 0 : m.key) == null ? void 0 : _c.fromMe)) {
-            const why2 = `${type}; age=${Math.round(ageSec)}s; jid=${String(((_d = m == null ? void 0 : m.key) == null ? void 0 : _d.remoteJid) ?? "").split("@")[1] ?? "?"}; content=${Object.keys((m == null ? void 0 : m.message) ?? {}).join(",") || "none"}`;
-            await logEvent({ source: "whatsapp", event: "bridge_message_ignored", detail: why2 });
+            const why = `${type}; age=${Math.round(ageSec)}s; jid=${String(((_d = m == null ? void 0 : m.key) == null ? void 0 : _d.remoteJid) ?? "").split("@")[1] ?? "?"}; content=${Object.keys((m == null ? void 0 : m.message) ?? {}).join(",") || "none"}`;
+            await logEvent({ source: "whatsapp", event: "bridge_message_ignored", detail: why });
           }
           continue;
         }
@@ -2597,7 +2597,7 @@ async function refreshAvatar(from, jid) {
     const phone2 = normalizePhone(from) ?? `+${from.replace(/\D/g, "")}`;
     const conv = await prisma.conversation.findFirst({ where: { phone: phone2 }, select: { id: true, avatarAt: true } });
     if (!conv || conv.avatarAt && Date.now() - conv.avatarAt.getTime() < 24 * 36e5) return;
-    let file2 = null;
+    let file = null;
     for (const j of [jid, `${from.replace(/\D/g, "")}@s.whatsapp.net`]) {
       const url = await ((_a2 = bridge.sock) == null ? void 0 : _a2.profilePictureUrl(j, "image").catch(() => void 0));
       if (!url) continue;
@@ -2605,11 +2605,11 @@ async function refreshAvatar(from, jid) {
       if (!res.ok) continue;
       const buf = Buffer.from(await res.arrayBuffer());
       if (buf.length > 0 && buf.length <= MAX_MEDIA_BYTES) {
-        file2 = saveMedia(buf, "image/jpeg").file;
+        file = saveMedia(buf, "image/jpeg").file;
         break;
       }
     }
-    await prisma.conversation.update({ where: { id: conv.id }, data: { avatarAt: /* @__PURE__ */ new Date(), ...file2 ? { avatarFile: file2 } : {} } });
+    await prisma.conversation.update({ where: { id: conv.id }, data: { avatarAt: /* @__PURE__ */ new Date(), ...file ? { avatarFile: file } : {} } });
   } catch {
   }
 }
@@ -3139,7 +3139,7 @@ async function accessToken(email, privateKey) {
   const hit = mem.tokens.get(email);
   if (hit && hit.exp > Date.now() + 6e4) return hit.token;
   const now = Math.floor(Date.now() / 1e3);
-  const head2 = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const head = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const claim = b64url(JSON.stringify({
     iss: email,
     scope: "https://www.googleapis.com/auth/spreadsheets",
@@ -3147,11 +3147,11 @@ async function accessToken(email, privateKey) {
     iat: now,
     exp: now + 3600
   }));
-  const sig = createSign("RSA-SHA256").update(`${head2}.${claim}`).sign(privateKey);
+  const sig = createSign("RSA-SHA256").update(`${head}.${claim}`).sign(privateKey);
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: `${head2}.${claim}.${b64url(sig)}` }),
+    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: `${head}.${claim}.${b64url(sig)}` }),
     signal: AbortSignal.timeout(15e3)
   });
   const j = await res.json().catch(() => ({}));
@@ -3541,188 +3541,179 @@ function loginErrorMessage(loginErrors) {
   }
   return {};
 }
-const page = "_page_17svf_4";
-const bg = "_bg_17svf_32";
-const blob = "_blob_17svf_33";
-const drift = "_drift_17svf_1";
-const b1 = "_b1_17svf_34";
-const b2 = "_b2_17svf_35";
-const b3 = "_b3_17svf_36";
-const grid = "_grid_17svf_37";
-const nav = "_nav_17svf_46";
-const brand = "_brand_17svf_53";
-const logo = "_logo_17svf_54";
-const navLinks = "_navLinks_17svf_58";
-const navCta = "_navCta_17svf_63";
-const footer = "_footer_17svf_66";
-const hero = "_hero_17svf_69";
-const pill = "_pill_17svf_73";
-const title = "_title_17svf_78";
-const gradient = "_gradient_17svf_79";
-const shine = "_shine_17svf_1";
-const lead = "_lead_17svf_84";
-const startBox = "_startBox_17svf_85";
-const trust = "_trust_17svf_86";
-const rise = "_rise_17svf_90";
-const form = "_form_17svf_94";
-const formRow = "_formRow_17svf_95";
-const input = "_input_17svf_100";
-const button = "_button_17svf_102";
-const hint = "_hint_17svf_114";
-const phoneWrap = "_phoneWrap_17svf_118";
-const pulse = "_pulse_17svf_1";
-const phone = "_phone_17svf_118";
-const bob = "_bob_17svf_1";
-const phoneTop = "_phoneTop_17svf_130";
-const avatar = "_avatar_17svf_133";
-const online = "_online_17svf_134";
-const blink = "_blink_17svf_1";
-const chat = "_chat_17svf_136";
-const bubble = "_bubble_17svf_140";
-const pop = "_pop_17svf_1";
-const me = "_me_17svf_142";
-const bot = "_bot_17svf_143";
-const dots = "_dots_17svf_145";
-const dot = "_dot_17svf_145";
-const compose = "_compose_17svf_150";
-const floaty = "_floaty_17svf_152";
-const floatY = "_floatY_17svf_1";
-const f1 = "_f1_17svf_158";
-const f2 = "_f2_17svf_159";
-const f3 = "_f3_17svf_160";
-const marquee = "_marquee_17svf_164";
-const track = "_track_17svf_165";
-const scroll = "_scroll_17svf_1";
-const stats = "_stats_17svf_172";
-const stat = "_stat_17svf_172";
-const section = "_section_17svf_179";
-const head = "_head_17svf_180";
-const kicker = "_kicker_17svf_181";
-const splitText = "_splitText_17svf_182";
-const cta = "_cta_17svf_182";
-const cards = "_cards_17svf_185";
-const card = "_card_17svf_185";
-const green = "_green_17svf_197";
-const teal = "_teal_17svf_197";
-const amber = "_amber_17svf_197";
-const sky = "_sky_17svf_197";
-const violet = "_violet_17svf_198";
-const rose = "_rose_17svf_198";
-const icon = "_icon_17svf_199";
-const split = "_split_17svf_182";
-const reverse = "_reverse_17svf_212";
-const ticks = "_ticks_17svf_214";
-const flow = "_flow_17svf_218";
-const flowStep = "_flowStep_17svf_220";
-const step$1 = "_step_17svf_239";
-const files = "_files_17svf_227";
-const file = "_file_17svf_227";
-const csv = "_csv_17svf_229";
-const rowIn = "_rowIn_17svf_1";
-const tree = "_tree_17svf_235";
-const indent = "_indent_17svf_236";
-const steps = "_steps_17svf_239";
-const stepNo = "_stepNo_17svf_241";
-const why = "_why_17svf_248";
-const whyItem = "_whyItem_17svf_249";
-const faq = "_faq_17svf_255";
-const ready = "_ready_17svf_279";
-const b4 = "_b4_17svf_317";
+const page = "_page_1n1g9_4";
+const kicker = "_kicker_1n1g9_33";
+const nav = "_nav_1n1g9_36";
+const brand = "_brand_1n1g9_42";
+const wordmark = "_wordmark_1n1g9_43";
+const navLinks = "_navLinks_1n1g9_45";
+const navCta = "_navCta_1n1g9_50";
+const hero = "_hero_1n1g9_57";
+const heroBg = "_heroBg_1n1g9_58";
+const heroShade = "_heroShade_1n1g9_63";
+const heroInner = "_heroInner_1n1g9_67";
+const title = "_title_1n1g9_70";
+const lead = "_lead_1n1g9_72";
+const startBox = "_startBox_1n1g9_73";
+const scroll = "_scroll_1n1g9_74";
+const rise = "_rise_1n1g9_78";
+const form = "_form_1n1g9_82";
+const formRow = "_formRow_1n1g9_83";
+const input = "_input_1n1g9_88";
+const button = "_button_1n1g9_90";
+const hint = "_hint_1n1g9_100";
+const ghost = "_ghost_1n1g9_102";
+const phoneWrap = "_phoneWrap_1n1g9_109";
+const phone = "_phone_1n1g9_109";
+const phoneTop = "_phoneTop_1n1g9_117";
+const avatar = "_avatar_1n1g9_120";
+const online = "_online_1n1g9_121";
+const chat = "_chat_1n1g9_123";
+const bubble = "_bubble_1n1g9_124";
+const me = "_me_1n1g9_126";
+const bot = "_bot_1n1g9_127";
+const dots = "_dots_1n1g9_129";
+const compose = "_compose_1n1g9_134";
+const floaty = "_floaty_1n1g9_135";
+const f1 = "_f1_1n1g9_140";
+const f2 = "_f2_1n1g9_141";
+const strip = "_strip_1n1g9_145";
+const stripItem = "_stripItem_1n1g9_146";
+const collections = "_collections_1n1g9_154";
+const collHead = "_collHead_1n1g9_155";
+const toolsHead = "_toolsHead_1n1g9_155";
+const splitText = "_splitText_1n1g9_155";
+const centerHead = "_centerHead_1n1g9_155";
+const slideText = "_slideText_1n1g9_155";
+const cta = "_cta_1n1g9_155";
+const viewAll = "_viewAll_1n1g9_157";
+const collGrid = "_collGrid_1n1g9_159";
+const coll = "_coll_1n1g9_154";
+const collText = "_collText_1n1g9_164";
+const collArrow = "_collArrow_1n1g9_167";
+const spot = "_spot_1n1g9_171";
+const slides = "_slides_1n1g9_172";
+const slide = "_slide_1n1g9_155";
+const active = "_active_1n1g9_174";
+const slideImg = "_slideImg_1n1g9_175";
+const count = "_count_1n1g9_182";
+const specs = "_specs_1n1g9_187";
+const slideActions = "_slideActions_1n1g9_192";
+const arrows = "_arrows_1n1g9_193";
+const dotsNav = "_dotsNav_1n1g9_196";
+const on = "_on_1n1g9_121";
+const tools = "_tools_1n1g9_155";
+const toolsRow = "_toolsRow_1n1g9_203";
+const tool = "_tool_1n1g9_155";
+const split = "_split_1n1g9_155";
+const ticks = "_ticks_1n1g9_214";
+const flow = "_flow_1n1g9_217";
+const flowStep = "_flowStep_1n1g9_219";
+const how = "_how_1n1g9_224";
+const steps = "_steps_1n1g9_227";
+const stepNo = "_stepNo_1n1g9_230";
+const faq = "_faq_1n1g9_233";
+const ctaShade = "_ctaShade_1n1g9_244";
+const ctaInner = "_ctaInner_1n1g9_245";
+const footer = "_footer_1n1g9_248";
+const credit = "_credit_1n1g9_250";
+const ready = "_ready_1n1g9_253";
 const styles$2 = {
   page,
-  bg,
-  blob,
-  drift,
-  b1,
-  b2,
-  b3,
-  grid,
+  kicker,
   nav,
   brand,
-  logo,
+  wordmark,
   navLinks,
   navCta,
-  footer,
   hero,
-  pill,
+  heroBg,
+  heroShade,
+  heroInner,
   title,
-  gradient,
-  shine,
   lead,
   startBox,
-  trust,
+  scroll,
   rise,
   form,
   formRow,
   input,
   button,
   hint,
+  ghost,
   phoneWrap,
-  pulse,
   phone,
-  bob,
   phoneTop,
   avatar,
   online,
-  blink,
   chat,
   bubble,
-  pop,
   me,
   bot,
   dots,
-  dot,
   compose,
   floaty,
-  floatY,
   f1,
   f2,
-  f3,
-  marquee,
-  track,
-  scroll,
-  stats,
-  stat,
-  section,
-  head,
-  kicker,
+  strip,
+  stripItem,
+  collections,
+  collHead,
+  toolsHead,
   splitText,
+  centerHead,
+  slideText,
   cta,
-  cards,
-  card,
-  green,
-  teal,
-  amber,
-  sky,
-  violet,
-  rose,
-  icon,
+  viewAll,
+  collGrid,
+  coll,
+  collText,
+  collArrow,
+  spot,
+  slides,
+  slide,
+  active,
+  slideImg,
+  count,
+  specs,
+  slideActions,
+  arrows,
+  dotsNav,
+  on,
+  tools,
+  toolsRow,
+  tool,
   split,
-  reverse,
   ticks,
   flow,
   flowStep,
-  step: step$1,
-  files,
-  file,
-  csv,
-  rowIn,
-  tree,
-  indent,
+  how,
   steps,
   stepNo,
-  why,
-  whyItem,
   faq,
+  ctaShade,
+  ctaInner,
+  footer,
+  credit,
   ready,
-  "in": "_in_17svf_100",
-  b4
+  "in": "_in_1n1g9_88"
 };
 const meta = () => [{
   title: "ShopPilot: WhatsApp bot, order updates and store tools for Shopify"
 }, {
   name: "description",
   content: "JAZZ answers your customers on WhatsApp 24/7: order status, Delhivery tracking and product questions. Plus order sheet, product scrapper, image editor and SEO tools in one Shopify app."
+}];
+const links$5 = () => [{
+  rel: "preconnect",
+  href: "https://fonts.googleapis.com"
+}, {
+  rel: "preconnect",
+  href: "https://fonts.gstatic.com",
+  crossOrigin: "anonymous"
+}, {
+  rel: "stylesheet",
+  href: "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&display=swap"
 }];
 const loader$r = async ({
   request
@@ -3743,65 +3734,101 @@ const action$i = async ({
     errors
   };
 };
-const FEATURES = [{
-  icon: Bot,
-  tone: "green",
-  title: "JAZZ, your WhatsApp bot",
-  text: "Answers customers in short numbered steps, in English, Hindi and Hinglish.",
-  points: ["Order status with order number + registered phone check", "Delhivery tracking ID and a link that opens pre-filled", "Product search, price in ₹, combo contents"]
+const IMG = "/landing";
+const STRIP = [{
+  icon: Zap,
+  title: "INSTANT REPLIES",
+  text: "Answers in seconds, 24/7"
 }, {
-  icon: MessagesSquare,
-  tone: "teal",
-  title: "Live Inbox",
-  text: "Take over any chat in one click when a customer needs a person.",
-  points: ["Photos, files and quick replies", "JAZZ goes quiet while an agent talks", "Every message stays in one place"]
+  icon: ShieldCheck,
+  title: "VERIFIED ORDERS",
+  text: "Order number + phone match"
 }, {
-  icon: BellRing,
-  tone: "amber",
-  title: "Support alerts",
-  text: "When a customer asks for the support team, you see it instantly.",
-  points: ["Animated pop-up with sound", "Banner on the dashboard", "Customer is told help is coming"]
+  icon: Truck,
+  title: "DELHIVERY TRACKING",
+  text: "Link opens with the ID filled in"
 }, {
-  icon: PackageSearch,
-  tone: "sky",
-  title: "Product enquiries",
-  text: "See which products customers ask for that you do not sell yet.",
-  points: ["Every enquiry saved with the customer", "Spot demand before competitors", "One list, easy to act on"]
+  icon: Headset,
+  title: "HUMAN TAKEOVER",
+  text: "Step in with one click"
+}];
+const CARDS = [{
+  title: "WHATSAPP BOT",
+  text: "JAZZ, always on.",
+  img: "phone-night"
 }, {
-  icon: ClipboardList,
-  tone: "violet",
-  title: "Order Update sheet",
-  text: "Your orders and a Google Sheet stay in sync, by day, week, month and year.",
-  points: ["Colour-coded by status", "Team fills dispatch, AWB and COD details", "Add manual orders too"]
+  title: "ORDER TRACKING",
+  text: "Status, courier, link.",
+  img: "boxes"
 }, {
-  icon: ScanSearch,
-  tone: "rose",
-  title: "Product Scrapper",
-  text: "Find new products from other sites and skip the ones you already sell.",
-  points: ["CSV: name, description, link and SKU", "SKU as BRAND-MODEL, like HP-126snw", "ZIP with one image folder per SKU (1, 2, 3...)"]
+  title: "ORDER SHEET",
+  text: "Your team, in sync.",
+  img: "desk-lamp"
 }, {
-  icon: WandSparkles,
-  tone: "green",
-  title: "Image Editor",
-  text: "Clean up product photos in bulk and push them back to Shopify.",
-  points: ["Background removal and resize", "Bulk jobs with progress", "Undo whenever you want"]
+  title: "STORE TOOLS",
+  text: "Scrape, edit, optimise.",
+  img: "shoes"
+}];
+const SLIDES = [{
+  n: "JAZZ",
+  title: "JAZZ, YOUR WHATSAPP ASSISTANT",
+  text: "Answers order, tracking and product questions in short numbered steps, then hands over to your team the moment a person is needed.",
+  specs: [["Languages", "English, Hindi, Hinglish"], ["Replies", "Instant, 24/7"], ["Handover", "One click"]],
+  img: "boxes-plant",
+  cta: "See order tracking"
 }, {
-  icon: SearchCheck,
-  tone: "teal",
-  title: "SEO fixer",
-  text: "Score every product, then fix titles, descriptions and image alt text in bulk.",
-  points: ["Clear score per product", "Fix through a CSV, review before applying", "Undo any batch"]
+  n: "SCRAPPER",
+  title: "PRODUCT SCRAPPER",
+  text: "Find new products on other sites, skip what you already sell, and download a sheet with name, description, link and a BRAND-MODEL SKU, plus images grouped by SKU.",
+  specs: [["CSV", "Name, description, link, SKU"], ["Images", "ZIP, one folder per SKU"], ["Naming", "1, 2, 3 ..."]],
+  img: "shelf",
+  cta: "Try the scrapper"
+}, {
+  n: "ORDER SHEET",
+  title: "ORDER UPDATE SHEET",
+  text: "Orders and a Google Sheet stay in sync by day, week, month and year, colour-coded by status, with room for dispatch, AWB and COD details.",
+  specs: [["Sync", "Google Sheets"], ["Periods", "Day to year"], ["Manual rows", "Supported"]],
+  img: "desk-lamp",
+  cta: "Open the sheet"
+}, {
+  n: "SEO",
+  title: "SEO FIXER AND IMAGE EDITOR",
+  text: "Score every product, fix titles, descriptions and alt text in bulk, and clean up product photos with background removal. Review first, undo any time.",
+  specs: [["Score", "Per product"], ["Fix", "Bulk, via CSV"], ["Undo", "Any batch"]],
+  img: "monitor",
+  cta: "Improve my store"
+}];
+const TOOLS = [{
+  label: "ORDER SHEET",
+  img: "desk-lamp",
+  pos: "50% 40%"
+}, {
+  label: "PRODUCT SCRAPPER",
+  img: "shoes",
+  pos: "50% 30%"
+}, {
+  label: "IMAGE EDITOR",
+  img: "parcel-label",
+  pos: "50% 55%"
+}, {
+  label: "SEO FIXER",
+  img: "monitor",
+  pos: "55% 45%"
+}, {
+  label: "AUTO REPLIES",
+  img: "phone-night",
+  pos: "50% 55%"
 }];
 const STEPS = [{
-  n: "1",
+  n: "01",
   title: "Install on your store",
   text: "Enter your Shopify store address and approve the app. No coding, no passwords to create."
 }, {
-  n: "2",
+  n: "02",
   title: "Link WhatsApp",
   text: "Scan one QR code. JAZZ starts answering the same minute."
 }, {
-  n: "3",
+  n: "03",
   title: "Relax, then step in",
   text: "JAZZ handles the routine questions. Your team gets an alert when a person is needed."
 }];
@@ -3876,7 +3903,7 @@ function useDemo() {
     typing
   };
 }
-function useReveal(root2) {
+function usePageMotion(root2) {
   useEffect(() => {
     const el = root2.current;
     if (!el) return;
@@ -3894,37 +3921,26 @@ function useReveal(root2) {
       threshold: 0.12
     });
     items.forEach((n) => !n.classList.contains(styles$2.in) && io.observe(n));
-    return () => io.disconnect();
-  }, [root2]);
-}
-function Counter({
-  to,
-  suffix = ""
-}) {
-  const [v, setV] = useState(to);
-  const ref = useRef(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    setV(0);
-    const io = new IntersectionObserver(([e]) => {
-      if (!e.isIntersecting) return;
-      io.disconnect();
-      const start = performance.now();
-      const tick = (t) => {
-        const p = Math.min(1, (t - start) / 1200);
-        setV(Math.round(to * (1 - Math.pow(1 - p, 3))));
-        if (p < 1) requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
+    let raf = 0;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const onScroll = () => {
+      if (reduce || raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        el.style.setProperty("--py", `${Math.min(window.scrollY, 900) * 0.25}px`);
+        el.dataset.stuck = window.scrollY > 40 ? "1" : "0";
+      });
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, {
+      passive: true
     });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [to]);
-  return /* @__PURE__ */ jsxs("span", {
-    ref,
-    children: [v, suffix]
-  });
+    return () => {
+      io.disconnect();
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(raf);
+    };
+  }, [root2]);
 }
 function LoginForm({
   errors,
@@ -3947,8 +3963,8 @@ function LoginForm({
       }), /* @__PURE__ */ jsxs("button", {
         className: styles$2.button,
         type: "submit",
-        children: ["Start with Shopify ", /* @__PURE__ */ jsx(ArrowRight, {
-          size: 16
+        children: ["START WITH SHOPIFY ", /* @__PURE__ */ jsx(ArrowRight, {
+          size: 15
         })]
       })]
     }), /* @__PURE__ */ jsx("span", {
@@ -3966,47 +3982,49 @@ const route = UNSAFE_withComponentProps(function App2() {
   const actionData = useActionData();
   const errors = actionData == null ? void 0 : actionData.errors;
   const root2 = useRef(null);
-  useReveal(root2);
+  usePageMotion(root2);
   const {
     shown,
     typing
   } = useDemo();
+  const [slide2, setSlide] = useState(0);
+  const [hover, setHover] = useState(false);
+  const go = useCallback((d) => setSlide((s) => (s + d + SLIDES.length) % SLIDES.length), []);
+  useEffect(() => {
+    if (hover || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const t = window.setInterval(() => go(1), 6500);
+    return () => clearInterval(t);
+  }, [hover, go, slide2]);
   return /* @__PURE__ */ jsxs("div", {
     className: styles$2.page,
     ref: root2,
-    children: [/* @__PURE__ */ jsxs("div", {
-      className: styles$2.bg,
-      "aria-hidden": "true",
-      children: [/* @__PURE__ */ jsx("span", {
-        className: `${styles$2.blob} ${styles$2.b1}`
-      }), /* @__PURE__ */ jsx("span", {
-        className: `${styles$2.blob} ${styles$2.b2}`
-      }), /* @__PURE__ */ jsx("span", {
-        className: `${styles$2.blob} ${styles$2.b3}`
-      }), /* @__PURE__ */ jsx("span", {
-        className: `${styles$2.blob} ${styles$2.b4}`
-      }), /* @__PURE__ */ jsx("span", {
-        className: styles$2.grid
-      })]
-    }), /* @__PURE__ */ jsxs("header", {
+    children: [/* @__PURE__ */ jsxs("header", {
       className: styles$2.nav,
       children: [/* @__PURE__ */ jsxs("a", {
         className: styles$2.brand,
         href: "#top",
         "aria-label": "ShopPilot home",
         children: [/* @__PURE__ */ jsx("span", {
-          className: styles$2.logo,
-          children: "S"
-        }), "ShopPilot"]
+          className: styles$2.wordmark,
+          children: "SHOPPILOT"
+        }), /* @__PURE__ */ jsx("small", {
+          children: "WHATSAPP · ORDERS · STORE TOOLS"
+        })]
       }), /* @__PURE__ */ jsxs("nav", {
         className: styles$2.navLinks,
         "aria-label": "Sections",
         children: [/* @__PURE__ */ jsx("a", {
           href: "#features",
-          children: "Features"
+          children: "FEATURES"
+        }), /* @__PURE__ */ jsx("a", {
+          href: "#spotlight",
+          children: "SPOTLIGHT"
+        }), /* @__PURE__ */ jsx("a", {
+          href: "#tools",
+          children: "TOOLS"
         }), /* @__PURE__ */ jsx("a", {
           href: "#how",
-          children: "How it works"
+          children: "HOW IT WORKS"
         }), /* @__PURE__ */ jsx("a", {
           href: "#faq",
           children: "FAQ"
@@ -4014,353 +4032,338 @@ const route = UNSAFE_withComponentProps(function App2() {
       }), /* @__PURE__ */ jsx("a", {
         className: styles$2.navCta,
         href: "#start",
-        children: "Log in"
+        children: "GET STARTED"
       })]
     }), /* @__PURE__ */ jsxs("main", {
       id: "top",
       children: [/* @__PURE__ */ jsxs("section", {
         className: styles$2.hero,
-        children: [/* @__PURE__ */ jsxs("div", {
-          className: styles$2.heroText,
-          children: [/* @__PURE__ */ jsxs("span", {
-            className: `${styles$2.pill} ${styles$2.rise}`,
-            children: [/* @__PURE__ */ jsx(Sparkles, {
-              size: 14
-            }), " Built for Shopify stores in India"]
-          }), /* @__PURE__ */ jsxs("h1", {
-            className: `${styles$2.title} ${styles$2.rise}`,
-            style: {
-              animationDelay: "80ms"
-            },
-            children: ["Your store's ", /* @__PURE__ */ jsx("span", {
-              className: styles$2.gradient,
-              children: "co-pilot"
-            }), " on WhatsApp"]
-          }), /* @__PURE__ */ jsx("p", {
-            className: `${styles$2.lead} ${styles$2.rise}`,
-            style: {
-              animationDelay: "160ms"
-            },
-            children: "JAZZ answers order, tracking and product questions 24/7. Your team gets the Order Update sheet, Product Scrapper, Image Editor and SEO fixer in the same app."
-          }), /* @__PURE__ */ jsx("div", {
-            id: "start",
-            className: `${styles$2.rise} ${styles$2.startBox}`,
-            style: {
-              animationDelay: "240ms"
-            },
-            children: showForm && /* @__PURE__ */ jsx(LoginForm, {
-              errors,
-              id: "shop-hero"
-            })
-          }), /* @__PURE__ */ jsxs("ul", {
-            className: `${styles$2.trust} ${styles$2.rise}`,
-            style: {
-              animationDelay: "320ms"
-            },
-            children: [/* @__PURE__ */ jsxs("li", {
-              children: [/* @__PURE__ */ jsx(Check, {
-                size: 14
-              }), " Works in English, Hindi and Hinglish"]
-            }), /* @__PURE__ */ jsxs("li", {
-              children: [/* @__PURE__ */ jsx(Check, {
-                size: 14
-              }), " Order details only after phone match"]
-            }), /* @__PURE__ */ jsxs("li", {
-              children: [/* @__PURE__ */ jsx(Check, {
-                size: 14
-              }), " Human takeover any time"]
-            })]
-          })]
-        }), /* @__PURE__ */ jsxs("div", {
-          className: `${styles$2.phoneWrap} ${styles$2.rise}`,
+        children: [/* @__PURE__ */ jsx("div", {
+          className: styles$2.heroBg,
+          "aria-hidden": "true",
           style: {
-            animationDelay: "200ms"
-          },
+            backgroundImage: `url(${IMG}/hero.jpg)`
+          }
+        }), /* @__PURE__ */ jsx("div", {
+          className: styles$2.heroShade,
+          "aria-hidden": "true"
+        }), /* @__PURE__ */ jsxs("div", {
+          className: styles$2.heroInner,
           children: [/* @__PURE__ */ jsxs("div", {
-            className: styles$2.phone,
-            role: "img",
-            "aria-label": "Demo chat: a customer tracks order W0000 and JAZZ replies with the Delhivery tracking link",
+            className: styles$2.heroText,
+            children: [/* @__PURE__ */ jsx("span", {
+              className: `${styles$2.kicker} ${styles$2.rise}`,
+              children: "SHOPPILOT / WHATSAPP + STORE TOOLS"
+            }), /* @__PURE__ */ jsxs("h1", {
+              className: `${styles$2.title} ${styles$2.rise}`,
+              style: {
+                animationDelay: "90ms"
+              },
+              children: ["YOUR STORE,", /* @__PURE__ */ jsx("br", {}), "ALWAYS ", /* @__PURE__ */ jsx("em", {
+                children: "ANSWERING."
+              })]
+            }), /* @__PURE__ */ jsx("p", {
+              className: `${styles$2.lead} ${styles$2.rise}`,
+              style: {
+                animationDelay: "180ms"
+              },
+              children: "JAZZ replies to order, tracking and product questions on WhatsApp, day and night, while your team gets the tools to run the store."
+            }), /* @__PURE__ */ jsx("div", {
+              id: "start",
+              className: `${styles$2.startBox} ${styles$2.rise}`,
+              style: {
+                animationDelay: "270ms"
+              },
+              children: showForm && /* @__PURE__ */ jsx(LoginForm, {
+                errors,
+                id: "shop-hero"
+              })
+            }), /* @__PURE__ */ jsxs("a", {
+              className: `${styles$2.scroll} ${styles$2.rise}`,
+              style: {
+                animationDelay: "380ms"
+              },
+              href: "#features",
+              children: ["SCROLL DOWN", /* @__PURE__ */ jsx("i", {})]
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: `${styles$2.phoneWrap} ${styles$2.rise}`,
+            style: {
+              animationDelay: "220ms"
+            },
             children: [/* @__PURE__ */ jsxs("div", {
-              className: styles$2.phoneTop,
-              children: [/* @__PURE__ */ jsx("span", {
-                className: styles$2.avatar,
-                children: "J"
-              }), /* @__PURE__ */ jsxs("div", {
-                children: [/* @__PURE__ */ jsx("b", {
-                  children: "JAZZ"
-                }), /* @__PURE__ */ jsxs("small", {
-                  children: [/* @__PURE__ */ jsx("i", {
-                    className: styles$2.online
-                  }), " online"]
+              className: styles$2.phone,
+              role: "img",
+              "aria-label": "Demo chat: a customer tracks order W0000 and JAZZ replies with the Delhivery tracking link",
+              children: [/* @__PURE__ */ jsxs("div", {
+                className: styles$2.phoneTop,
+                children: [/* @__PURE__ */ jsx("span", {
+                  className: styles$2.avatar,
+                  children: "J"
+                }), /* @__PURE__ */ jsxs("div", {
+                  children: [/* @__PURE__ */ jsx("b", {
+                    children: "JAZZ"
+                  }), /* @__PURE__ */ jsxs("small", {
+                    children: [/* @__PURE__ */ jsx("i", {
+                      className: styles$2.online
+                    }), " online"]
+                  })]
                 })]
+              }), /* @__PURE__ */ jsxs("div", {
+                className: styles$2.chat,
+                children: [DEMO.slice(0, shown).map((m, i) => /* @__PURE__ */ jsx("div", {
+                  className: `${styles$2.bubble} ${m.who === "me" ? styles$2.me : styles$2.bot}`,
+                  children: m.lines
+                }, i)), typing && /* @__PURE__ */ jsxs("div", {
+                  className: `${styles$2.bubble} ${styles$2.bot} ${styles$2.dots}`,
+                  "aria-hidden": "true",
+                  children: [/* @__PURE__ */ jsx("i", {}), /* @__PURE__ */ jsx("i", {}), /* @__PURE__ */ jsx("i", {})]
+                })]
+              }), /* @__PURE__ */ jsx("div", {
+                className: styles$2.compose,
+                children: "Type a message"
               })]
             }), /* @__PURE__ */ jsxs("div", {
-              className: styles$2.chat,
-              children: [DEMO.slice(0, shown).map((m, i) => /* @__PURE__ */ jsx("div", {
-                className: `${styles$2.bubble} ${m.who === "me" ? styles$2.me : styles$2.bot}`,
-                children: m.lines
-              }, i)), typing && /* @__PURE__ */ jsxs("div", {
-                className: `${styles$2.bubble} ${styles$2.bot} ${styles$2.dots}`,
-                "aria-hidden": "true",
-                children: [/* @__PURE__ */ jsx("i", {}), /* @__PURE__ */ jsx("i", {}), /* @__PURE__ */ jsx("i", {})]
-              })]
-            }), /* @__PURE__ */ jsx("div", {
-              className: styles$2.compose,
-              children: "Type a message"
+              className: `${styles$2.floaty} ${styles$2.f1}`,
+              children: [/* @__PURE__ */ jsx(Truck, {
+                size: 15
+              }), " Delhivery link, pre-filled"]
+            }), /* @__PURE__ */ jsxs("div", {
+              className: `${styles$2.floaty} ${styles$2.f2}`,
+              children: [/* @__PURE__ */ jsx(BellRing, {
+                size: 15
+              }), " Support request alert"]
             })]
-          }), /* @__PURE__ */ jsxs("div", {
-            className: `${styles$2.floaty} ${styles$2.f1}`,
-            children: [/* @__PURE__ */ jsx(Truck, {
-              size: 16
-            }), " Delhivery link, pre-filled"]
-          }), /* @__PURE__ */ jsxs("div", {
-            className: `${styles$2.floaty} ${styles$2.f2}`,
-            children: [/* @__PURE__ */ jsx(BellRing, {
-              size: 16
-            }), " Support request alert"]
-          }), /* @__PURE__ */ jsxs("div", {
-            className: `${styles$2.floaty} ${styles$2.f3}`,
-            children: [/* @__PURE__ */ jsx(ShieldCheck, {
-              size: 16
-            }), " Phone-verified orders"]
           })]
         })]
-      }), /* @__PURE__ */ jsx("div", {
-        className: styles$2.marquee,
-        "aria-hidden": "true",
-        children: /* @__PURE__ */ jsx("div", {
-          className: styles$2.track,
-          children: [0, 1].map((k) => /* @__PURE__ */ jsx("ul", {
-            children: ["Order status in seconds", "Delhivery links, pre-filled", "English · Hindi · Hinglish", "Live Inbox", "Support alerts", "Order Update sheet", "Product Scrapper", "Image Editor", "SEO fixer"].map((t) => /* @__PURE__ */ jsxs("li", {
-              children: [/* @__PURE__ */ jsx("i", {}), t]
-            }, t))
-          }, k))
-        })
-      }), /* @__PURE__ */ jsxs("section", {
-        className: styles$2.stats,
-        "aria-label": "At a glance",
-        children: [/* @__PURE__ */ jsxs("div", {
+      }), /* @__PURE__ */ jsx("section", {
+        className: styles$2.strip,
+        "aria-label": "Highlights",
+        children: STRIP.map((s, i) => /* @__PURE__ */ jsxs("div", {
           "data-reveal": true,
-          className: styles$2.stat,
-          children: [/* @__PURE__ */ jsx("b", {
-            children: "24/7"
+          className: styles$2.stripItem,
+          style: {
+            transitionDelay: `${i * 80}ms`
+          },
+          children: [/* @__PURE__ */ jsx(s.icon, {
+            size: 22,
+            strokeWidth: 1.4
+          }), /* @__PURE__ */ jsx("b", {
+            children: s.title
           }), /* @__PURE__ */ jsx("span", {
-            children: "replies, even at 3 a.m."
+            children: s.text
           })]
-        }), /* @__PURE__ */ jsxs("div", {
-          "data-reveal": true,
-          className: styles$2.stat,
-          children: [/* @__PURE__ */ jsx("b", {
-            children: /* @__PURE__ */ jsx(Counter, {
-              to: 8
-            })
-          }), /* @__PURE__ */ jsx("span", {
-            children: "tools in one Shopify app"
-          })]
-        }), /* @__PURE__ */ jsxs("div", {
-          "data-reveal": true,
-          className: styles$2.stat,
-          children: [/* @__PURE__ */ jsx("b", {
-            children: /* @__PURE__ */ jsx(Counter, {
-              to: 3
-            })
-          }), /* @__PURE__ */ jsx("span", {
-            children: "languages out of the box"
-          })]
-        }), /* @__PURE__ */ jsxs("div", {
-          "data-reveal": true,
-          className: styles$2.stat,
-          children: [/* @__PURE__ */ jsx("b", {
-            children: /* @__PURE__ */ jsx(Counter, {
-              to: 1
-            })
-          }), /* @__PURE__ */ jsx("span", {
-            children: "QR scan to go live"
-          })]
-        })]
+        }, s.title))
       }), /* @__PURE__ */ jsxs("section", {
         id: "features",
-        className: styles$2.section,
+        className: styles$2.collections,
         children: [/* @__PURE__ */ jsxs("div", {
           "data-reveal": true,
-          className: styles$2.head,
+          className: styles$2.collHead,
           children: [/* @__PURE__ */ jsx("span", {
             className: styles$2.kicker,
-            children: "Everything in one place"
-          }), /* @__PURE__ */ jsx("h2", {
-            children: "One app. Eight tools. Zero juggling."
-          }), /* @__PURE__ */ jsx("p", {
-            children: "Support, order tracking, catalogue work and SEO, built to save your team hours every day."
+            children: "THE APP"
+          }), /* @__PURE__ */ jsxs("h2", {
+            children: ["DESIGNED FOR", /* @__PURE__ */ jsx("br", {}), "MODERN SELLING."]
+          }), /* @__PURE__ */ jsxs("a", {
+            href: "#tools",
+            className: styles$2.viewAll,
+            children: ["VIEW ALL TOOLS ", /* @__PURE__ */ jsx(ArrowRight, {
+              size: 13
+            })]
           })]
         }), /* @__PURE__ */ jsx("div", {
-          className: styles$2.cards,
-          children: FEATURES.map((f, i) => /* @__PURE__ */ jsxs("article", {
+          className: styles$2.collGrid,
+          children: CARDS.map((c, i) => /* @__PURE__ */ jsxs("a", {
+            href: "#spotlight",
             "data-reveal": true,
-            className: `${styles$2.card} ${styles$2[f.tone]}`,
+            className: styles$2.coll,
             style: {
-              transitionDelay: `${i % 4 * 70}ms`
+              transitionDelay: `${i * 90}ms`
             },
-            children: [/* @__PURE__ */ jsx("span", {
-              className: styles$2.icon,
-              children: /* @__PURE__ */ jsx(f.icon, {
-                size: 20
-              })
-            }), /* @__PURE__ */ jsx("h3", {
-              children: f.title
-            }), /* @__PURE__ */ jsx("p", {
-              children: f.text
-            }), /* @__PURE__ */ jsx("ul", {
-              children: f.points.map((p) => /* @__PURE__ */ jsxs("li", {
-                children: [/* @__PURE__ */ jsx(Check, {
-                  size: 13
-                }), p]
-              }, p))
+            children: [/* @__PURE__ */ jsx("img", {
+              src: `${IMG}/${c.img}.jpg`,
+              alt: "",
+              loading: "lazy"
+            }), /* @__PURE__ */ jsxs("span", {
+              className: styles$2.collText,
+              children: [/* @__PURE__ */ jsx("b", {
+                children: c.title
+              }), /* @__PURE__ */ jsx("small", {
+                children: c.text
+              })]
+            }), /* @__PURE__ */ jsx(ArrowUpRight, {
+              className: styles$2.collArrow,
+              size: 18
             })]
-          }, f.title))
+          }, c.title))
         })]
-      }), /* @__PURE__ */ jsx("section", {
-        className: styles$2.section,
-        children: /* @__PURE__ */ jsxs("div", {
-          className: styles$2.split,
-          children: [/* @__PURE__ */ jsxs("div", {
-            "data-reveal": true,
-            className: styles$2.splitText,
-            children: [/* @__PURE__ */ jsx("span", {
-              className: styles$2.kicker,
-              children: "Order tracking that closes the loop"
-            }), /* @__PURE__ */ jsx("h2", {
-              children: '"Where is my order?" answered in seconds'
-            }), /* @__PURE__ */ jsx("p", {
-              children: "The customer sends the order number. JAZZ checks it against the registered phone, then replies with the status, courier, tracking ID and a link that opens Delhivery with the ID already typed in."
-            }), /* @__PURE__ */ jsxs("ul", {
-              className: styles$2.ticks,
-              children: [/* @__PURE__ */ jsxs("li", {
-                children: [/* @__PURE__ */ jsx(Check, {
-                  size: 16
-                }), " Prices always in ₹"]
-              }), /* @__PURE__ */ jsxs("li", {
-                children: [/* @__PURE__ */ jsx(Check, {
-                  size: 16
-                }), " Short numbered replies, no walls of text"]
-              }), /* @__PURE__ */ jsxs("li", {
-                children: [/* @__PURE__ */ jsx(Check, {
-                  size: 16
-                }), " Works with #W0000, W0000 or a registered phone number"]
-              })]
-            })]
-          }), /* @__PURE__ */ jsx("div", {
-            "data-reveal": true,
-            className: styles$2.flow,
-            "aria-hidden": "true",
-            children: ["Customer sends #W0000", "JAZZ verifies the phone", "Order + Delhivery link sent"].map((t, i) => /* @__PURE__ */ jsxs("div", {
-              className: styles$2.flowStep,
-              style: {
-                animationDelay: `${i * 1.1}s`
-              },
-              children: [/* @__PURE__ */ jsx("span", {
-                children: i + 1
-              }), t]
-            }, t))
-          })]
-        })
-      }), /* @__PURE__ */ jsx("section", {
-        className: styles$2.section,
-        children: /* @__PURE__ */ jsxs("div", {
-          className: `${styles$2.split} ${styles$2.reverse}`,
-          children: [/* @__PURE__ */ jsxs("div", {
-            "data-reveal": true,
-            className: styles$2.files,
-            "aria-hidden": "true",
-            children: [/* @__PURE__ */ jsxs("div", {
-              className: styles$2.file,
-              children: [/* @__PURE__ */ jsx(Download, {
-                size: 15
-              }), " products.csv"]
-            }), /* @__PURE__ */ jsxs("div", {
-              className: styles$2.csv,
-              children: [/* @__PURE__ */ jsxs("div", {
-                children: [/* @__PURE__ */ jsx("b", {
-                  children: "SKU"
-                }), /* @__PURE__ */ jsx("b", {
-                  children: "Product Name"
-                })]
-              }), /* @__PURE__ */ jsxs("div", {
-                children: [/* @__PURE__ */ jsx("span", {
-                  children: "HP-126snw"
-                }), /* @__PURE__ */ jsx("span", {
-                  children: "HP Laser MFP 126snw"
-                })]
-              }), /* @__PURE__ */ jsxs("div", {
-                children: [/* @__PURE__ */ jsx("span", {
-                  children: "DELL-3520"
-                }), /* @__PURE__ */ jsx("span", {
-                  children: "Dell Inspiron 3520"
-                })]
-              }), /* @__PURE__ */ jsxs("div", {
-                children: [/* @__PURE__ */ jsx("span", {
-                  children: "SONY-WH1000XM5"
-                }), /* @__PURE__ */ jsx("span", {
-                  children: "Sony WH-1000XM5"
-                })]
-              })]
-            }), /* @__PURE__ */ jsxs("div", {
-              className: styles$2.file,
-              children: [/* @__PURE__ */ jsx(Download, {
-                size: 15
-              }), " images.zip"]
-            }), /* @__PURE__ */ jsxs("div", {
-              className: styles$2.tree,
-              children: [/* @__PURE__ */ jsx("span", {
-                children: "HP-126snw/"
-              }), /* @__PURE__ */ jsx("span", {
-                className: styles$2.indent,
-                children: "1.jpg  2.jpg  3.jpg"
-              }), /* @__PURE__ */ jsx("span", {
-                children: "DELL-3520/"
-              }), /* @__PURE__ */ jsx("span", {
-                className: styles$2.indent,
-                children: "1.jpg  2.jpg"
-              })]
-            })]
-          }), /* @__PURE__ */ jsxs("div", {
-            "data-reveal": true,
-            className: styles$2.splitText,
-            children: [/* @__PURE__ */ jsx("span", {
-              className: styles$2.kicker,
-              children: "Product Scrapper"
-            }), /* @__PURE__ */ jsx("h2", {
-              children: "Add new products without the copy-paste"
-            }), /* @__PURE__ */ jsx("p", {
-              children: "Search other sites, skip what is already in your store, and download a ready sheet: product name, description, link and a clean SKU in the BRAND-MODEL format. Images come as a ZIP with one folder per SKU, numbered 1, 2, 3."
-            }), /* @__PURE__ */ jsxs("ul", {
-              className: styles$2.ticks,
-              children: [/* @__PURE__ */ jsxs("li", {
-                children: [/* @__PURE__ */ jsx(Check, {
-                  size: 16
-                }), " Already-in-store products are skipped"]
-              }), /* @__PURE__ */ jsxs("li", {
-                children: [/* @__PURE__ */ jsx(Check, {
-                  size: 16
-                }), " SKU matches the image folder name"]
-              }), /* @__PURE__ */ jsxs("li", {
-                children: [/* @__PURE__ */ jsx(Check, {
-                  size: 16
-                }), " Works with Shopify stores, Amazon, Flipkart and more"]
-              })]
-            })]
-          })]
-        })
       }), /* @__PURE__ */ jsxs("section", {
-        id: "how",
-        className: styles$2.section,
+        id: "spotlight",
+        className: styles$2.spot,
+        onMouseEnter: () => setHover(true),
+        onMouseLeave: () => setHover(false),
+        children: [/* @__PURE__ */ jsx("div", {
+          className: styles$2.slides,
+          children: SLIDES.map((s, i) => /* @__PURE__ */ jsxs("article", {
+            className: `${styles$2.slide} ${i === slide2 ? styles$2.active : ""}`,
+            "aria-hidden": i !== slide2,
+            children: [/* @__PURE__ */ jsx("div", {
+              className: styles$2.slideImg,
+              style: {
+                backgroundImage: `url(${IMG}/${s.img}.jpg)`
+              }
+            }), /* @__PURE__ */ jsxs("div", {
+              className: styles$2.slideText,
+              children: [/* @__PURE__ */ jsxs("span", {
+                className: styles$2.count,
+                children: ["0", i + 1, " / 0", SLIDES.length]
+              }), /* @__PURE__ */ jsx("h2", {
+                children: s.title
+              }), /* @__PURE__ */ jsx("p", {
+                children: s.text
+              }), /* @__PURE__ */ jsx("dl", {
+                className: styles$2.specs,
+                children: s.specs.map(([k, v]) => /* @__PURE__ */ jsxs("div", {
+                  children: [/* @__PURE__ */ jsx("dt", {
+                    children: k
+                  }), /* @__PURE__ */ jsx("dd", {
+                    children: v
+                  })]
+                }, k))
+              }), /* @__PURE__ */ jsxs("div", {
+                className: styles$2.slideActions,
+                children: [/* @__PURE__ */ jsx("a", {
+                  className: styles$2.ghost,
+                  href: "#start",
+                  tabIndex: i === slide2 ? 0 : -1,
+                  children: s.cta.toUpperCase()
+                }), /* @__PURE__ */ jsxs("span", {
+                  className: styles$2.arrows,
+                  children: [/* @__PURE__ */ jsx("button", {
+                    type: "button",
+                    onClick: () => go(-1),
+                    "aria-label": "Previous",
+                    children: /* @__PURE__ */ jsx(ChevronLeft, {
+                      size: 16
+                    })
+                  }), /* @__PURE__ */ jsx("button", {
+                    type: "button",
+                    onClick: () => go(1),
+                    "aria-label": "Next",
+                    children: /* @__PURE__ */ jsx(ChevronRight, {
+                      size: 16
+                    })
+                  })]
+                })]
+              })]
+            })]
+          }, s.n))
+        }), /* @__PURE__ */ jsx("div", {
+          className: styles$2.dotsNav,
+          role: "tablist",
+          "aria-label": "Spotlight",
+          children: SLIDES.map((s, i) => /* @__PURE__ */ jsx("button", {
+            type: "button",
+            role: "tab",
+            "aria-selected": i === slide2,
+            className: i === slide2 ? styles$2.on : "",
+            onClick: () => setSlide(i),
+            children: s.n
+          }, s.n))
+        })]
+      }), /* @__PURE__ */ jsxs("section", {
+        id: "tools",
+        className: styles$2.tools,
         children: [/* @__PURE__ */ jsxs("div", {
           "data-reveal": true,
-          className: styles$2.head,
+          className: styles$2.toolsHead,
+          children: [/* @__PURE__ */ jsxs("h2", {
+            children: ["EVERYTHING", /* @__PURE__ */ jsx("br", {}), "INCLUDED."]
+          }), /* @__PURE__ */ jsx("p", {
+            children: "Eight tools, one app. Support, tracking, catalogue work and SEO, built to save your team hours every day."
+          }), /* @__PURE__ */ jsx("a", {
+            className: styles$2.ghost,
+            href: "#start",
+            children: "EXPLORE THE APP"
+          })]
+        }), /* @__PURE__ */ jsx("div", {
+          className: styles$2.toolsRow,
+          children: TOOLS.map((t, i) => /* @__PURE__ */ jsxs("div", {
+            "data-reveal": true,
+            className: styles$2.tool,
+            style: {
+              transitionDelay: `${i * 80}ms`
+            },
+            children: [/* @__PURE__ */ jsx("img", {
+              src: `${IMG}/${t.img}.jpg`,
+              alt: "",
+              loading: "lazy",
+              style: {
+                objectPosition: t.pos
+              }
+            }), /* @__PURE__ */ jsx("span", {
+              children: t.label
+            })]
+          }, t.label))
+        })]
+      }), /* @__PURE__ */ jsxs("section", {
+        className: styles$2.split,
+        children: [/* @__PURE__ */ jsxs("div", {
+          "data-reveal": true,
+          className: styles$2.splitText,
           children: [/* @__PURE__ */ jsx("span", {
             className: styles$2.kicker,
-            children: "Live in minutes"
+            children: "ORDER TRACKING THAT CLOSES THE LOOP"
+          }), /* @__PURE__ */ jsxs("h2", {
+            children: ["“WHERE IS MY ORDER?”", /* @__PURE__ */ jsx("br", {}), "ANSWERED IN SECONDS."]
+          }), /* @__PURE__ */ jsx("p", {
+            children: "The customer sends the order number. JAZZ checks it against the registered phone, then replies with the status, courier, tracking ID and a link that opens Delhivery with the ID already typed in."
+          }), /* @__PURE__ */ jsxs("ul", {
+            className: styles$2.ticks,
+            children: [/* @__PURE__ */ jsxs("li", {
+              children: [/* @__PURE__ */ jsx(Check, {
+                size: 15
+              }), " Prices always in ₹"]
+            }), /* @__PURE__ */ jsxs("li", {
+              children: [/* @__PURE__ */ jsx(Check, {
+                size: 15
+              }), " Short numbered replies, no walls of text"]
+            }), /* @__PURE__ */ jsxs("li", {
+              children: [/* @__PURE__ */ jsx(Check, {
+                size: 15
+              }), " Works with #W0000, W0000 or a registered phone number"]
+            }), /* @__PURE__ */ jsxs("li", {
+              children: [/* @__PURE__ */ jsx(Languages, {
+                size: 15
+              }), " English, Hindi and Hinglish"]
+            })]
+          })]
+        }), /* @__PURE__ */ jsx("div", {
+          "data-reveal": true,
+          className: styles$2.flow,
+          "aria-hidden": "true",
+          children: ["Customer sends #W0000", "JAZZ verifies the phone", "Order + Delhivery link sent"].map((t, i) => /* @__PURE__ */ jsxs("div", {
+            className: styles$2.flowStep,
+            style: {
+              animationDelay: `${i * 1.1}s`
+            },
+            children: [/* @__PURE__ */ jsx("span", {
+              children: i + 1
+            }), t]
+          }, t))
+        })]
+      }), /* @__PURE__ */ jsxs("section", {
+        id: "how",
+        className: styles$2.how,
+        children: [/* @__PURE__ */ jsxs("div", {
+          "data-reveal": true,
+          className: styles$2.centerHead,
+          children: [/* @__PURE__ */ jsx("span", {
+            className: styles$2.kicker,
+            children: "LIVE IN MINUTES"
           }), /* @__PURE__ */ jsx("h2", {
-            children: "How it works"
+            children: "HOW IT WORKS"
           })]
         }), /* @__PURE__ */ jsx("ol", {
           className: styles$2.steps,
@@ -4379,50 +4382,17 @@ const route = UNSAFE_withComponentProps(function App2() {
             })]
           }, s.n))
         })]
-      }), /* @__PURE__ */ jsx("section", {
-        className: styles$2.section,
-        children: /* @__PURE__ */ jsx("div", {
-          className: styles$2.why,
-          children: [{
-            i: Zap,
-            t: "Fast to set up",
-            d: "One QR scan and the bot is working."
-          }, {
-            i: ShieldCheck,
-            t: "Privacy first",
-            d: "Orders are shown only to the verified customer."
-          }, {
-            i: Languages,
-            t: "Speaks your customers' language",
-            d: "English, Hindi, Hinglish and translation for the rest."
-          }].map((w, i) => /* @__PURE__ */ jsxs("div", {
-            "data-reveal": true,
-            className: styles$2.whyItem,
-            style: {
-              transitionDelay: `${i * 80}ms`
-            },
-            children: [/* @__PURE__ */ jsx(w.i, {
-              size: 22
-            }), /* @__PURE__ */ jsxs("div", {
-              children: [/* @__PURE__ */ jsx("b", {
-                children: w.t
-              }), /* @__PURE__ */ jsx("span", {
-                children: w.d
-              })]
-            })]
-          }, w.t))
-        })
       }), /* @__PURE__ */ jsxs("section", {
         id: "faq",
-        className: styles$2.section,
+        className: styles$2.how,
         children: [/* @__PURE__ */ jsxs("div", {
           "data-reveal": true,
-          className: styles$2.head,
+          className: styles$2.centerHead,
           children: [/* @__PURE__ */ jsx("span", {
             className: styles$2.kicker,
-            children: "Good to know"
+            children: "GOOD TO KNOW"
           }), /* @__PURE__ */ jsx("h2", {
-            children: "Questions, answered"
+            children: "QUESTIONS, ANSWERED"
           })]
         }), /* @__PURE__ */ jsx("div", {
           className: styles$2.faq,
@@ -4441,25 +4411,36 @@ const route = UNSAFE_withComponentProps(function App2() {
       }), /* @__PURE__ */ jsxs("section", {
         className: styles$2.cta,
         "data-reveal": true,
-        children: [/* @__PURE__ */ jsx("h2", {
-          children: "Let JAZZ take the first reply"
-        }), /* @__PURE__ */ jsx("p", {
-          children: "Connect your store and see it answer a real order question."
-        }), showForm && /* @__PURE__ */ jsx(LoginForm, {
-          errors,
-          id: "shop-cta"
+        style: {
+          backgroundImage: `url(${IMG}/boxes-plant.jpg)`
+        },
+        children: [/* @__PURE__ */ jsx("div", {
+          className: styles$2.ctaShade
+        }), /* @__PURE__ */ jsxs("div", {
+          className: styles$2.ctaInner,
+          children: [/* @__PURE__ */ jsx("span", {
+            className: styles$2.kicker,
+            children: "READY WHEN YOU ARE"
+          }), /* @__PURE__ */ jsxs("h2", {
+            children: ["LET JAZZ TAKE", /* @__PURE__ */ jsx("br", {}), "THE FIRST REPLY."]
+          }), /* @__PURE__ */ jsx("p", {
+            children: "Connect your store and see it answer a real order question."
+          }), showForm && /* @__PURE__ */ jsx(LoginForm, {
+            errors,
+            id: "shop-cta"
+          })]
         })]
       })]
     }), /* @__PURE__ */ jsxs("footer", {
       className: styles$2.footer,
-      children: [/* @__PURE__ */ jsxs("span", {
-        className: styles$2.brand,
-        children: [/* @__PURE__ */ jsx("span", {
-          className: styles$2.logo,
-          children: "S"
-        }), " ShopPilot"]
+      children: [/* @__PURE__ */ jsx("span", {
+        className: styles$2.wordmark,
+        children: "SHOPPILOT"
       }), /* @__PURE__ */ jsx("span", {
         children: "WhatsApp bot, order updates and store tools for your Shopify store."
+      }), /* @__PURE__ */ jsx("span", {
+        className: styles$2.credit,
+        children: "Photos: Pexels"
       })]
     })]
   });
@@ -4468,6 +4449,7 @@ const route1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   __proto__: null,
   action: action$i,
   default: route,
+  links: links$5,
   loader: loader$r,
   meta
 }, Symbol.toStringTag, { value: "Module" }));
@@ -4662,11 +4644,11 @@ const loader$o = async ({
       avatarFile: true
     }
   });
-  const file2 = (conv == null ? void 0 : conv.avatarFile) ? mediaFilePath(conv.avatarFile) : null;
-  if (!file2) return new Response("Not found", {
+  const file = (conv == null ? void 0 : conv.avatarFile) ? mediaFilePath(conv.avatarFile) : null;
+  if (!file) return new Response("Not found", {
     status: 404
   });
-  return new Response(new Uint8Array(await readFile(file2)), {
+  return new Response(new Uint8Array(await readFile(file)), {
     headers: {
       "Content-Type": "image/jpeg",
       "X-Content-Type-Options": "nosniff",
@@ -4976,9 +4958,9 @@ async function scrapeShopify(site, category, brand2, limit, ctx) {
     for (const p of items) {
       if (found >= limit || ctx.stopped()) break;
       const tags = Array.isArray(p.tags) ? p.tags.join(" ") : String(p.tags ?? "");
-      const blob2 = norm([p.title, p.vendor, p.product_type, tags].join(" "));
-      if (brand2 && !blob2.includes(norm(brand2))) continue;
-      if (words.length && !words.every((w) => blob2.includes(w))) continue;
+      const blob = norm([p.title, p.vendor, p.product_type, tags].join(" "));
+      if (brand2 && !blob.includes(norm(brand2))) continue;
+      if (words.length && !words.every((w) => blob.includes(w))) continue;
       ctx.checked(++seen);
       const available = (p.variants ?? []).filter((v2) => v2.available);
       if (!available.length) continue;
@@ -5253,8 +5235,8 @@ async function execute(shop, id2, p, flag) {
       usedFolders.add(sku.toLowerCase());
       const folder = sku;
       log2(`New product ${sku}, downloading images: ${prod.title.slice(0, 50)}`);
-      const files2 = await downloadImages(prod.images, path.join(runDir, folder), prod.link);
-      if (!await save({ ...base, isNew: true, sku, description: (prod.description ?? "").slice(0, 5e3), imageCount: files2.length, folder, thumb: files2[0] ? `${folder}/${files2[0]}` : "" })) return false;
+      const files = await downloadImages(prod.images, path.join(runDir, folder), prod.link);
+      if (!await save({ ...base, isNew: true, sku, description: (prod.description ?? "").slice(0, 5e3), imageCount: files.length, folder, thumb: files[0] ? `${folder}/${files[0]}` : "" })) return false;
       return true;
     };
     await runScrape(
@@ -5305,12 +5287,12 @@ const loader$n = async ({
   }
   const [kind, runId, folder, name] = parts;
   if (kind === "file" && runId && folder && name) {
-    const file2 = path.join(FINDER_DIR, runId, folder, name);
+    const file = path.join(FINDER_DIR, runId, folder, name);
     const type = MIME$2[path.extname(name).toLowerCase()];
-    if (!inside(file2) || !type || !existsSync(file2)) return new Response("Not found", {
+    if (!inside(file) || !type || !existsSync(file)) return new Response("Not found", {
       status: 404
     });
-    return new Response(new Uint8Array(readFileSync(file2)), {
+    return new Response(new Uint8Array(readFileSync(file)), {
       headers: {
         "Content-Type": type,
         "X-Content-Type-Options": "nosniff",
@@ -5338,16 +5320,16 @@ const loader$n = async ({
       status: 404
     });
     const folders = folder ? [folder] : run.products.map((p) => p.folder).filter(Boolean);
-    const files2 = {};
+    const files = {};
     for (const f of folders) {
       const dir = path.join(FINDER_DIR, runId, f);
       if (!inside(dir) || !existsSync(dir) || !statSync(dir).isDirectory()) continue;
-      for (const n of readdirSync(dir)) files2[`${f}/${n}`] = new Uint8Array(readFileSync(path.join(dir, n)));
+      for (const n of readdirSync(dir)) files[`${f}/${n}`] = new Uint8Array(readFileSync(path.join(dir, n)));
     }
-    if (!Object.keys(files2).length) return new Response("No images", {
+    if (!Object.keys(files).length) return new Response("No images", {
       status: 404
     });
-    return new Response(new Uint8Array(zipSync(files2, {
+    return new Response(new Uint8Array(zipSync(files, {
       level: 0
     })), {
       headers: {
@@ -5366,8 +5348,8 @@ const loader$n = async ({
         createdAt: "asc"
       }
     });
-    const head2 = ["Product Name", "Product Description", "Link", "SKU"];
-    const lines = [head2.map(csvCell).join(",")];
+    const head = ["Product Name", "Product Description", "Link", "SKU"];
+    const lines = [head.map(csvCell).join(",")];
     for (const p of items) lines.push([p.title, p.description, p.link, p.sku || p.folder].map(csvCell).join(","));
     return new Response(String.fromCharCode(65279) + lines.join("\r\n"), {
       headers: {
@@ -5667,20 +5649,20 @@ async function ownJob(shop, jobId) {
   if (!job) throw new Error("Batch not found.");
   return job;
 }
-async function addUpload(shop, jobId, file2) {
+async function addUpload(shop, jobId, file) {
   const job = await ownJob(shop, jobId);
   if (job.status === "running") throw new Error("This batch is already running.");
-  if (file2.bytes.length === 0) throw new Error("The file is empty.");
-  if (file2.bytes.length > LIMITS$1.maxFileBytes) throw new Error(`The file is larger than ${LIMITS$1.maxFileBytes / 1024 / 1024} MB.`);
-  const ext = detectType(file2.bytes);
+  if (file.bytes.length === 0) throw new Error("The file is empty.");
+  if (file.bytes.length > LIMITS$1.maxFileBytes) throw new Error(`The file is larger than ${LIMITS$1.maxFileBytes / 1024 / 1024} MB.`);
+  const ext = detectType(file.bytes);
   if (!ext) throw new Error("Only JPG, PNG and WebP photos are supported.");
   if (await prisma.imageItem.count({ where: { jobId } }) >= LIMITS$1.maxFiles) throw new Error(`A batch can hold up to ${LIMITS$1.maxFiles} photos.`);
   const item = await prisma.imageItem.create({
-    data: { jobId, shop, name: safeSeg(file2.name), folder: file2.folder ? safeSeg(file2.folder.split(/[\\/]/)[0]) : "", ext, inBytes: file2.bytes.length }
+    data: { jobId, shop, name: safeSeg(file.name), folder: file.folder ? safeSeg(file.folder.split(/[\\/]/)[0]) : "", ext, inBytes: file.bytes.length }
   });
   const p = itemPaths(jobId, item.id, ext);
   mkdirSync(path.dirname(p.input), { recursive: true });
-  writeFileSync(p.input, file2.bytes);
+  writeFileSync(p.input, file.bytes);
   await prisma.imageJob.update({ where: { id: jobId }, data: { total: { increment: 1 } } });
   return item.id;
 }
@@ -6000,9 +5982,9 @@ async function applyOne(ctx, itemId) {
     await ensureBackup(ctx.shop, { jobId: item.jobId, id: item.id, ext: item.ext, mediaId: item.mediaId, productId: item.productId, productTitle: item.productTitle, srcUrl: item.srcUrl, inBytes: item.inBytes });
     const outExt = path.extname(item.outName).slice(1).toLowerCase();
     if (outExt !== item.ext) throw new Error("The edited photo has a different file type than the Shopify image, so it was not applied.");
-    const file2 = `${itemPaths(item.jobId, item.id, item.ext).outBase}.${outExt}`;
-    if (!existsSync(file2)) throw new Error("The edited photo is missing on this computer.");
-    const r = await replaceImage(ctx, item.mediaId, readFileSync(file2), outExt, item.outName);
+    const file = `${itemPaths(item.jobId, item.id, item.ext).outBase}.${outExt}`;
+    if (!existsSync(file)) throw new Error("The edited photo is missing on this computer.");
+    const r = await replaceImage(ctx, item.mediaId, readFileSync(file), outExt, item.outName);
     await prisma.imageItem.update({ where: { id: item.id }, data: { applyStatus: "applied", appliedAt: /* @__PURE__ */ new Date(), newUrl: r.url || null, applyError: null } });
     await log(ctx.shop, "image_applied", `${item.productTitle ?? item.productId}: ${item.name}`);
   } catch (e) {
@@ -6013,9 +5995,9 @@ async function applyOne(ctx, itemId) {
 }
 async function restoreOriginal(ctx, mediaId) {
   const b = await prisma.imageBackup.findUnique({ where: { shop_mediaId: { shop: ctx.shop, mediaId } } });
-  const file2 = b ? path.join(IMAGE_DIR, b.file) : "";
-  if (!b || !existsSync(file2)) throw new Error("There is no saved original for this image.");
-  await replaceImage(ctx, mediaId, readFileSync(file2), b.ext, `original.${b.ext}`);
+  const file = b ? path.join(IMAGE_DIR, b.file) : "";
+  if (!b || !existsSync(file)) throw new Error("There is no saved original for this image.");
+  await replaceImage(ctx, mediaId, readFileSync(file), b.ext, `original.${b.ext}`);
   await prisma.imageBackup.update({ where: { id: b.id }, data: { restoredAt: /* @__PURE__ */ new Date() } });
   await prisma.imageItem.updateMany({ where: { shop: ctx.shop, mediaId, applyStatus: "applied" }, data: { applyStatus: "restored" } });
   await log(ctx.shop, "image_restored", `${b.productTitle || b.productId}`);
@@ -6170,15 +6152,15 @@ const loader$m = async ({
     });
     const p = itemPaths(jobId, item.id, item.ext);
     const ext = item.outName ? path.extname(item.outName).slice(1).toLowerCase() : "";
-    const file2 = a === "thumb" ? p.thumb : a === "orig" ? p.orig : a === "result" && ext ? `${p.outBase}.${ext}` : null;
-    if (!file2 || !existsSync(file2)) return new Response("Not found", {
+    const file = a === "thumb" ? p.thumb : a === "orig" ? p.orig : a === "result" && ext ? `${p.outBase}.${ext}` : null;
+    if (!file || !existsSync(file)) return new Response("Not found", {
       status: 404
     });
     const type = a === "result" ? MIME[ext] : "image/webp";
     if (!type) return new Response("Not found", {
       status: 404
     });
-    return new Response(new Uint8Array(await readFile(file2)), {
+    return new Response(new Uint8Array(await readFile(file)), {
       headers: {
         "Content-Type": type,
         "X-Content-Type-Options": "nosniff",
@@ -6208,7 +6190,7 @@ const loader$m = async ({
       }
     });
     const used = /* @__PURE__ */ new Set();
-    const files2 = items.map((it) => {
+    const files = items.map((it) => {
       const ext = path.extname(it.outName ?? "").slice(1).toLowerCase();
       if (!it.outName || !ext) return null;
       const dir = JSON.parse(job.settings || "{}").keepFolders !== false && it.folder ? `${it.folder}/` : "";
@@ -6220,7 +6202,7 @@ const loader$m = async ({
         file: `${itemPaths(jobId, it.id, it.ext).outBase}.${ext}`
       };
     }).filter((f) => Boolean(f && existsSync(f.file)));
-    if (files2.length === 0) return new Response("No finished photos", {
+    if (files.length === 0) return new Response("No finished photos", {
       status: 404
     });
     let i = 0;
@@ -6237,8 +6219,8 @@ const loader$m = async ({
         });
       },
       async pull() {
-        if (i < files2.length) {
-          const f = files2[i++];
+        if (i < files.length) {
+          const f = files[i++];
           const entry2 = new ZipPassThrough(f.name);
           zip.add(entry2);
           entry2.push(new Uint8Array(await readFile(f.file)), true);
@@ -6339,13 +6321,13 @@ const action$b = async ({
         error: "The file is too large."
       }, 413);
       const form2 = await request.formData();
-      const file2 = form2.get("file");
-      if (!(file2 instanceof File)) return json$2({
+      const file = form2.get("file");
+      if (!(file instanceof File)) return json$2({
         error: "No file received."
       }, 400);
       const id2 = await addUpload(shop, jobId, {
-        name: file2.name,
-        bytes: Buffer.from(await file2.arrayBuffer()),
+        name: file.name,
+        bytes: Buffer.from(await file.arrayBuffer()),
         folder: String(form2.get("folder") ?? "")
       });
       return json$2({
@@ -6401,14 +6383,14 @@ const loader$l = async ({
       id: id2
     }
   });
-  const file2 = (msg2 == null ? void 0 : msg2.mediaFile) ? mediaFilePath(msg2.mediaFile) : null;
-  if (!msg2 || !file2) return new Response("Not found", {
+  const file = (msg2 == null ? void 0 : msg2.mediaFile) ? mediaFilePath(msg2.mediaFile) : null;
+  if (!msg2 || !file) return new Response("Not found", {
     status: 404
   });
   const mime = (msg2.mediaMime ?? "").toLowerCase();
   const inline = INLINE_MIME.has(mime);
   const name = (msg2.mediaName ?? msg2.mediaFile).replace(/[^\w.\- ]+/g, "_").slice(0, 100);
-  return new Response(new Uint8Array(await readFile(file2)), {
+  return new Response(new Uint8Array(await readFile(file)), {
     headers: {
       // Never let user-supplied content render as HTML/SVG: unknown types are forced to download.
       "Content-Type": inline ? mime : "application/octet-stream",
@@ -6585,8 +6567,8 @@ class CsvError extends Error {
 }
 function planChanges(table, live) {
   if (table.length < 2) throw new CsvError("The file has no rows.");
-  const head2 = table[0].map((h) => h.trim().toLowerCase());
-  const col = (name) => head2.indexOf(name);
+  const head = table[0].map((h) => h.trim().toLowerCase());
+  const col = (name) => head.indexOf(name);
   if (col("type") < 0 || col("id") < 0) throw new CsvError('This is not a file exported from this page (the columns "type" and "id" are missing). Download the CSV again and fill only the new_* columns.');
   const has = (name) => col(name) >= 0;
   if (!has("new_seo_title") && !has("new_seo_description") && !has("new_alt")) throw new CsvError("The columns new_seo_title, new_seo_description and new_alt are missing.");
@@ -6822,10 +6804,10 @@ async function liveAlts(ctx, mediaIds) {
   for (const n of data.nodes ?? []) if (n == null ? void 0 : n.id) out.set(n.id, String(n.alt ?? "").trim());
   return out;
 }
-async function setAlts(ctx, files2) {
+async function setAlts(ctx, files) {
   var _a2;
-  if (!files2.length) return;
-  const data = await ctx.gql(SET_ALTS, { files: files2 });
+  if (!files.length) return;
+  const data = await ctx.gql(SET_ALTS, { files });
   const err = msg((_a2 = data.fileUpdate) == null ? void 0 : _a2.userErrors);
   if (err) throw new Error(err);
 }
@@ -7245,12 +7227,12 @@ const action$9 = async ({
       });
     }
     if (op === "preview") {
-      const csv2 = typeof body.csv === "string" ? body.csv : "";
-      if (!csv2.trim()) return json({
+      const csv = typeof body.csv === "string" ? body.csv : "";
+      if (!csv.trim()) return json({
         error: "The file is empty."
       }, 400);
       const name = typeof body.name === "string" ? body.name : "CSV upload";
-      const r = await previewCsv(shop, csv2, name);
+      const r = await previewCsv(shop, csv, name);
       await logEvent({
         shop,
         source: "admin",
@@ -8434,7 +8416,7 @@ const app__index = UNSAFE_withComponentProps(function Dashboard() {
   const callMax = Math.max(1, ...d.orders.calls.map((c) => c.count));
   const cur = k.revenue.currency;
   const ser = (key2) => d.days.map((x) => x[key2]);
-  const pulse2 = [{
+  const pulse = [{
     label: "Revenue",
     value: cur ? money$1(k.revenue.value, cur) : k.revenue.value.toLocaleString(),
     change: k.revenue.change,
@@ -8631,7 +8613,7 @@ const app__index = UNSAFE_withComponentProps(function Dashboard() {
       })]
     }), /* @__PURE__ */ jsx("div", {
       className: "db-pulse",
-      children: pulse2.map((p) => /* @__PURE__ */ jsxs("div", {
+      children: pulse.map((p) => /* @__PURE__ */ jsxs("div", {
         className: "db-pulse-item",
         children: [/* @__PURE__ */ jsxs("div", {
           className: "db-pulse-top",
@@ -9613,8 +9595,8 @@ const action$7 = async ({
         message: "Slow down: too many replies."
       };
       const body = String(form2.get("body") ?? "").trim().slice(0, 1500);
-      const file2 = form2.get("file");
-      const hasFile = file2 instanceof File && file2.size > 0;
+      const file = form2.get("file");
+      const hasFile = file instanceof File && file.size > 0;
       if (!body && !hasFile) return {
         ok: false,
         message: "Type a message or attach a file."
@@ -9625,8 +9607,8 @@ const action$7 = async ({
       };
       let media;
       if (hasFile) {
-        const mime = (file2.type || "").split(";")[0].toLowerCase();
-        if (file2.size > MAX_MEDIA_BYTES) return {
+        const mime = (file.type || "").split(";")[0].toLowerCase();
+        if (file.size > MAX_MEDIA_BYTES) return {
           ok: false,
           message: "File is larger than 16 MB."
         };
@@ -9634,11 +9616,11 @@ const action$7 = async ({
           ok: false,
           message: "This file type is not allowed. Use images, video, audio, PDF, Word, Excel, text or zip."
         };
-        const saved = saveMedia(Buffer.from(await file2.arrayBuffer()), mime);
+        const saved = saveMedia(Buffer.from(await file.arrayBuffer()), mime);
         media = {
           kind: kindFromMime(mime),
           mime,
-          name: file2.name.replace(/[^\w.\- ]+/g, "_").slice(0, 100),
+          name: file.name.replace(/[^\w.\- ]+/g, "_").slice(0, 100),
           file: saved.file
         };
       }
@@ -10448,7 +10430,7 @@ const EXT = { jpg: "jpg", jpeg: "jpg", png: "png", webp: "webp" };
 const junk = (path2) => path2.split("/").some((p) => p.startsWith(".") || p === "__MACOSX" || p.toLowerCase() === "thumbs.db" || p.toLowerCase() === "desktop.ini");
 function parseZip(bytes2) {
   const problems = [];
-  const files2 = unzipSync(bytes2, {
+  const files = unzipSync(bytes2, {
     filter: (f) => {
       var _a2;
       const path2 = f.name.replace(/\\/g, "/");
@@ -10462,18 +10444,18 @@ function parseZip(bytes2) {
     }
   });
   const bySku = /* @__PURE__ */ new Map();
-  for (const [raw, data] of Object.entries(files2)) {
+  for (const [raw, data] of Object.entries(files)) {
     const path2 = raw.replace(/\\/g, "/");
     const parts = path2.split("/").filter(Boolean);
     if (parts.length < 2) {
       problems.push({ path: path2, reason: "This image is not inside a SKU folder." });
       continue;
     }
-    const file2 = parts[parts.length - 1];
+    const file = parts[parts.length - 1];
     const sku = parts[parts.length - 2].trim();
-    const dot2 = file2.lastIndexOf(".");
-    const stem2 = file2.slice(0, dot2).trim();
-    const ext = EXT[file2.slice(dot2 + 1).toLowerCase()];
+    const dot = file.lastIndexOf(".");
+    const stem2 = file.slice(0, dot).trim();
+    const ext = EXT[file.slice(dot + 1).toLowerCase()];
     if (!/^\d{1,3}$/.test(stem2) || Number(stem2) < 1) {
       problems.push({ path: path2, reason: "The file name must be a position number like 1.jpg, 2.jpg." });
       continue;
@@ -10484,23 +10466,23 @@ function parseZip(bytes2) {
       problems.push({ path: path2, reason: `Position ${position} is used twice in this folder.` });
       continue;
     }
-    folder.images.push({ position, ext, name: file2, data });
+    folder.images.push({ position, ext, name: file, data });
     bySku.set(sku.toLowerCase(), folder);
   }
   const folders = [...bySku.values()].map((f) => ({ sku: f.sku, images: f.images.sort((a, b) => a.position - b.position) })).sort((a, b) => a.sku.localeCompare(b.sku, void 0, { numeric: true }));
   return { folders, problems };
 }
-function ImageTabs({ active }) {
+function ImageTabs({ active: active2 }) {
   return /* @__PURE__ */ jsxs("div", { className: "ie-tabs", role: "tablist", "aria-label": "Image Editor", children: [
-    /* @__PURE__ */ jsxs(NavLink, { role: "tab", "aria-selected": active === "upload", className: active === "upload" ? "on" : "", to: "/app/image-editor", children: [
+    /* @__PURE__ */ jsxs(NavLink, { role: "tab", "aria-selected": active2 === "upload", className: active2 === "upload" ? "on" : "", to: "/app/image-editor", children: [
       /* @__PURE__ */ jsx(ImagePlus, { size: 15 }),
       " Editor"
     ] }),
-    /* @__PURE__ */ jsxs(NavLink, { role: "tab", "aria-selected": active === "store", className: active === "store" ? "on" : "", to: "/app/image-products", children: [
+    /* @__PURE__ */ jsxs(NavLink, { role: "tab", "aria-selected": active2 === "store", className: active2 === "store" ? "on" : "", to: "/app/image-products", children: [
       /* @__PURE__ */ jsx(Store, { size: 15 }),
       " Store products"
     ] }),
-    /* @__PURE__ */ jsxs(NavLink, { role: "tab", "aria-selected": active === "bulk", className: active === "bulk" ? "on" : "", to: "/app/image-bulk", children: [
+    /* @__PURE__ */ jsxs(NavLink, { role: "tab", "aria-selected": active2 === "bulk", className: active2 === "bulk" ? "on" : "", to: "/app/image-bulk", children: [
       /* @__PURE__ */ jsx(FileArchive, { size: 15 }),
       " Bulk upload (ZIP)"
     ] })
@@ -10602,17 +10584,17 @@ const app_imageBulk = UNSAFE_withComponentProps(function BulkUpload() {
     ...r,
     ...p
   } : r));
-  const readZip = async (file2) => {
+  const readZip = async (file) => {
     setError(null);
     setRows([]);
     setQueue([]);
     setProblems([]);
-    if (!/\.zip$/i.test(file2.name)) return setError("Please choose a .zip file.");
-    if (file2.size > MAX_ZIP) return setError(`The ZIP is larger than ${mb(MAX_ZIP)}. Split it into smaller ZIPs.`);
-    setZipName(file2.name);
+    if (!/\.zip$/i.test(file.name)) return setError("Please choose a .zip file.");
+    if (file.size > MAX_ZIP) return setError(`The ZIP is larger than ${mb(MAX_ZIP)}. Split it into smaller ZIPs.`);
+    setZipName(file.name);
     try {
       setPhase("reading");
-      const parsed = parseZip(new Uint8Array(await file2.arrayBuffer()));
+      const parsed = parseZip(new Uint8Array(await file.arrayBuffer()));
       setProblems(parsed.problems);
       if (parsed.folders.length === 0) throw new Error("No SKU folders with numbered images (1.jpg, 2.jpg ...) were found in this ZIP.");
       setPhase("checking");
@@ -13376,7 +13358,7 @@ const app_orderSheet = UNSAFE_withComponentProps(function OrderSheet() {
     for (const [k, v] of [...p]) if (!v || k === "page" && v === "1" || k === "period" && v === "week") p.delete(k);
     return `?${p.toString()}`;
   };
-  const cards2 = [["Total Orders", d.counts.total, ""], ["Delivered", d.counts.Delivered, "Delivered"], ["Unfulfilled", d.counts.Unfulfilled, "Unfulfilled"], ["Cancelled", d.counts.Cancelled, "Cancelled"], ["RTO (Returns)", d.counts.RTO, "RTO"]];
+  const cards = [["Total Orders", d.counts.total, ""], ["Delivered", d.counts.Delivered, "Delivered"], ["Unfulfilled", d.counts.Unfulfilled, "Unfulfilled"], ["Cancelled", d.counts.Cancelled, "Cancelled"], ["RTO (Returns)", d.counts.RTO, "RTO"]];
   const fulfilledOnly = d.counts.Fulfilled;
   return /* @__PURE__ */ jsxs(Page, {
     title: "Order Update",
@@ -13653,7 +13635,7 @@ const app_orderSheet = UNSAFE_withComponentProps(function OrderSheet() {
       })
     }), /* @__PURE__ */ jsx("div", {
       className: "d-kpis os-kpis",
-      children: cards2.map(([label2, n, st]) => /* @__PURE__ */ jsxs(Link, {
+      children: cards.map(([label2, n, st]) => /* @__PURE__ */ jsxs(Link, {
         to: link({
           status: st === d.status ? "" : st,
           page: "1"
@@ -13723,14 +13705,14 @@ const app_orderSheet = UNSAFE_withComponentProps(function OrderSheet() {
             })
           }), /* @__PURE__ */ jsx("tbody", {
             children: d.periods.map((r) => {
-              const on = d.from === r.from && d.to === r.to;
+              const on2 = d.from === r.from && d.to === r.to;
               return /* @__PURE__ */ jsxs("tr", {
-                className: `${r.current ? "cur" : ""}${on ? " on" : ""}`,
+                className: `${r.current ? "cur" : ""}${on2 ? " on" : ""}`,
                 children: [/* @__PURE__ */ jsxs("td", {
                   children: [/* @__PURE__ */ jsx(Link, {
                     to: link({
-                      from: on ? "" : r.from,
-                      to: on ? "" : r.to,
+                      from: on2 ? "" : r.from,
+                      to: on2 ? "" : r.to,
                       status: "",
                       page: "1"
                     }),
@@ -15561,17 +15543,17 @@ function Importer({
     setPv(null);
     if (input2.current) input2.current.value = "";
   };
-  const pick2 = async (file2) => {
+  const pick2 = async (file) => {
     setError(null);
     setPv(null);
-    if (!/\.csv$/i.test(file2.name)) return setError("Please choose a .csv file.");
-    if (file2.size > 8e6) return setError("The file is larger than 8 MB. Split it into smaller files.");
-    setName(file2.name);
+    if (!/\.csv$/i.test(file.name)) return setError("Please choose a .csv file.");
+    if (file.size > 8e6) return setError("The file is larger than 8 MB. Split it into smaller files.");
+    setName(file.name);
     setChecking(true);
     try {
       setPv(await post("preview", {
-        csv: await file2.text(),
-        name: file2.name
+        csv: await file.text(),
+        name: file.name
       }));
       rv.revalidate();
     } catch (e) {
@@ -16944,7 +16926,7 @@ const route34 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePrope
   headers,
   loader
 }, Symbol.toStringTag, { value: "Module" }));
-const serverManifest = { "entry": { "module": "/assets/entry.client-De-QXFzv.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-Bgn1TnLL.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index/route": { "id": "routes/_index/route", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-Ce8Xjtns.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/sparkles-xFG9LRwy.js", "/assets/check-CGWzhlUJ.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/wand-sparkles-BKiQOlNj.js", "/assets/bot-BbHIXRQL.js", "/assets/scan-search-B8PBngg6.js", "/assets/zap-Bwwxmd1D.js", "/assets/download-2kZZwBYa.js", "/assets/arrow-right-B_uRSdyZ.js"], "css": ["/assets/route-BRA28qPs.css"], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/health": { "id": "routes/health", "parentId": "root", "path": "health", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/health-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.cancelled": { "id": "routes/webhooks.orders.cancelled", "parentId": "root", "path": "webhooks/orders/cancelled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.cancelled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.create": { "id": "routes/webhooks.orders.create", "parentId": "root", "path": "webhooks/orders/create", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.create-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.updated": { "id": "routes/webhooks.orders.updated", "parentId": "root", "path": "webhooks/orders/updated", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.updated-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.products.update": { "id": "routes/webhooks.products.update", "parentId": "root", "path": "webhooks/products/update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.products.update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.avatar.$id": { "id": "routes/api.avatar.$id", "parentId": "root", "path": "api/avatar/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.avatar._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.finder.$": { "id": "routes/api.finder.$", "parentId": "root", "path": "api/finder/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.finder._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.image-editor.$": { "id": "routes/api.image-editor.$", "parentId": "root", "path": "api/image-editor/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.image-editor._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.media.$id": { "id": "routes/api.media.$id", "parentId": "root", "path": "api/media/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.media._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.send": { "id": "routes/api.send", "parentId": "root", "path": "api/send", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.send-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.seo.$": { "id": "routes/api.seo.$", "parentId": "root", "path": "api/seo/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.seo._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.webhooks.whatsapp": { "id": "routes/api.webhooks.whatsapp", "parentId": "root", "path": "api/webhooks/whatsapp", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.webhooks.whatsapp-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-D9ql_vVJ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/wand-sparkles-BKiQOlNj.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/zap-Bwwxmd1D.js", "/assets/sparkles-xFG9LRwy.js", "/assets/smartphone-k2xT6UfX.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-FbhgjGSA.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/wand-sparkles-BKiQOlNj.js", "/assets/bot-BbHIXRQL.js", "/assets/scan-search-B8PBngg6.js", "/assets/smartphone-k2xT6UfX.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/circle-check-C3rt3n8w.js", "/assets/arrow-right-B_uRSdyZ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.conversations": { "id": "routes/app.conversations", "parentId": "routes/app", "path": "conversations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.conversations-BNXOjWJh.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.enquiries": { "id": "routes/app.enquiries", "parentId": "routes/app", "path": "enquiries", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.enquiries-COB6tued.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-bulk": { "id": "routes/app.image-bulk", "parentId": "routes/app", "path": "image-bulk", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-bulk-DqWooGbZ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-editor": { "id": "routes/app.image-editor", "parentId": "routes/app", "path": "image-editor", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-editor-oLxol0EM.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BdrjVghj.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/chevron-down-DgceB_EA.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/check-CGWzhlUJ.js", "/assets/sparkles-xFG9LRwy.js", "/assets/x-DIQ7-F4l.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-products": { "id": "routes/app.image-products", "parentId": "routes/app", "path": "image-products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-products-BRAmRHXP.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BdrjVghj.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/check-CGWzhlUJ.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/chevron-down-DgceB_EA.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.integrations": { "id": "routes/app.integrations", "parentId": "routes/app", "path": "integrations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.integrations-C5bXxipA.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.logs": { "id": "routes/app.logs", "parentId": "routes/app", "path": "logs", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.logs-lqPVshDm.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.order-sheet": { "id": "routes/app.order-sheet", "parentId": "routes/app", "path": "order-sheet", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.order-sheet-AP8WeaL_.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/x-DIQ7-F4l.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.orders": { "id": "routes/app.orders", "parentId": "routes/app", "path": "orders", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.orders-Dn87TNmU.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.product-scrapper": { "id": "routes/app.product-scrapper", "parentId": "routes/app", "path": "product-scrapper", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.product-scrapper-CpJb0ZY2.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/search-Brt88N_W.js", "/assets/trash-B5HXC6TW.js", "/assets/download-2kZZwBYa.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.products": { "id": "routes/app.products", "parentId": "routes/app", "path": "products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.products-bWC2Cbow.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.quick-replies": { "id": "routes/app.quick-replies", "parentId": "routes/app", "path": "quick-replies", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.quick-replies-C0KLsZI0.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.seo": { "id": "routes/app.seo", "parentId": "routes/app", "path": "seo", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.seo-BsTh6JKt.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/scan-search-B8PBngg6.js", "/assets/arrow-right-B_uRSdyZ.js", "/assets/circle-check-C3rt3n8w.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/chevron-down-DgceB_EA.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/rotate-ccw-B15igVXZ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.settings": { "id": "routes/app.settings", "parentId": "routes/app", "path": "settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.settings-7p8iI1f7.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.waiting": { "id": "routes/app.waiting", "parentId": "routes/app", "path": "waiting", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/app.waiting-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.whatsapp-web": { "id": "routes/app.whatsapp-web", "parentId": "routes/app", "path": "whatsapp-web", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.whatsapp-web-rkKNcRIT.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-b5cf4d7e.js", "version": "b5cf4d7e", "sri": void 0 };
+const serverManifest = { "entry": { "module": "/assets/entry.client-De-QXFzv.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-Bgn1TnLL.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index/route": { "id": "routes/_index/route", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-CYLeRfu0.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/bell-ring-CRKXtSW5.js", "/assets/zap-CNy5rcdW.js", "/assets/arrow-right-B_uRSdyZ.js", "/assets/arrow-up-right-BK7HNfeb.js", "/assets/check-CGWzhlUJ.js"], "css": ["/assets/route-2YDWwR1i.css"], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/health": { "id": "routes/health", "parentId": "root", "path": "health", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/health-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.cancelled": { "id": "routes/webhooks.orders.cancelled", "parentId": "root", "path": "webhooks/orders/cancelled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.cancelled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.create": { "id": "routes/webhooks.orders.create", "parentId": "root", "path": "webhooks/orders/create", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.create-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.updated": { "id": "routes/webhooks.orders.updated", "parentId": "root", "path": "webhooks/orders/updated", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.updated-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.products.update": { "id": "routes/webhooks.products.update", "parentId": "root", "path": "webhooks/products/update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.products.update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.avatar.$id": { "id": "routes/api.avatar.$id", "parentId": "root", "path": "api/avatar/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.avatar._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.finder.$": { "id": "routes/api.finder.$", "parentId": "root", "path": "api/finder/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.finder._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.image-editor.$": { "id": "routes/api.image-editor.$", "parentId": "root", "path": "api/image-editor/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.image-editor._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.media.$id": { "id": "routes/api.media.$id", "parentId": "root", "path": "api/media/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.media._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.send": { "id": "routes/api.send", "parentId": "root", "path": "api/send", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.send-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.seo.$": { "id": "routes/api.seo.$", "parentId": "root", "path": "api/seo/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.seo._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.webhooks.whatsapp": { "id": "routes/api.webhooks.whatsapp", "parentId": "root", "path": "api/webhooks/whatsapp", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.webhooks.whatsapp-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-UXTpoJXJ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/bell-ring-CRKXtSW5.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/wand-sparkles-wxyp7cgH.js", "/assets/scan-search-B8PBngg6.js", "/assets/zap-CNy5rcdW.js", "/assets/sparkles-xFG9LRwy.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-BBxBaZcE.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/wand-sparkles-wxyp7cgH.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/bell-ring-CRKXtSW5.js", "/assets/circle-check-C3rt3n8w.js", "/assets/arrow-right-B_uRSdyZ.js", "/assets/arrow-up-right-BK7HNfeb.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.conversations": { "id": "routes/app.conversations", "parentId": "routes/app", "path": "conversations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.conversations-BNXOjWJh.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.enquiries": { "id": "routes/app.enquiries", "parentId": "routes/app", "path": "enquiries", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.enquiries-COB6tued.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-bulk": { "id": "routes/app.image-bulk", "parentId": "routes/app", "path": "image-bulk", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-bulk-DqWooGbZ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-editor": { "id": "routes/app.image-editor", "parentId": "routes/app", "path": "image-editor", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-editor-oLxol0EM.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BdrjVghj.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/chevron-down-DgceB_EA.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/check-CGWzhlUJ.js", "/assets/sparkles-xFG9LRwy.js", "/assets/x-DIQ7-F4l.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-products": { "id": "routes/app.image-products", "parentId": "routes/app", "path": "image-products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-products-BRAmRHXP.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BdrjVghj.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/check-CGWzhlUJ.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/chevron-down-DgceB_EA.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.integrations": { "id": "routes/app.integrations", "parentId": "routes/app", "path": "integrations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.integrations-C5bXxipA.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.logs": { "id": "routes/app.logs", "parentId": "routes/app", "path": "logs", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.logs-lqPVshDm.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.order-sheet": { "id": "routes/app.order-sheet", "parentId": "routes/app", "path": "order-sheet", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.order-sheet-AP8WeaL_.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/x-DIQ7-F4l.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.orders": { "id": "routes/app.orders", "parentId": "routes/app", "path": "orders", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.orders-Dn87TNmU.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.product-scrapper": { "id": "routes/app.product-scrapper", "parentId": "routes/app", "path": "product-scrapper", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.product-scrapper-CpJb0ZY2.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/search-Brt88N_W.js", "/assets/trash-B5HXC6TW.js", "/assets/download-2kZZwBYa.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.products": { "id": "routes/app.products", "parentId": "routes/app", "path": "products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.products-bWC2Cbow.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.quick-replies": { "id": "routes/app.quick-replies", "parentId": "routes/app", "path": "quick-replies", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.quick-replies-C0KLsZI0.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.seo": { "id": "routes/app.seo", "parentId": "routes/app", "path": "seo", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.seo-BsTh6JKt.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/scan-search-B8PBngg6.js", "/assets/arrow-right-B_uRSdyZ.js", "/assets/circle-check-C3rt3n8w.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/chevron-down-DgceB_EA.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/rotate-ccw-B15igVXZ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.settings": { "id": "routes/app.settings", "parentId": "routes/app", "path": "settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.settings-7p8iI1f7.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.waiting": { "id": "routes/app.waiting", "parentId": "routes/app", "path": "waiting", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/app.waiting-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.whatsapp-web": { "id": "routes/app.whatsapp-web", "parentId": "routes/app", "path": "whatsapp-web", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.whatsapp-web-rkKNcRIT.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-0c154465.js", "version": "0c154465", "sri": void 0 };
 const assetsBuildDirectory = "build/client";
 const basename = "/";
 const future = { "unstable_optimizeDeps": false, "v8_passThroughRequests": false, "v8_trailingSlashAwareDataRequests": false, "unstable_previewServerPrerendering": false, "v8_middleware": false, "v8_splitRouteModules": false, "v8_viteEnvironmentApi": false };
