@@ -5775,8 +5775,14 @@ class ImagePool {
   active() {
     return [...this.workers.values()].filter((w) => !w.retiring);
   }
+  /**
+   * Threads each worker may use inside the image library. Hosting plans cap how many threads a process may create
+   * ("glib: Error creating thread: Resource temporarily unavailable"), so the default is small: parallel speed comes
+   * from several worker processes, not from many threads. IMAGE_THREADS raises it on a strong server.
+   */
   threadsPerWorker() {
-    return Math.max(1, Math.floor(os.cpus().length / Math.max(1, this.target)));
+    const cap2 = Math.max(1, Math.floor(Number(process.env.IMAGE_THREADS)) || 2);
+    return Math.min(cap2, Math.max(1, Math.floor(os.cpus().length / Math.max(1, this.target))));
   }
   sendConfig() {
     for (const w of this.workers.values()) if (w.ready) w.proc.send({ type: "config", threads: this.threadsPerWorker() }, () => void 0);
@@ -5804,7 +5810,7 @@ class ImagePool {
   spawn() {
     var _a2;
     const id2 = this.nextId++;
-    const proc = fork(WORKER_FILE(), [], { execArgv: [], stdio: ["ignore", "inherit", "pipe", "ipc"], env: { ...process.env } });
+    const proc = fork(WORKER_FILE(), [], { execArgv: [], stdio: ["ignore", "inherit", "pipe", "ipc"], env: { ...process.env, VIPS_CONCURRENCY: String(this.threadsPerWorker()), UV_THREADPOOL_SIZE: process.env.UV_THREADPOOL_SIZE || "4" } });
     const w = { id: id2, proc, ready: false, busy: null, retiring: false, done: 0 };
     this.workers.set(id2, w);
     let errTail = "";
