@@ -93,6 +93,26 @@ function run(label, script, args) {
   return r.status === 0;
 }
 
+/** Runs a node script and keeps its output, so the real reason of a failure can be shown on the status page. */
+function runCapture(script, args) {
+  const r = spawnSync(process.execPath, [script, ...args], { env, encoding: "utf8" });
+  if (r.stdout) process.stdout.write(r.stdout);
+  if (r.stderr) process.stderr.write(r.stderr);
+  return { ok: r.status === 0, text: `${r.stdout ?? ""}\n${r.stderr ?? ""}` };
+}
+
+/** Plain-words reason for a failed `prisma migrate deploy`, taken from its output. */
+function explainMigrationFailure(text) {
+  const t = String(text);
+  const lines = t.split(/\r?\n/).map((l) => l.trim()).filter((l) => /error|P\d{4}|failed|locked|unable|denied|no such|already exists/i.test(l) && !/^\[start\]/.test(l));
+  const why = [];
+  if (/P3009|failed migrations?/i.test(t)) why.push("An earlier database update stopped half way. The log names the migration; it has to be marked as resolved (npx prisma migrate resolve) before the app can start.");
+  else if (/database is locked|SQLITE_BUSY|timed out/i.test(t)) why.push("The database is busy: another copy of the app is still running. Stop the app completely, wait a minute and start it again.");
+  else if (/unable to open|EACCES|permission denied|read-only|readonly|P1003|P1001|P1009/i.test(t)) why.push("The database file or its folder cannot be opened or written. Check that the folder exists and the hosting user can write to it.");
+  else if (/already exists|duplicate column/i.test(t)) why.push("The database already has a table or column from this update (a half-applied update). The log shows which one.");
+  return { why, lines: [...new Set(lines)].slice(-6).map((l) => l.slice(0, 220)) };
+}
+
 function main() {
   const prismaCli = pkgFile("prisma", "build/index.js");
 
@@ -117,10 +137,22 @@ function main() {
       console.warn("[start] could not refresh the database client (a file may be in use); starting with the existing one");
     }
   }
-  if (!run("database migration", prismaCli, ["migrate", "deploy"])) {
+  // A second copy of the app (during a redeploy) can hold the database for a few seconds, so a failed update is tried again twice.
+  let migrated = { ok: false, text: "" };
+  for (let attempt = 1; attempt <= 3 && !migrated.ok; attempt++) {
+    migrated = runCapture(prismaCli, ["migrate", "deploy"]);
+    if (!migrated.ok) {
+      console.error(`[start] database migration failed (attempt ${attempt}/3)`);
+      if (attempt < 3) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 6000);
+    }
+  }
+  if (!migrated.ok) {
+    const why = explainMigrationFailure(migrated.text);
     return serveProblem("The database could not be prepared", [
-      `DATABASE_URL points to ${env.DATABASE_URL.replace(/^file:/, "")}. The folder must exist and be writable.`,
-      "The exact error is in the server log.",
+      `DATABASE_URL points to ${env.DATABASE_URL.replace(/^file:/, "")}.`,
+      ...why.why,
+      ...(why.lines.length ? [`Prisma said: ${why.lines.join(" | ")}`] : []),
+      "The full error is in the server log (look for 'database migration failed').",
     ]);
   }
 
