@@ -84,7 +84,7 @@ if (missing.length) {
 } else if (!/^https:\/\//.test(env.SHOPIFY_APP_URL) && env.NODE_ENV === "production" && !/^http:\/\/(localhost|127\.0\.0\.1)/.test(env.SHOPIFY_APP_URL)) {
   serveProblem("SHOPIFY_APP_URL must be a public https:// address", [`Current value: ${env.SHOPIFY_APP_URL}`]);
 } else {
-  main();
+  Promise.resolve(main()).catch((e) => serveProblem("The app could not start", [String(e?.message ?? e)]));
 }
 
 function run(label, script, args) {
@@ -95,10 +95,13 @@ function run(label, script, args) {
 
 /** Runs a node script and keeps its output, so the real reason of a failure can be shown on the status page. */
 function runCapture(script, args) {
-  const r = spawnSync(process.execPath, [script, ...args], { env, encoding: "utf8" });
+  // Few threads for Prisma's schema engine: on hosting with a low process limit it is otherwise killed ("exit null").
+  const lean = { ...env, TOKIO_WORKER_THREADS: env.TOKIO_WORKER_THREADS || "1", RAYON_NUM_THREADS: env.RAYON_NUM_THREADS || "1" };
+  const r = spawnSync(process.execPath, [script, ...args], { env: lean, encoding: "utf8" });
   if (r.stdout) process.stdout.write(r.stdout);
   if (r.stderr) process.stderr.write(r.stderr);
-  return { ok: r.status === 0, text: `${r.stdout ?? ""}\n${r.stderr ?? ""}` };
+  const killed = r.status === null ? `\nThe program was stopped by the server (${r.signal ?? "no exit code"}): \`killed\`, probably a memory or thread limit.` : "";
+  return { ok: r.status === 0, text: `${r.stdout ?? ""}\n${r.stderr ?? ""}${killed}` };
 }
 
 /** Plain-words reason for a failed `prisma migrate deploy`, taken from its output. */
@@ -107,6 +110,7 @@ function explainMigrationFailure(text) {
   const lines = t.split(/\r?\n/).map((l) => l.trim()).filter((l) => /error|P\d{4}|failed|locked|unable|denied|no such|already exists/i.test(l) && !/^\[start\]/.test(l));
   const why = [];
   if (/P3009|failed migrations?/i.test(t)) why.push("An earlier database update stopped half way. The log names the migration; it has to be marked as resolved (npx prisma migrate resolve) before the app can start.");
+  else if (/stopped by the server|killed/i.test(t)) why.push("The server stopped Prisma's update program (a memory or thread limit). The app then tries to apply the update itself.");
   else if (/database is locked|SQLITE_BUSY|timed out/i.test(t)) why.push("The database is busy: another copy of the app is still running. Stop the app completely, wait a minute and start it again.");
   else if (/unable to open|EACCES|permission denied|read-only|readonly|P1003|P1001|P1009/i.test(t)) why.push("The database file or its folder cannot be opened or written. Check that the folder exists and the hosting user can write to it.");
   else if (/already exists|duplicate column/i.test(t)) why.push("The database already has a table or column from this update (a half-applied update). The log shows which one.");
@@ -137,13 +141,37 @@ function main() {
       console.warn("[start] could not refresh the database client (a file may be in use); starting with the existing one");
     }
   }
-  // A second copy of the app (during a redeploy) can hold the database for a few seconds, so a failed update is tried again twice.
-  let migrated = { ok: false, text: "" };
+  // 1) Nothing to do? Then Prisma's update program is not started at all (it is the part hosting limits kill).
+  // 2) Otherwise it is tried up to 3 times (a second copy of the app during a redeploy can hold the database for a few seconds).
+  // 3) If it keeps failing, plain updates are applied by the app itself with its own database client.
+  return migrateThenServe(prismaCli);
+}
+
+async function migrateThenServe(prismaCli) {
+  const fb = await import("./migrate-fallback.mjs");
+  let pending = null;
+  try {
+    pending = await fb.withDatabase(root, (db) => fb.pendingMigrations(db, root));
+  } catch (e) {
+    console.warn(`[start] could not check the database updates (${e.message}); using Prisma's tool`);
+  }
+  let migrated = { ok: pending !== null && pending.length === 0, text: "" };
+  if (migrated.ok) console.log("[start] database is up to date");
   for (let attempt = 1; attempt <= 3 && !migrated.ok; attempt++) {
     migrated = runCapture(prismaCli, ["migrate", "deploy"]);
     if (!migrated.ok) {
       console.error(`[start] database migration failed (attempt ${attempt}/3)`);
       if (attempt < 3) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 6000);
+    }
+  }
+  if (!migrated.ok && pending && pending.length) {
+    try {
+      const n = await fb.withDatabase(root, (db) => fb.applyMigrations(db, root, pending));
+      console.warn(`[start] applied ${n} database update(s) without Prisma's tool: ${pending.join(", ")}`);
+      migrated = { ok: true, text: "" };
+    } catch (e) {
+      console.error(`[start] the app could not apply the updates itself: ${e.message}`);
+      migrated.text += `\n${e.message}`;
     }
   }
   if (!migrated.ok) {
