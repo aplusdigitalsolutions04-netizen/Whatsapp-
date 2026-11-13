@@ -518,3 +518,17 @@ model OrderConfirmation {
   @@index([conversationId, state])
   @@index([conversationId, lastInboundId])
 }
+
+// API keys typed into the app (Meta WhatsApp Cloud API). "value" is AES-256-GCM encrypted (secret.server.ts); "hint" is only "••••1234".
+model IntegrationSecret {
+  id        String   @id @default(cuid())
+  shop      String
+  // accessToken | phoneNumberId | appSecret | verifyToken
+  name      String
+  value     String
+  hint      String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([shop, name])
+}

@@ -17,6 +17,7 @@ after(async () => {
   await prisma.productEnquiry.deleteMany({ where: { shop: SHOP } });
   await prisma.orderConfirmation.deleteMany({ where: { shop: SHOP } });
   await prisma.orderSheet.deleteMany({ where: { shop: SHOP } });
+  await prisma.integrationSecret.deleteMany({ where: { shop: SHOP } });
   await prisma.conversation.deleteMany({ where: { shop: SHOP } });
   await prisma.activityLog.deleteMany({ where: { shop: SHOP } });
   await prisma.$disconnect();
@@ -897,4 +898,54 @@ test("order confirmation fills the Order Calling Sheet with employee JAZZ, and n
   await handleConfirmationReply(SHOP, d.conv, "no", "sh-7");
   row = await sheetOf(d.id);
   assert.deepEqual([row.customerWants, row.addressConfirmed], ["Yes", "No"]);
+});
+
+test("sheet: confirmations that happened before are written to the sheet later (backfill), once", async () => {
+  const { backfillSheetFromConfirmations }: any = await loadApp("/app/lib/order-confirm.server.ts");
+  const mk = async (n: number, state: string, withAddressQuestion = false) => {
+    const phone = `+91985550000${n}`;
+    const conv = await prisma.conversation.create({ data: { shop: SHOP, phone } });
+    await prisma.orderConfirmation.create({ data: { shop: SHOP, orderGid: `gid://shopify/Order/${9500 + n}`, orderName: `#W${9500 + n}`, conversationId: conv.id, phone, state } });
+    await prisma.orderSheet.create({ data: { shop: SHOP, shopifyOrderId: String(9500 + n), orderName: `#W${9500 + n}` } });
+    if (withAddressQuestion) await prisma.message.create({ data: { conversationId: conv.id, direction: "out", sender: "bot", body: `Thank you! Please confirm your delivery details for #W${9500 + n}:`, status: "sent" } });
+  };
+  await mk(1, "confirmed");
+  await mk(2, "declined", true);
+  await mk(3, "declined");
+  const sheet = (n: number) => prisma.orderSheet.findUniqueOrThrow({ where: { shop_shopifyOrderId: { shop: SHOP, shopifyOrderId: String(9500 + n) } } });
+  const first = await backfillSheetFromConfirmations(SHOP);
+  assert.ok(first >= 3);
+  let r = await sheet(1);
+  assert.deepEqual([r.employeeName, r.finalDecision, r.addressConfirmed], ["JAZZ", "Confirmed", "Yes"]);
+  r = await sheet(2);
+  assert.deepEqual([r.customerWants, r.addressConfirmed], ["Yes", "No"], "a NO after the address question = wrong address");
+  r = await sheet(3);
+  assert.deepEqual([r.customerWants, r.addressConfirmed], ["No", null], "a NO to the first question = order not wanted");
+  const again = await backfillSheetFromConfirmations(SHOP);
+  assert.equal(again, 0, "running it again changes nothing");
+});
+
+test("Meta API keys: saved encrypted, never shown back, checked for the right shape, environment as fallback", async () => {
+  process.env.SECRETS_KEY = process.env.SECRETS_KEY || "test-secrets-key";
+  const c: any = await loadApp("/app/lib/cloud-creds.server.ts");
+  const TOKEN = "EAAGabcdefghijklmnopqrstuvwxyz0123456789ABCDEF";
+  const bad = await c.saveCreds(SHOP, { phoneNumberId: "not digits" });
+  assert.equal(bad.ok, false);
+  assert.match(bad.error, /Phone number ID/);
+  const empty = await c.saveCreds(SHOP, {});
+  assert.equal(empty.ok, false);
+  const ok = await c.saveCreds(SHOP, { accessToken: TOKEN, phoneNumberId: "123456789012345" });
+  assert.deepEqual(ok.saved, ["accessToken", "phoneNumberId"]);
+  assert.equal(c.cred("accessToken"), TOKEN, "the bot can use it");
+  const row = await prisma.integrationSecret.findUniqueOrThrow({ where: { shop_name: { shop: SHOP, name: "accessToken" } } });
+  assert.ok(!row.value.includes(TOKEN) && !row.value.includes("EAAG"), "stored encrypted, not as text");
+  assert.equal(row.hint, "••••CDEF");
+  const status = await c.credStatus(SHOP);
+  assert.ok(!JSON.stringify(status).includes(TOKEN), "the page never receives the key");
+  assert.deepEqual([status.accessToken.saved, status.appSecret.saved], [true, false]);
+  assert.ok(c.secretValues().includes(TOKEN), "logs can hide it");
+  const { redact }: any = await loadApp("/app/lib/log.server.ts");
+  assert.ok(!redact(`send failed for ${TOKEN} at 10:00`).includes(TOKEN), "a key inside an error message is hidden");
+  await c.removeCreds(SHOP);
+  assert.equal(c.cred("accessToken"), process.env.WHATSAPP_ACCESS_TOKEN, "removed: back to the environment value");
 });

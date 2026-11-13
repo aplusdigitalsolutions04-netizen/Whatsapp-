@@ -9,7 +9,9 @@ import { autostartBridge } from "./lib/bridge.server";
 import { startOrderSync } from "./lib/order-sync.server";
 import { startNoticeRetry } from "./lib/order-notify.server";
 import { rememberError } from "./lib/error-memory.server";
+import { startCredRefresh } from "./lib/cloud-creds.server";
 
+startCredRefresh();
 autostartBridge();
 startOrderSync();
 startNoticeRetry();

@@ -1,4 +1,5 @@
 import prisma from "../db.server";
+import { secretValues } from "./cloud-creds.server";
 
 const SECRET_PATTERNS: RegExp[] = [
   /\b(EA|shp[a-z]{1,3}_)[A-Za-z0-9_-]{16,}\b/g, // Meta / Shopify tokens
@@ -9,6 +10,7 @@ const SECRET_PATTERNS: RegExp[] = [
 export function redact(text: string | null | undefined, max = 500): string {
   let s = String(text ?? "");
   for (const re of SECRET_PATTERNS) s = s.replace(re, "[redacted]");
+  for (const v of secretValues()) if (s.includes(v)) s = s.split(v).join("[redacted]"); // the exact keys in use, wherever they show up
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 

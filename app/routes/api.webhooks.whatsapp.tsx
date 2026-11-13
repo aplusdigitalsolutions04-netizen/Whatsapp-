@@ -1,5 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { activeProvider } from "../lib/bridge.server";
+import { cred } from "../lib/cloud-creds.server";
 import { logEvent } from "../lib/log.server";
 import { rateLimited } from "../lib/rate-limit.server";
 import { verifyMetaSignature } from "../lib/signature";
@@ -8,7 +9,7 @@ import { parseWhatsAppPayload, processEvent, recordEvent } from "../lib/webhook-
 // Meta's one-time webhook verification handshake.
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
-  const expected = process.env.WHATSAPP_VERIFY_TOKEN;
+  const expected = cred("verifyToken");
   if (
     expected &&
     url.searchParams.get("hub.mode") === "subscribe" &&
@@ -25,9 +26,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   if (rateLimited(`wa:${ip}`, 600, 60_000)) return new Response("Too many requests", { status: 429 });
 
-  const secret = process.env.WHATSAPP_APP_SECRET;
+  const secret = cred("appSecret");
   if (!secret) {
-    await logEvent({ source: "whatsapp", level: "error", event: "webhook_rejected", detail: "WHATSAPP_APP_SECRET not set" });
+    await logEvent({ source: "whatsapp", level: "error", event: "webhook_rejected", detail: "App secret not set (Integrations page)" });
     return new Response("Webhook not configured", { status: 500 });
   }
 

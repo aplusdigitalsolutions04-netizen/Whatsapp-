@@ -8,6 +8,7 @@ import { scheduleSheetPush } from "./google-sheets.server";
 import { gql } from "./shopify-data.server";
 import { explainShopifyError } from "./shopify-errors";
 import { notifyOrder } from "./order-notify.server";
+import { backfillSheetFromConfirmations } from "./order-confirm.server";
 import { endTask, startTask, updateTask } from "./progress.server";
 
 const PAGE = 50;
@@ -100,6 +101,8 @@ export async function runSync(shop: string, mode: "auto" | "full" = "auto"): Pro
       update: { lastSyncAt: started, ...(full ? { lastFullSyncAt: started } : {}), lastCount: r.fetched, lastError: null },
     });
     if (r.created + r.updated > 0 || full) scheduleSheetPush(shop, 2_000);
+    // Orders JAZZ already confirmed with the customer get their sheet row filled (Employee Name JAZZ) if that has not happened yet.
+    await backfillSheetFromConfirmations(shop).catch(() => 0);
     await logEvent({
       shop, source: "shopify", event: full ? "order_sync_full" : "order_sync",
       detail: `${r.fetched} fetched, ${r.created} new, ${r.updated} updated, ${r.failed} failed`,

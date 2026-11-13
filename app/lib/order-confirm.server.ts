@@ -62,9 +62,36 @@ export async function fillOrderSheet(shop: string, orderGid: string, prev: strin
   // A "yes" never reopens an order an employee already moved on, and the remark is added to theirs, not replacing it.
   const theirs = (row.employeeRemark ?? "").split(/(?:^| \| )JAZZ: /)[0].trim(); // an earlier JAZZ line is replaced by the newer one
   data.employeeRemark = theirs ? `${theirs} | ${fill.employeeRemark}` : fill.employeeRemark;
+  // Nothing new to write (already filled earlier): leave the row, the log and the Google Sheet alone.
+  const changed = Object.keys(data).filter((k) => {
+    const old = (row as Record<string, unknown>)[k];
+    const now = data[k];
+    return old instanceof Date && now instanceof Date ? false : old !== now;
+  });
+  if (!changed.length) return false;
   await prisma.orderSheet.update({ where: { id: row.id }, data });
   const { scheduleSheetPush } = await import("./google-sheets.server");
   scheduleSheetPush(shop);
-  await logEvent({ shop, source: "bot", event: "order_sheet_filled", detail: `${row.orderName ?? shopifyOrderId}: ${Object.keys(data).join(", ")}` });
+  await logEvent({ shop, source: "bot", event: "order_sheet_filled", detail: `${row.orderName ?? shopifyOrderId}: ${changed.join(", ")}` });
   return true;
+}
+
+/**
+ * Customers who answered JAZZ before the sheet was filled automatically (or whose order was not in the sheet yet) are written
+ * to the sheet now. Safe to run again and again: an already filled row is left alone, an employee's entry is never replaced.
+ */
+export async function backfillSheetFromConfirmations(shop: string): Promise<number> {
+  const rows = await prisma.orderConfirmation.findMany({ where: { shop, state: { in: ["address", "confirmed", "declined"] } }, orderBy: { updatedAt: "desc" }, take: 500 });
+  let filled = 0;
+  for (const r of rows) {
+    let prev = "asked";
+    if (r.state === "confirmed") prev = "address";
+    if (r.state === "declined") {
+      // a NO after the address question means the address was wrong, a NO to the first question means the order was not wanted
+      const sawAddress = await prisma.message.findFirst({ where: { conversationId: r.conversationId, direction: "out", body: { contains: `delivery details for ${r.orderName}` } }, select: { id: true } });
+      if (sawAddress) prev = "address";
+    }
+    if (await fillOrderSheet(shop, r.orderGid, prev, r.state).catch(() => false)) filled++;
+  }
+  return filled;
 }

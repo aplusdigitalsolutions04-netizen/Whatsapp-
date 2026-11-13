@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import prisma from "../db.server";
+import { cred } from "./cloud-creds.server";
 import { logEvent, redact } from "./log.server";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
@@ -7,10 +8,10 @@ const WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export function whatsappConfig() {
   return {
-    accessToken: !!process.env.WHATSAPP_ACCESS_TOKEN,
-    phoneNumberId: !!process.env.WHATSAPP_PHONE_NUMBER_ID,
-    verifyToken: !!process.env.WHATSAPP_VERIFY_TOKEN,
-    appSecret: !!process.env.WHATSAPP_APP_SECRET,
+    accessToken: !!cred("accessToken"),
+    phoneNumberId: !!cred("phoneNumberId"),
+    verifyToken: !!cred("verifyToken"),
+    appSecret: !!cred("appSecret"),
   };
 }
 
@@ -22,8 +23,8 @@ export function whatsappConfigured() {
 type SendResult = { ok: true; id: string } | { ok: false; error: string; retryable: boolean };
 
 async function graphPost(path: string, body: unknown): Promise<SendResult> {
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
-  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const token = cred("accessToken");
+  const phoneId = cred("phoneNumberId");
   if (!token || !phoneId) {
     return { ok: false, error: "WhatsApp Cloud API is not configured", retryable: false };
   }
@@ -137,9 +138,9 @@ export async function whatsappDiagnostics() {
   }
   try {
     const res = await fetch(
-      `${GRAPH}/${process.env.WHATSAPP_PHONE_NUMBER_ID}?fields=display_phone_number,verified_name,quality_rating`,
+      `${GRAPH}/${cred("phoneNumberId")}?fields=display_phone_number,verified_name,quality_rating`,
       {
-        headers: { Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}` },
+        headers: { Authorization: `Bearer ${cred("accessToken")}` },
         signal: AbortSignal.timeout(8000),
       },
     );

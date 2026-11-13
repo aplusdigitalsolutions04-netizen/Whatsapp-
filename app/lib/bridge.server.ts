@@ -10,6 +10,7 @@ import makeWASocket, {
   useMultiFileAuthState,
 } from "@whiskeysockets/baileys";
 import prisma from "../db.server";
+import { cred, refreshCreds } from "./cloud-creds.server";
 import { logEvent, redact } from "./log.server";
 import { explainClose } from "./bridge-reasons";
 import { normalizePhone } from "./phone";
@@ -54,7 +55,7 @@ const AUTH_DIR = path.resolve(process.env.WHATSAPP_AUTH_DIR || ".wa-auth");
 export function activeProvider(): "qr" | "cloud" {
   const p = process.env.WHATSAPP_PROVIDER;
   if (p === "qr" || p === "cloud") return p;
-  return process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID ? "cloud" : "qr";
+  return cred("accessToken") && cred("phoneNumberId") ? "cloud" : "qr";
 }
 
 // ---- one copy of the app at a time ----
@@ -405,12 +406,15 @@ export async function bridgeSendText(
 
 /** Auto-reconnect after a server restart if this device was already paired. */
 export function autostartBridge() {
-  if (activeProvider() === "qr" && existsSync(path.join(AUTH_DIR, "creds.json"))) {
-    // Written on every start, so the history on the WhatsApp page shows how often the hosting restarts the app.
-    void logEvent({ source: "whatsapp", event: "bridge_app_started", detail: `pid ${process.pid}` });
-    void startBridge();
-    startKeepAlive();
-  }
+  // The saved Cloud API keys (database) decide which provider is active, so they are read before the choice is made.
+  void refreshCreds().then(() => {
+    if (activeProvider() === "qr" && existsSync(path.join(AUTH_DIR, "creds.json"))) {
+      // Written on every start, so the history on the WhatsApp page shows how often the hosting restarts the app.
+      void logEvent({ source: "whatsapp", event: "bridge_app_started", detail: `pid ${process.pid}` });
+      void startBridge();
+      startKeepAlive();
+    }
+  });
 }
 
 /**
