@@ -10,7 +10,7 @@ export const DEFAULT_TEMPLATES = {
   typeMobileNumber: "Please type your registered mobile number. 📱\n\nExample: 9876543210",
   askMore: "Anything else I can help with?\n\n1. Find a Product\n2. Check Order Status\n3. Talk to Our Support Team",
   thanksReply: "You're welcome! 😊 Message us anytime you need help.",
-  askProductName: "Sure! 😊\nWhich product are you looking for?\n\n1. Type the product name\n2. Or the model / SKU",
+  askProductName: "Sure! 😊\nWhich product are you looking for?\n\n1. Type the product name\n2. Or the model number",
   chooseOrder: "I found multiple orders for you. 📦\nReply with the number of the order you want:",
   noOrderFound:
     "Sorry, I could not find any order for those details. 😕\n\nPlease check:\n\n1. Your Order Number (Example: #W1219)\n2. Your registered mobile number\n\nOr type \"agent\" to talk to our team.",
@@ -46,6 +46,8 @@ export function mergeTemplates(stored: string | null | undefined): Templates {
   for (const k of Object.keys(DEFAULT_TEMPLATES) as TemplateKey[]) {
     if (typeof parsed[k] === "string" && (parsed[k] as string).trim()) out[k] = parsed[k] as string;
   }
+  // The shop does not show SKUs to customers: a saved copy of the old default that asks for one gets the new wording.
+  if (/\bSKU\b/.test(out.askProductName) && out.askProductName.startsWith("Sure!")) out.askProductName = DEFAULT_TEMPLATES.askProductName;
   return out;
 }
 
@@ -66,7 +68,7 @@ export const TEMPLATES_HI: Templates = {
   typeMobileNumber: "कृपया अपना रजिस्टर्ड मोबाइल नंबर लिखें। 📱\n\nजैसे: 9876543210",
   askMore: "क्या मैं और किसी चीज़ में मदद कर सकता हूँ?\n\n1. प्रोडक्ट खोजें\n2. ऑर्डर की स्थिति देखें\n3. सपोर्ट टीम से बात करें",
   thanksReply: "आपका स्वागत है! 😊 जब भी मदद चाहिए, हमें मैसेज करें।",
-  askProductName: "ज़रूर! 😊\nआपको कौन सा प्रोडक्ट चाहिए?\n\n1. प्रोडक्ट का नाम लिखें\n2. या मॉडल / SKU लिखें",
+  askProductName: "ज़रूर! 😊\nआपको कौन सा प्रोडक्ट चाहिए?\n\n1. प्रोडक्ट का नाम लिखें\n2. या मॉडल नंबर लिखें",
   chooseOrder: "आपके कई ऑर्डर मिले हैं। 📦\nजो ऑर्डर चाहिए उसकी संख्या लिखकर भेजें:",
   noOrderFound:
     "माफ़ कीजिए, इन जानकारियों से कोई ऑर्डर नहीं मिला। 😕\n\nकृपया जाँचें:\n\n1. आपका ऑर्डर नंबर (जैसे #W1219)\n2. आपका रजिस्टर्ड मोबाइल नंबर\n\nया हमारी टीम से बात करने के लिए \"agent\" लिखें।",

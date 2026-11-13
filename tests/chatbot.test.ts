@@ -847,3 +847,10 @@ test("product search: words match at the start of title / type / tag / SKU (no l
   assert.ok(!q.includes("*laptop"), "no leading wildcard");
   assert.match(productSearchQuery(["hp", "printer"]), /\) OR \(title:printer\*/);
 });
+
+test("the bot never asks customers for a SKU (the shop does not show SKUs)", async () => {
+  assert.ok(!/sku/i.test(DEFAULT_TEMPLATES.askProductName) && !/sku/i.test(TEMPLATES_HI.askProductName));
+  const old = JSON.stringify({ askProductName: "Sure! 😊\nWhich product are you looking for?\n\n1. Type the product name\n2. Or the model / SKU" });
+  assert.ok(!/sku/i.test(mergeTemplates(old).askProductName), "a saved copy of the old wording is replaced");
+  assert.equal(mergeTemplates(JSON.stringify({ askProductName: "Tell me the name" })).askProductName, "Tell me the name", "a custom wording is kept");
+});
