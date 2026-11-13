@@ -16,6 +16,7 @@ after(async () => {
   await prisma.message.deleteMany({ where: { conversationId: { in: convs.map((c) => c.id) } } });
   await prisma.productEnquiry.deleteMany({ where: { shop: SHOP } });
   await prisma.orderConfirmation.deleteMany({ where: { shop: SHOP } });
+  await prisma.orderSheet.deleteMany({ where: { shop: SHOP } });
   await prisma.conversation.deleteMany({ where: { shop: SHOP } });
   await prisma.activityLog.deleteMany({ where: { shop: SHOP } });
   await prisma.$disconnect();
@@ -853,4 +854,47 @@ test("the bot never asks customers for a SKU (the shop does not show SKUs)", asy
   const old = JSON.stringify({ askProductName: "Sure! 😊\nWhich product are you looking for?\n\n1. Type the product name\n2. Or the model / SKU" });
   assert.ok(!/sku/i.test(mergeTemplates(old).askProductName), "a saved copy of the old wording is replaced");
   assert.equal(mergeTemplates(JSON.stringify({ askProductName: "Tell me the name" })).askProductName, "Tell me the name", "a custom wording is kept");
+});
+
+test("order confirmation fills the Order Calling Sheet with employee JAZZ, and never overwrites an employee's entry", async () => {
+  const { handleConfirmationReply }: any = await loadApp("/app/lib/order-confirm.server.ts");
+  const mk = async (n: number, sheet: Record<string, unknown> = {}) => {
+    const gid = `gid://shopify/Order/${9000 + n}`;
+    const phone = `+91984440000${n}`;
+    const conv = await prisma.conversation.create({ data: { shop: SHOP, phone } });
+    await prisma.orderConfirmation.create({ data: { shop: SHOP, orderGid: gid, orderName: `#W${9000 + n}`, conversationId: conv.id, phone, address: "1 Road" } });
+    await prisma.orderSheet.create({ data: { shop: SHOP, shopifyOrderId: String(9000 + n), orderName: `#W${9000 + n}`, ...sheet } });
+    return { conv: conv.id, id: String(9000 + n) };
+  };
+  const sheetOf = (id: string) => prisma.orderSheet.findUniqueOrThrow({ where: { shop_shopifyOrderId: { shop: SHOP, shopifyOrderId: id } } });
+
+  const a = await mk(1);
+  await handleConfirmationReply(SHOP, a.conv, "yes", "sh-1");
+  let row = await sheetOf(a.id);
+  assert.equal(row.employeeName, "JAZZ");
+  assert.equal(row.customerWants, "Yes");
+  assert.equal(row.finalDecision, null, "not confirmed until the address is confirmed too");
+  assert.ok(row.callDate);
+  await handleConfirmationReply(SHOP, a.conv, "yes", "sh-2");
+  row = await sheetOf(a.id);
+  assert.deepEqual([row.addressConfirmed, row.callStatus, row.finalDecision, row.customerWants], ["Yes", "Connected", "Confirmed", "Yes"]);
+  assert.match(row.employeeRemark ?? "", /^JAZZ: customer confirmed the order, mobile number and address/);
+
+  const b = await mk(2, { employeeName: "Priya", finalDecision: "On Hold", employeeRemark: "customer busy" });
+  await handleConfirmationReply(SHOP, b.conv, "yes", "sh-3");
+  await handleConfirmationReply(SHOP, b.conv, "yes", "sh-4");
+  row = await sheetOf(b.id);
+  assert.equal(row.employeeName, "Priya", "an employee's name stays");
+  assert.equal(row.finalDecision, "On Hold", "an employee's decision stays");
+  assert.match(row.employeeRemark ?? "", /^customer busy \| JAZZ: /, "the remark is added, not replaced");
+
+  const c = await mk(3);
+  await handleConfirmationReply(SHOP, c.conv, "no", "sh-5");
+  row = await sheetOf(c.id);
+  assert.deepEqual([row.employeeName, row.customerWants, row.finalDecision], ["JAZZ", "No", null]);
+  const d = await mk(4);
+  await handleConfirmationReply(SHOP, d.conv, "yes", "sh-6");
+  await handleConfirmationReply(SHOP, d.conv, "no", "sh-7");
+  row = await sheetOf(d.id);
+  assert.deepEqual([row.customerWants, row.addressConfirmed], ["Yes", "No"]);
 });

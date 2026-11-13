@@ -45,3 +45,30 @@ export const confirmedText = (orderName: string) =>
 
 export const declinedText = (orderName: string) =>
   `No problem. I am connecting you with our team to sort out ${orderName}. 🙏\nSomeone will reply here shortly.`;
+
+/** Name written in the Order Calling Sheet's "Employee Name" column when JAZZ did the confirmation. */
+export const BOT_EMPLOYEE = "JAZZ";
+
+export type SheetFill = { customerWants?: string; addressConfirmed?: string; callStatus?: string; finalDecision?: string; employeeRemark: string };
+
+/**
+ * What the customer's answer means for the Order Calling Sheet (the columns an employee fills after calling).
+ * prev = where the chat was (asked | address), next = where it is now (address | confirmed | declined).
+ */
+export function sheetFill(prev: string, next: string): SheetFill | null {
+  if (next === "address") return { customerWants: "Yes", employeeRemark: "JAZZ: customer said YES to the order on WhatsApp, waiting for the address check" };
+  if (next === "confirmed") {
+    return {
+      customerWants: "Yes", addressConfirmed: "Yes", callStatus: "Connected", finalDecision: "Confirmed",
+      employeeRemark: "JAZZ: customer confirmed the order, mobile number and address on WhatsApp",
+    };
+  }
+  if (next === "declined" && prev === "address") {
+    return { customerWants: "Yes", addressConfirmed: "No", employeeRemark: "JAZZ: customer said the address / number is wrong on WhatsApp, chat sent to an agent" };
+  }
+  if (next === "declined") return { customerWants: "No", employeeRemark: "JAZZ: customer said NO to the order on WhatsApp, chat sent to an agent" };
+  return null;
+}
+
+/** An employee's entry is never overwritten: only empty cells (or a select still on "Pending") are filled. */
+export const blank = (v: string | null | undefined) => !v || !v.trim() || v.trim().toLowerCase() === "pending";

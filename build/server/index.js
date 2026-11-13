@@ -870,16 +870,16 @@ function htmlToText(html) {
 const BULLET = /^\s*(?:[-–—•·*▪●►✔✓✅➤→]+|\d{1,2}[.)])\s+/;
 function toLines(text2) {
   const out = [];
-  let blank = false;
+  let blank2 = false;
   for (const raw of text2.split(/\r?\n/)) {
     const t = raw.replace(/\s+/g, " ").trim();
     if (!t) {
-      blank = true;
+      blank2 = true;
       continue;
     }
     const bullet = BULLET.test(raw);
-    out.push({ text: t.replace(BULLET, "").trim(), bullet, blankBefore: blank });
-    blank = false;
+    out.push({ text: t.replace(BULLET, "").trim(), bullet, blankBefore: blank2 });
+    blank2 = false;
   }
   return out;
 }
@@ -1542,6 +1542,25 @@ const confirmedText = (orderName) => `Thank you! Your order ${orderName} is conf
 I will message you as soon as it is dispatched. 📦`;
 const declinedText = (orderName) => `No problem. I am connecting you with our team to sort out ${orderName}. 🙏
 Someone will reply here shortly.`;
+const BOT_EMPLOYEE = "JAZZ";
+function sheetFill(prev, next) {
+  if (next === "address") return { customerWants: "Yes", employeeRemark: "JAZZ: customer said YES to the order on WhatsApp, waiting for the address check" };
+  if (next === "confirmed") {
+    return {
+      customerWants: "Yes",
+      addressConfirmed: "Yes",
+      callStatus: "Connected",
+      finalDecision: "Confirmed",
+      employeeRemark: "JAZZ: customer confirmed the order, mobile number and address on WhatsApp"
+    };
+  }
+  if (next === "declined" && prev === "address") {
+    return { customerWants: "Yes", addressConfirmed: "No", employeeRemark: "JAZZ: customer said the address / number is wrong on WhatsApp, chat sent to an agent" };
+  }
+  if (next === "declined") return { customerWants: "No", employeeRemark: "JAZZ: customer said NO to the order on WhatsApp, chat sent to an agent" };
+  return null;
+}
+const blank = (v) => !v || !v.trim() || v.trim().toLowerCase() === "pending";
 const OPEN_MS = 72 * 36e5;
 function replyFor(row) {
   if (row.state === "address") return { reply: askAddressText({ orderName: row.orderName, customerName: row.customerName, phone: row.phone, address: row.address }) };
@@ -1560,8 +1579,31 @@ async function handleConfirmationReply(shop, conversationId, text2, inboundId) {
   if (!answer) return null;
   const state2 = answer === "no" ? "declined" : row.state === "asked" ? "address" : "confirmed";
   const next = await prisma.orderConfirmation.update({ where: { id: row.id }, data: { state: state2, lastInboundId: inboundId } });
+  await fillOrderSheet(shop, row.orderGid, row.state, state2).catch(
+    (e) => logEvent({ shop, source: "bot", level: "error", event: "order_sheet_fill_failed", detail: `${row.orderName}: ${e.message}` }).catch(() => void 0)
+  );
   await logEvent({ shop, source: "bot", event: `order_${state2}`, detail: `${row.orderName}: customer answered ${answer.toUpperCase()}` });
   return replyFor(next);
+}
+async function fillOrderSheet(shop, orderGid2, prev, next) {
+  const fill = sheetFill(prev, next);
+  if (!fill) return false;
+  const shopifyOrderId = orderGid2.split("/").pop() ?? orderGid2;
+  const row = await prisma.orderSheet.findUnique({ where: { shop_shopifyOrderId: { shop, shopifyOrderId } } });
+  if (!row) return false;
+  const data = {};
+  if (blank(row.employeeName)) data.employeeName = BOT_EMPLOYEE;
+  if (!row.callDate) data.callDate = /* @__PURE__ */ new Date();
+  for (const k of ["customerWants", "addressConfirmed", "callStatus", "finalDecision"]) {
+    if (fill[k] && blank(row[k])) data[k] = fill[k];
+  }
+  const theirs = (row.employeeRemark ?? "").split(/(?:^| \| )JAZZ: /)[0].trim();
+  data.employeeRemark = theirs ? `${theirs} | ${fill.employeeRemark}` : fill.employeeRemark;
+  await prisma.orderSheet.update({ where: { id: row.id }, data });
+  const { scheduleSheetPush: scheduleSheetPush2 } = await Promise.resolve().then(() => googleSheets_server);
+  scheduleSheetPush2(shop);
+  await logEvent({ shop, source: "bot", event: "order_sheet_filled", detail: `${row.orderName ?? shopifyOrderId}: ${Object.keys(data).join(", ")}` });
+  return true;
 }
 const SAFE_NUMBER = /^[A-Za-z0-9-]{6,30}$/;
 const delhiveryUrl = (number) => `https://www.delhivery.com/track-v2/package/${encodeURIComponent(number)}`;
@@ -3878,6 +3920,16 @@ function scheduleSheetPush(shop, delay = DEBOUNCE_MS) {
   (_a2 = t.unref) == null ? void 0 : _a2.call(t);
   mem.timers.set(shop, t);
 }
+const googleSheets_server = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  SheetAccessError,
+  accessToken,
+  callScript,
+  prepareSheet,
+  pushOrders,
+  scheduleSheetPush,
+  scriptToken
+}, Symbol.toStringTag, { value: "Module" }));
 const MIN = 6e4;
 const NEW_ORDER_MS = 60 * MIN;
 const FRESH_SHIPMENT_MS = 2 * 60 * MIN;
@@ -7995,7 +8047,7 @@ async function exportCsv(shop, opts = {}) {
     const fixable = issues.filter(FIXABLE_BY_CSV);
     if ((opts.onlyProblems ?? true) && fixable.length === 0) continue;
     const p = toRules(r);
-    const blank = (n) => Array(n).fill("");
+    const blank2 = (n) => Array(n).fill("");
     out.push([
       "product",
       r.productId,
@@ -8011,7 +8063,7 @@ async function exportCsv(shop, opts = {}) {
       "",
       r.seoDescription,
       "",
-      ...blank(3)
+      ...blank2(3)
     ]);
     products++;
     if (issues.some((i) => i.rule === "alt-missing" || i.rule === "alt-duplicate")) {
