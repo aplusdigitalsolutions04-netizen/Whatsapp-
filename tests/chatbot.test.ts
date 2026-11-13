@@ -839,3 +839,11 @@ test("the bot says why it stays silent (Agent mode) instead of failing without a
   await handleInbound(SHOP, { id: "silent-2", from: phone.slice(1), text: "printer", type: "text" });
   assert.ok(await prisma.activityLog.findFirst({ where: { shop: SHOP, event: "bot_silent", detail: { contains: "Agent mode" } } }));
 });
+
+test("product search: words match at the start of title / type / tag / SKU (no leading wildcard, which Shopify ignores)", async () => {
+  const { productSearchQuery }: any = await loadApp("/app/lib/shopify-data.server.ts");
+  const q = productSearchQuery(["laptop"]);
+  assert.equal(q, "status:active AND ((title:laptop* OR laptop* OR tag:laptop* OR product_type:laptop* OR sku:laptop*))");
+  assert.ok(!q.includes("*laptop"), "no leading wildcard");
+  assert.match(productSearchQuery(["hp", "printer"]), /\) OR \(title:printer\*/);
+});

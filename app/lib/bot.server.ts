@@ -430,6 +430,10 @@ export async function decideReply(
 async function productReply(shop: string, conv: Conv, query: string, s: Settings, t: Templates, lang: Lang, ui: "en" | "hi", deps: BotDeps): Promise<string | Reply> {
   await logEvent({ shop, source: "bot", event: "product_inquiry", detail: query.slice(0, 80) });
   const found = await deps.searchProducts(shop, query, 5);
+  const seen = (await import("./shopify-data.server")).lastSearch.get(shop);
+  if (!found.length && seen && seen.term === query) {
+    await logEvent({ shop, source: "bot", event: "product_not_found", detail: `"${query.slice(0, 60)}": Shopify returned ${seen.found}, matching ${seen.matched}, in stock ${seen.inStock}` });
+  }
   // Powers the "Product Enquiries" page: which number asked for which product, and whether we had it.
   await prisma.productEnquiry
     .create({

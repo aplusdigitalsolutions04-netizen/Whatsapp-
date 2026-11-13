@@ -346,30 +346,58 @@ async function withStoreUrl(shop: string, items: ProductSummary[]): Promise<Prod
  * Finds sellable products matching ANY of the words (title, type, tag, SKU), best match first.
  * One word is enough ("printer"); more matching words rank higher.
  */
+/** Shopify search text for the words a customer typed: a word at the start of the title, type, tag or SKU (Shopify only allows * at the end). */
+export function productSearchQuery(terms: string[]): string {
+  const clause = terms.map((t) => `(title:${t}* OR ${t}* OR tag:${t}* OR product_type:${t}* OR sku:${t}*)`).join(" OR ");
+  return `status:active AND (${clause})`;
+}
+
+/**
+ * Finds sellable products for the words typed, best match first. A product matches by its title, type, tag or SKU, OR by sitting
+ * in a collection named like the word: shops usually title products by model ("HP 15s-fq5007TU") and keep "Laptops" /
+ * "Desktops" as a collection or product type, so a customer typing "laptop" must find those too.
+ */
 export async function searchProducts(shop: string, term: string, limit = 5): Promise<ProductSummary[]> {
   const terms = productTerms(term);
   if (!terms.length) return [];
-  const clause = terms.map((t) => `(title:*${t}* OR ${t}* OR tag:${t} OR product_type:${t} OR sku:${t})`).join(" OR ");
-  const data = await gql(
-    shop,
-    `query($q: String!) { products(first: 40, sortKey: RELEVANCE, query: $q) { nodes { ${PRODUCT_FIELDS} } } }`,
-    { q: `status:active AND (${clause})` },
-  );
+  const [direct, viaCollections] = await Promise.all([
+    gql(shop, `query($q: String!) { products(first: 40, sortKey: RELEVANCE, query: $q) { nodes { ${PRODUCT_FIELDS} } } }`, { q: productSearchQuery(terms) }),
+    gql(
+      shop,
+      `query($c: String!) { collections(first: 3, query: $c) { nodes { title products(first: 25) { nodes { ${PRODUCT_FIELDS} } } } } }`,
+      { c: terms.map((t) => `title:${t}*`).join(" OR ") },
+    ).catch(() => ({ collections: { nodes: [] } })), // a collection lookup problem must never break the normal search
+  ]);
+  const byId = new Map<string, { p: ProductSummary; bonus: number }>();
+  for (const n of direct.products?.nodes ?? []) byId.set(n.id, { p: mapProduct(n), bonus: 0 });
+  for (const c of viaCollections.collections?.nodes ?? []) {
+    for (const n of c.products?.nodes ?? []) {
+      const hit = byId.get(n.id);
+      if (hit) hit.bonus = 2;
+      else byId.set(n.id, { p: mapProduct(n), bonus: 2 });
+    }
+  }
   const score = (p: ProductSummary) => {
     const hay = `${p.title} ${p.productType} ${p.tags.join(" ")} ${p.skus.join(" ")}`.toLowerCase();
     const inTitle = p.title.toLowerCase();
     return terms.reduce((n, t) => n + (hay.includes(t) ? 1 : 0) + (inTitle.includes(t) ? 1 : 0), 0);
   };
-  const ranked = (data.products?.nodes ?? [])
-    .map(mapProduct)
-    .filter(sellable)
-    .map((p: ProductSummary) => ({ p, s: score(p) }))
-    .filter((x: { s: number }) => x.s > 0)
-    .sort((x: { s: number }, y: { s: number }) => y.s - x.s)
+  const all = [...byId.values()];
+  const ranked = all
+    .filter((x) => x.p.status === "ACTIVE")
+    .map((x) => ({ p: x.p, s: score(x.p) + x.bonus }))
+    .filter((x) => x.s > 0);
+  const inStock = ranked.filter((x) => x.p.available);
+  lastSearch.set(shop, { term, found: all.length, matched: ranked.length, inStock: inStock.length });
+  const top = inStock
+    .sort((x, y) => y.s - x.s)
     .slice(0, limit)
-    .map((x: { p: ProductSummary }) => x.p);
-  return withStoreUrl(shop, ranked);
+    .map((x) => x.p);
+  return withStoreUrl(shop, top);
 }
+
+/** What the last search saw, for the Logs page: "found 12, matched 12, in stock 0" explains a "not found" answer. */
+export const lastSearch = new Map<string, { term: string; found: number; matched: number; inStock: number }>();
 
 export async function getProductsByIds(shop: string, ids: string[]): Promise<ProductSummary[]> {
   if (!ids.length) return [];

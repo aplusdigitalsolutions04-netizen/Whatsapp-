@@ -1943,24 +1943,45 @@ async function withStoreUrl(shop, items) {
   if (base.endsWith(".myshopify.com")) return items;
   return items.map((p) => p.url || !p.handle ? p : { ...p, url: `${base}/products/${p.handle}` });
 }
+function productSearchQuery(terms) {
+  const clause = terms.map((t) => `(title:${t}* OR ${t}* OR tag:${t}* OR product_type:${t}* OR sku:${t}*)`).join(" OR ");
+  return `status:active AND (${clause})`;
+}
 async function searchProducts(shop, term, limit = 5) {
-  var _a2;
+  var _a2, _b, _c;
   const terms = productTerms(term);
   if (!terms.length) return [];
-  const clause = terms.map((t) => `(title:*${t}* OR ${t}* OR tag:${t} OR product_type:${t} OR sku:${t})`).join(" OR ");
-  const data = await gql(
-    shop,
-    `query($q: String!) { products(first: 40, sortKey: RELEVANCE, query: $q) { nodes { ${PRODUCT_FIELDS} } } }`,
-    { q: `status:active AND (${clause})` }
-  );
+  const [direct, viaCollections] = await Promise.all([
+    gql(shop, `query($q: String!) { products(first: 40, sortKey: RELEVANCE, query: $q) { nodes { ${PRODUCT_FIELDS} } } }`, { q: productSearchQuery(terms) }),
+    gql(
+      shop,
+      `query($c: String!) { collections(first: 3, query: $c) { nodes { title products(first: 25) { nodes { ${PRODUCT_FIELDS} } } } } }`,
+      { c: terms.map((t) => `title:${t}*`).join(" OR ") }
+    ).catch(() => ({ collections: { nodes: [] } }))
+    // a collection lookup problem must never break the normal search
+  ]);
+  const byId = /* @__PURE__ */ new Map();
+  for (const n of ((_a2 = direct.products) == null ? void 0 : _a2.nodes) ?? []) byId.set(n.id, { p: mapProduct(n), bonus: 0 });
+  for (const c of ((_b = viaCollections.collections) == null ? void 0 : _b.nodes) ?? []) {
+    for (const n of ((_c = c.products) == null ? void 0 : _c.nodes) ?? []) {
+      const hit = byId.get(n.id);
+      if (hit) hit.bonus = 2;
+      else byId.set(n.id, { p: mapProduct(n), bonus: 2 });
+    }
+  }
   const score = (p) => {
     const hay = `${p.title} ${p.productType} ${p.tags.join(" ")} ${p.skus.join(" ")}`.toLowerCase();
     const inTitle = p.title.toLowerCase();
     return terms.reduce((n, t) => n + (hay.includes(t) ? 1 : 0) + (inTitle.includes(t) ? 1 : 0), 0);
   };
-  const ranked = (((_a2 = data.products) == null ? void 0 : _a2.nodes) ?? []).map(mapProduct).filter(sellable).map((p) => ({ p, s: score(p) })).filter((x) => x.s > 0).sort((x, y) => y.s - x.s).slice(0, limit).map((x) => x.p);
-  return withStoreUrl(shop, ranked);
+  const all = [...byId.values()];
+  const ranked = all.filter((x) => x.p.status === "ACTIVE").map((x) => ({ p: x.p, s: score(x.p) + x.bonus })).filter((x) => x.s > 0);
+  const inStock = ranked.filter((x) => x.p.available);
+  lastSearch.set(shop, { term, found: all.length, matched: ranked.length, inStock: inStock.length });
+  const top = inStock.sort((x, y) => y.s - x.s).slice(0, limit).map((x) => x.p);
+  return withStoreUrl(shop, top);
 }
+const lastSearch = /* @__PURE__ */ new Map();
 async function getProductsByIds(shop, ids) {
   if (!ids.length) return [];
   const data = await gql(shop, `query($ids: [ID!]!) { nodes(ids: $ids) { ... on Product { ${PRODUCT_FIELDS} } } }`, { ids });
@@ -2032,10 +2053,12 @@ const shopifyData_server = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.
   getOrdersByIds,
   getProductsByIds,
   gql,
+  lastSearch,
   listOrders,
   listProducts,
   mapOrder,
   orderBelongsTo,
+  productSearchQuery,
   recommendProducts,
   searchProducts,
   testShopifyConnection
@@ -2518,6 +2541,10 @@ ${LABELS[ui].pick(ids.length)}`;
 async function productReply(shop, conv, query, s, t, lang, ui, deps) {
   await logEvent({ shop, source: "bot", event: "product_inquiry", detail: query.slice(0, 80) });
   const found = await deps.searchProducts(shop, query, 5);
+  const seen = (await Promise.resolve().then(() => shopifyData_server)).lastSearch.get(shop);
+  if (!found.length && seen && seen.term === query) {
+    await logEvent({ shop, source: "bot", event: "product_not_found", detail: `"${query.slice(0, 60)}": Shopify returned ${seen.found}, matching ${seen.matched}, in stock ${seen.inStock}` });
+  }
   await prisma.productEnquiry.create({
     data: {
       shop,
