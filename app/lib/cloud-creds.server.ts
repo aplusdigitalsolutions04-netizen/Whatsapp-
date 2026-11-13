@@ -1,25 +1,15 @@
 import prisma from "../db.server";
+import { CRED_NAMES, CRED_RULES, type CredName } from "./cloud-cred-rules";
 import { decryptSecret, encryptSecret } from "./secret.server";
 
 // Meta WhatsApp Cloud API keys. They are typed into the Integrations page, stored ENCRYPTED in the database and never sent
 // back to any browser (the page only learns "saved, ends in 1234"). Environment variables still work as a fallback.
-
-export const CRED_NAMES = ["accessToken", "phoneNumberId", "appSecret", "verifyToken"] as const;
-export type CredName = (typeof CRED_NAMES)[number];
 
 const ENV: Record<CredName, string> = {
   accessToken: "WHATSAPP_ACCESS_TOKEN",
   phoneNumberId: "WHATSAPP_PHONE_NUMBER_ID",
   appSecret: "WHATSAPP_APP_SECRET",
   verifyToken: "WHATSAPP_VERIFY_TOKEN",
-};
-
-/** What each value must look like. Rejecting obvious mistakes (a pasted sentence, the wrong field) protects the saved keys. */
-export const CRED_RULES: Record<CredName, { re: RegExp; label: string; hint: string }> = {
-  accessToken: { re: /^[A-Za-z0-9_\-.~+/=]{20,1000}$/, label: "Access token", hint: "the long token from Meta (starts with EA…)" },
-  phoneNumberId: { re: /^\d{8,20}$/, label: "Phone number ID", hint: "digits only, from WhatsApp → API Setup" },
-  appSecret: { re: /^[A-Za-z0-9]{16,64}$/, label: "App secret", hint: "32 letters/numbers, from App settings → Basic" },
-  verifyToken: { re: /^[A-Za-z0-9_-]{8,128}$/, label: "Verify token", hint: "8–128 letters, numbers, - or _" },
 };
 
 type Cache = { values: Map<CredName, string>; timer: NodeJS.Timeout | null };

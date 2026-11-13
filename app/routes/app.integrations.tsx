@@ -7,7 +7,8 @@ import { authenticate } from "../shopify.server";
 import { testShopifyConnection } from "../lib/shopify-data.server";
 import { randomBytes } from "node:crypto";
 import { whatsappConfig, whatsappDiagnostics } from "../lib/whatsapp.server";
-import { CRED_NAMES, CRED_RULES, credStatus, removeCreds, saveCreds, type CredName } from "../lib/cloud-creds.server";
+import { CRED_NAMES, CRED_RULES, type CredName } from "../lib/cloud-cred-rules";
+import { credStatus, removeCreds, saveCreds } from "../lib/cloud-creds.server";
 import { Badge, Banner, Card, Page } from "../components/ui";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
