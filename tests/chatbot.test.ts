@@ -606,7 +606,7 @@ test("order messages: a new order gets a confirmation from JAZZ", async () => {
   assert.equal(r.phone, "+919876543210");
   assert.equal(r.notices.length, 1);
   assert.equal(r.notices[0].key, "confirmed");
-  for (const part of ["Hi, Asha!", "JAZZ", "confirmed", "1. Order Number: #W1219", "HP LaserJet 1008w × 1", "Total: ₹1,499", "Payment: Paid"]) assert.ok(r.notices[0].text.includes(part), part);
+  for (const part of ["Hi, Asha Kumari!", "JAZZ", "confirmed", "1. Order Number: #W1219", "HP LaserJet 1008w × 1", "Total: ₹1,499", "Payment: Paid"]) assert.ok(r.notices[0].text.includes(part), part);
   const cod = buildOrderNotices(sample({ paymentGatewayNames: ["Cash on Delivery (COD)"], displayFinancialStatus: "PENDING" }), NOW);
   assert.match(cod.notices[0].text, /Payment: Pay on delivery \(COD\)/);
 });
@@ -799,4 +799,43 @@ test("WhatsApp system messages (timer changes, reactions) are ignored, real mess
   assert.equal(parseBridgeMessage({ key, message: { reactionMessage: { text: "👍" } } }), null, "a reaction");
   assert.equal(parseBridgeMessage({ key, message: { senderKeyDistributionMessage: {}, messageContextInfo: {} } }), null, "key exchange");
   assert.equal(parseBridgeMessage({ key, message: { conversation: "hi", messageContextInfo: {} } })?.payload.text, "hi");
+});
+
+test("other bots: auto-replies, echoes and loops are recognised; people and short product words are not", async () => {
+  const { looksAutomated }: any = await loadApp("/app/lib/bot-detect.ts");
+  for (const t of [
+    "Thank you for contacting WERY Traders. We will get back to you shortly.",
+    "This is an automated message. Our team will reply soon.",
+    "Hello! I'm a virtual assistant. How can I help you today?",
+    "We are currently away. Please leave a message.",
+    "Our business hours are 10am to 6pm Monday to Saturday",
+    "Welcome! Please press 1 for sales, 2 for support",
+  ]) assert.ok(looksAutomated(t), t);
+  for (const t of ["laptop", "printer", "yes", "I want a laptop under 30000", "Please send me the tracking link of my order", "contact support please, my order is late", "ok thanks"]) assert.equal(looksAutomated(t), null, t);
+  const ours = "Hi, I'm JAZZ! 👋 Welcome to WERY. How can I help you today?";
+  assert.match(looksAutomated(ours, [ours]) as string, /echo/);
+  const para = "Dear customer your request has been logged with reference 55421 and will be processed within two working days";
+  assert.ok(looksAutomated(para, [], [para]), "the same paragraph twice");
+  assert.equal(looksAutomated(para, [], []), null, "the first time it is not flagged by repetition");
+});
+
+test("other bots: JAZZ does not answer an auto-reply, and stops after too many replies in a row", async () => {
+  const { handleInbound }: any = await loadApp("/app/lib/bot.server.ts");
+  const phone = "+919833300001";
+  await handleInbound(SHOP, { id: "bot-1", from: phone.slice(1), name: "Shop X", text: "Thank you for contacting Shop X. We will get back to you shortly.", type: "text" });
+  const conv = await prisma.conversation.findFirstOrThrow({ where: { shop: SHOP, phone }, include: { messages: true } });
+  assert.equal(conv.messages.filter((m) => m.direction === "out").length, 0, "nothing was sent back");
+  assert.ok(await prisma.activityLog.findFirst({ where: { shop: SHOP, event: "auto_reply_ignored" } }), "and the reason is in the log");
+  for (let i = 0; i < 10; i++) await prisma.message.create({ data: { conversationId: conv.id, direction: "out", sender: "bot", body: `reply ${i}`, status: "sent" } });
+  await handleInbound(SHOP, { id: "bot-2", from: phone.slice(1), text: "what is the price of hp printer", type: "text" });
+  assert.equal(await prisma.message.count({ where: { conversationId: conv.id, direction: "out", body: { not: { startsWith: "reply" } } } }), 0, "loop guard: no reply after 10 in a row");
+});
+
+test("the bot says why it stays silent (Agent mode) instead of failing without a trace", async () => {
+  const { handleInbound }: any = await loadApp("/app/lib/bot.server.ts");
+  const phone = "+919833300002";
+  await prisma.conversation.create({ data: { shop: SHOP, phone, mode: "human", handoffReason: "test" } });
+  await handleInbound(SHOP, { id: "silent-1", from: phone.slice(1), text: "laptop", type: "text" });
+  await handleInbound(SHOP, { id: "silent-2", from: phone.slice(1), text: "printer", type: "text" });
+  assert.ok(await prisma.activityLog.findFirst({ where: { shop: SHOP, event: "bot_silent", detail: { contains: "Agent mode" } } }));
 });

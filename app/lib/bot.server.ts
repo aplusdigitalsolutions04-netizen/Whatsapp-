@@ -11,6 +11,7 @@ import { rateLimited } from "./rate-limit.server";
 import { clip, compose, numbered, shortDate, titleCase } from "./reply-format";
 import { getSettings, type Settings } from "./settings.server";
 import { SYSTEM_TYPES } from "./bridge-parse";
+import { detectAutomatedSender } from "./bot-detect.server";
 import { handleConfirmationReply } from "./order-confirm.server";
 import { applyWakeRule } from "./saved-contacts";
 import { isSavedContact } from "./saved-contacts.server";
@@ -493,6 +494,11 @@ export async function acknowledgeWaiting(shop: string, conv: Conv, s: Settings, 
   return sent.ok;
 }
 
+/** Writes down why JAZZ did not answer, so "the bot sends nothing" can be explained on the Logs page. */
+async function silent(shop: string, phone: string, reason: string, event = "bot_silent") {
+  await logEvent({ shop, source: "bot", event, detail: `${phone}: ${reason}` }).catch(() => undefined);
+}
+
 /** Processes one inbound WhatsApp message. Safe to call again for the same message id. */
 export async function handleInbound(shop: string, msg: InboundPayload) {
   // WhatsApp's own notices (disappearing-message timer, reactions, ...) are not questions: never answer them.
@@ -528,14 +534,30 @@ export async function handleInbound(shop: string, msg: InboundPayload) {
     .catch(() => undefined); // already stored on an earlier attempt
 
   const s = await getSettings(shop);
-  if (!s.enabled) return;
+  if (!s.enabled) {
+    await silent(shop, phone, "the bot is switched off in Settings");
+    return;
+  }
   // Numbers saved in the owner's phone are not customers: stay silent unless the message starts with ! # or $.
   const wake = applyWakeRule(msg.text, isSavedContact(phone, s.savedNumbers));
-  if (!wake.reply) return;
-  if (wake.text !== msg.text) msg = { ...msg, text: wake.text };
+  if (!wake.reply) {
+    await silent(shop, phone, "this number is in your saved contacts (start the message with ! to wake JAZZ)");
+    return;
+  }
+  const woken = wake.text !== msg.text;
+  if (woken) msg = { ...msg, text: wake.text };
+  // Another bot (a business auto-reply, a chatbot, our own message echoed back): read it, never answer it.
+  if (!woken) {
+    const auto = await detectAutomatedSender(conv.id, msg.text, msg.id).catch(() => null);
+    if (auto) {
+      await silent(shop, phone, `looks like a bot, not a customer: ${auto}`, "auto_reply_ignored");
+      return;
+    }
+  }
   if (conv.mode === "human") {
     // The chat is with a person now. Never leave the customer in silence, though: say once that the team has the request.
-    await acknowledgeWaiting(shop, conv, s, msg.id).catch(() => undefined);
+    const told = await acknowledgeWaiting(shop, conv, s, msg.id).catch(() => false);
+    if (!told) await silent(shop, phone, "the chat is in Agent mode (use Return to JAZZ on the Conversations page)");
     return;
   }
 

@@ -28,10 +28,11 @@ function itemsText(o: any): string {
   return clip(parts.join(", "), 220);
 }
 
-function firstName(o: any): string | null {
+/** The customer's full name as written on the order (shipping name, else customer, else billing). */
+function fullName(o: any): string | null {
   const full = o.shippingAddress?.name || [o.customer?.firstName, o.customer?.lastName].filter(Boolean).join(" ") || o.billingAddress?.name || "";
-  const first = String(full).trim().split(/\s+/)[0];
-  return first && first.length <= 30 ? first : null;
+  const name = String(full).trim().replace(/\s+/g, " ");
+  return name && name.length <= 60 ? name : null;
 }
 
 /** The customer's WhatsApp number from the order (shipping, order, customer, billing phone, first valid one). */
@@ -67,7 +68,7 @@ export function buildOrderNotices(
   const notices: Notice[] = [];
   if (!o) return { phone, notices };
 
-  const name = firstName(o);
+  const name = fullName(o);
   const hello = name ? `, ${name}` : "";
   const orderName = String(o.name ?? "");
   const items = itemsText(o);

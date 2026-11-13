@@ -1381,6 +1381,44 @@ const settings_server = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.def
   resolveShop,
   saveSettings
 }, Symbol.toStringTag, { value: "Module" }));
+const norm$1 = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim();
+const AUTO_PATTERNS = [
+  [/\b(auto[- ]?(reply|response|responder|generated)|automated (message|reply|response|assistant|greeting)|this is an automated|automatic (reply|response|message))\b/i, "says it is an automatic reply"],
+  [/\b(i am|i'm|im|this is|you are chatting with|you're chatting with|chatting with)\s+(a |an |your |our |the )?(virtual|digital|ai|automated)?\s?(assistant|chat ?bot|bot)\b/i, "says it is a bot"],
+  [/\b(thank(s| you) for (contacting|messaging|reaching out|getting in touch|your (message|enquiry|inquiry)))\b[\s\S]{0,160}\b(we will|we'll|will get back|get back to you|respond|reply|shortly|soon|as soon as)\b/i, "'thanks for contacting us, we will get back' style reply"],
+  [/\b(we are|we're|i am|i'm) (currently |right now )?(closed|away|unavailable|offline|not available|out of (the )?office)\b/i, "away message"],
+  [/\b(out of office|outside (of )?(our |the )?(business|working|office|store) hours|our (business|working|office|store) hours (are|is)|will (reply|respond|get back) (to you )?(during|within|on) )/i, "away / business hours message"],
+  [/\b(do not reply|don't reply|please do not respond|no-?reply)\b/i, "says do not reply"],
+  [/\b(please |kindly )?(press|select|choose|reply with|type) (option |number |the number )?(1|one)\b[\s\S]{0,80}\b(2|two)\b/i, "a numbered menu from another bot"],
+  [/(स्वचालित (संदेश|उत्तर|जवाब)|ऑटो ?(रिप्लाई|जवाब))/, "automatic reply (Hindi)"]
+];
+function looksAutomated(text2, recentOut = [], recentIn = []) {
+  const raw = String(text2 ?? "").trim();
+  if (raw.length < 12) return null;
+  for (const [re, why] of AUTO_PATTERNS) if (re.test(raw)) return why;
+  const n = norm$1(raw);
+  if (n.length >= 15 && recentOut.some((o) => norm$1(o) === n)) return "repeats a message JAZZ sent (an echo)";
+  if (n.length >= 60 && recentIn.some((i) => norm$1(i) === n)) return "the same long message again";
+  return null;
+}
+const LOOP_LIMIT = 10;
+const LOOP_WINDOW_MS = 10 * 6e4;
+async function detectAutomatedSender(conversationId, text2, inboundId) {
+  const [out, inn, recentReplies] = await Promise.all([
+    prisma.message.findMany({ where: { conversationId, direction: "out" }, orderBy: { createdAt: "desc" }, take: 12, select: { body: true } }),
+    prisma.message.findMany({
+      where: { conversationId, direction: "in", waMessageId: { not: inboundId }, createdAt: { gte: new Date(Date.now() - 24 * 36e5) } },
+      orderBy: { createdAt: "desc" },
+      take: 12,
+      select: { body: true }
+    }),
+    prisma.message.count({ where: { conversationId, direction: "out", sender: "bot", createdAt: { gte: new Date(Date.now() - LOOP_WINDOW_MS) } } })
+  ]);
+  const why = looksAutomated(text2, out.map((m) => m.body), inn.map((m) => m.body));
+  if (why) return why;
+  if (recentReplies >= LOOP_LIMIT) return `JAZZ already sent ${recentReplies} replies in ${LOOP_WINDOW_MS / 6e4} minutes (possible bot loop)`;
+  return null;
+}
 const YES = /* @__PURE__ */ new Set([
   "yes",
   "y",
@@ -2534,6 +2572,9 @@ async function acknowledgeWaiting(shop, conv, s, inboundId, send = sendAndRecord
   const sent = await send({ shop, conversationId: conv.id, to: conv.phone, body, sender: "bot", inReplyTo: `${inboundId}:wait` });
   return sent.ok;
 }
+async function silent(shop, phone, reason, event = "bot_silent") {
+  await logEvent({ shop, source: "bot", event, detail: `${phone}: ${reason}` }).catch(() => void 0);
+}
 async function handleInbound(shop, msg2) {
   var _a2, _b, _c, _d;
   if (SYSTEM_TYPES.has(msg2.type)) return;
@@ -2564,12 +2605,27 @@ async function handleInbound(shop, msg2) {
     }
   }).catch(() => void 0);
   const s = await getSettings(shop);
-  if (!s.enabled) return;
+  if (!s.enabled) {
+    await silent(shop, phone, "the bot is switched off in Settings");
+    return;
+  }
   const wake = applyWakeRule(msg2.text, isSavedContact(phone, s.savedNumbers));
-  if (!wake.reply) return;
-  if (wake.text !== msg2.text) msg2 = { ...msg2, text: wake.text };
+  if (!wake.reply) {
+    await silent(shop, phone, "this number is in your saved contacts (start the message with ! to wake JAZZ)");
+    return;
+  }
+  const woken = wake.text !== msg2.text;
+  if (woken) msg2 = { ...msg2, text: wake.text };
+  if (!woken) {
+    const auto = await detectAutomatedSender(conv.id, msg2.text, msg2.id).catch(() => null);
+    if (auto) {
+      await silent(shop, phone, `looks like a bot, not a customer: ${auto}`, "auto_reply_ignored");
+      return;
+    }
+  }
   if (conv.mode === "human") {
-    await acknowledgeWaiting(shop, conv, s, msg2.id).catch(() => void 0);
+    const told = await acknowledgeWaiting(shop, conv, s, msg2.id).catch(() => false);
+    if (!told) await silent(shop, phone, "the chat is in Agent mode (use Return to JAZZ on the Conversations page)");
     return;
   }
   const confirm = await handleConfirmationReply(shop, conv.id, msg2.text, msg2.id).catch(() => null);
@@ -3808,11 +3864,11 @@ function itemsText(o) {
   });
   return clip$1(parts.join(", "), 220);
 }
-function firstName(o) {
+function fullName(o) {
   var _a2, _b, _c, _d;
   const full = ((_a2 = o.shippingAddress) == null ? void 0 : _a2.name) || [(_b = o.customer) == null ? void 0 : _b.firstName, (_c = o.customer) == null ? void 0 : _c.lastName].filter(Boolean).join(" ") || ((_d = o.billingAddress) == null ? void 0 : _d.name) || "";
-  const first = String(full).trim().split(/\s+/)[0];
-  return first && first.length <= 30 ? first : null;
+  const name = String(full).trim().replace(/\s+/g, " ");
+  return name && name.length <= 60 ? name : null;
 }
 function orderPhone(o) {
   var _a2, _b, _c, _d;
@@ -3837,7 +3893,7 @@ function buildOrderNotices(o, now = Date.now(), opts = {}) {
   const phone = orderPhone(o);
   const notices = [];
   if (!o) return { phone, notices };
-  const name = firstName(o);
+  const name = fullName(o);
   const hello = name ? `, ${name}` : "";
   const orderName = String(o.name ?? "");
   const items = itemsText(o);
