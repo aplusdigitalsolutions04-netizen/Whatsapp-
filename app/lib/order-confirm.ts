@@ -5,11 +5,13 @@ const YES = new Set([
   "yes", "y", "yep", "yup", "yeah", "ya", "yaa", "ok", "okay", "okk", "k", "sure", "confirm", "confirmed", "correct", "right", "done", "agree",
   "haan", "han", "haa", "ha", "hanji", "haanji", "ji", "theek", "thik", "sahi", "bilkul", "pakka", "kar", "karo", "chalega", "lena", "lunga", "lungi",
   "हाँ", "हां", "हा", "जी", "ठीक", "सही", "बिलकुल", "पक्का", "👍", "✅", "👌", "🙏",
+  "si", "sí", "oui", "ja", "sim", "evet", "iya", "ya", "da", "ano", "claro", "vale", "d'accord", "genau",
 ]);
 const NO = new Set([
   "no", "n", "nope", "nah", "not", "dont", "don't", "cancel", "cancelled", "wrong", "incorrect", "change", "edit", "stop", "refuse",
   "nahi", "nahin", "nai", "na", "mat", "galat", "badlo", "badal", "rehne", "raheendo", "nahi-chahiye",
   "नहीं", "नही", "ना", "मत", "गलत", "रद्द", "बदलो", "❌", "👎",
+  "non", "nein", "não", "nao", "hayır", "hayir", "tidak", "nee", "nej", "nie", "jamás",
 ]);
 
 /** Reads a short reply as YES or NO. Anything longer or mixed (a real question) returns null so the normal bot can answer it. */

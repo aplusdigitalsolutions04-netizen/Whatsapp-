@@ -139,6 +139,7 @@ export default function Settings() {
             <input name="aiKey" type="password" autoComplete="new-password" spellCheck={false} placeholder={ai.keyHint ?? "sk-..."} style={{ width: "100%" }} />
           </label>
           <p><label><input type="checkbox" name="aiEnabled" defaultChecked={ai.enabled} /> Use AI for questions the bot can&apos;t answer</label></p>
+          <p className="o-p"><small>With AI on, JAZZ also answers in the customer&apos;s own language (Spanish, French, Tamil, Bengali, Urdu, Arabic and more). Hindi, Hinglish and English work without AI.</small></p>
           <div className="o-row">
             <button type="submit" disabled={saving}>Save AI settings</button>
           </div>

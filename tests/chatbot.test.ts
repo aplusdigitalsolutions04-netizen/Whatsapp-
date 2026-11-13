@@ -949,3 +949,14 @@ test("Meta API keys: saved encrypted, never shown back, checked for the right sh
   await c.removeCreds(SHOP);
   assert.equal(c.cred("accessToken"), process.env.WHATSAPP_ACCESS_TOKEN, "removed: back to the environment value");
 });
+
+test("languages: Roman-letter foreign text is recognised, English / Hinglish / product text is not", async () => {
+  const { isLatinForeign, detectLanguage }: any = await loadApp("/app/lib/lang.ts");
+  for (const t of ["hola cuánto cuesta el portátil", "Bonjour, combien coûte cette imprimante ?", "wo ist meine bestellung", "olá quanto custa o notebook", "berapa harga laptop ini", "naan oru laptop venum", "mala laptop pahije", "amar order kothay", "gracias"]) {
+    assert.ok(isLatinForeign(t), t);
+  }
+  for (const t of ["hp laser printer price", "I want a laptop under 30000", "where is my order #W1219", "Dell Inspiron 15 3520", "How much is the HP 1008w?", "do you have a gaming laptop", "track my order", "hi", "laptop", "mujhe laptop chahiye"]) {
+    assert.ok(!isLatinForeign(t) || detectLanguage(t) === "hinglish", t);
+  }
+  assert.equal(isLatinForeign("मुझे लैपटॉप चाहिए"), false, "other scripts have their own path");
+});

@@ -29,3 +29,51 @@ export function detectLanguage(text: string): Lang | null {
   if (strong >= 1 || weak >= 2) return "hinglish";
   return words.length >= 2 ? "en" : null;
 }
+
+// Words that give away a language written in Roman letters other than English / Hinglish (Spanish, French, German, Portuguese, Italian,
+// Indonesian, Turkish, Dutch, Swahili and Roman-script Marathi, Tamil, Telugu, Bengali, Gujarati, Punjabi, Kannada, Malayalam).
+// STRONG: one of them is enough ("hola"). WEAK: two different ones are needed. Words that are also English are left out on purpose.
+const FOREIGN_STRONG = new Set([
+  "hola", "gracias", "buenos", "buenas", "cuanto", "cuánto", "cuesta", "quiero", "necesito", "precio", "envio", "envío", "pedido", "tienen", "dónde", "donde",
+  "bonjour", "bonsoir", "merci", "combien", "commande", "livraison", "voudrais", "prix", "bonne", "salut",
+  "hallo", "danke", "nicht", "bestellung", "lieferung", "möchte", "kostet", "bitte", "wieviel", "guten",
+  "olá", "obrigado", "obrigada", "você", "preço", "entrega", "quanto", "custa", "quero", "não", "bom",
+  "ciao", "grazie", "ordine", "consegna", "vorrei", "buongiorno", "prezzo", "quanto",
+  "halo", "terima", "kasih", "berapa", "harga", "pesanan", "pengiriman", "saya", "mau", "ingin", "apakah", "tolong", "selamat",
+  "merhaba", "teşekkür", "fiyat", "sipariş", "kargo", "istiyorum", "lütfen", "nasıl", "kaç",
+  "bedankt", "hoeveel", "bestelling", "levering", "graag", "goedemorgen",
+  "habari", "asante", "bei", "ngapi", "nataka",
+  "vanakkam", "enna", "evvalavu", "venum", "irukka", "irukku", "enakku", "nandri", "epdi",
+  "kavali", "entha", "nenu", "meeru", "dhanyavadalu", "enti",
+  "pahije", "kiti", "kuthe", "mala", "tumhi", "majha", "mazha", "aahe", "ahe",
+  "amar", "koto", "lagbe", "kothay", "dhonnobad", "apni", "kemon", "kinte",
+  "kem", "cho", "joiye", "chhe", "mane", "tamaru",
+  "kithe", "tuhada", "chahida", "kiddan", "mainu", "haiga",
+  "namaskara", "beku", "yenu", "eshtu", "namaskaram", "venam", "evide", "ethra", "ente", "nanni",
+]);
+const FOREIGN_WEAK = new Set([
+  "que", "por", "para", "una", "los", "las", "del", "con", "mi", "tiene", "esta", "está",
+  "je", "vous", "pour", "avec", "est", "les", "des", "une", "mon", "suis", "pas", "oui", "non",
+  "ich", "wie", "viel", "ein", "eine", "der", "die", "das", "und", "ist", "haben", "sie", "nein",
+  "uma", "com", "tem", "sim", "os", "as", "do", "da",
+  "che", "non", "il", "una", "sono", "per",
+  "yang", "dan", "ini", "itu", "tidak", "bisa", "ada", "iya",
+  "bir", "ve", "bu", "için", "evet", "hayır",
+  "het", "niet", "ik", "wil", "van", "nee",
+]);
+const DIACRITICS = /[áàâãäåçéèêëíìîïñóòôõöúùûüýÿşğıœß¿¡]/i;
+
+/**
+ * True when Roman-letter text is probably NOT English or Hinglish (so the AI should translate it and the reply goes back in the
+ * customer's own language). Product names, model numbers and plain English questions return false.
+ */
+export function isLatinForeign(text: string): boolean {
+  if (/(?![\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}])\p{L}/u.test(text)) return false; // other scripts are handled elsewhere
+  const words = text.toLowerCase().match(/[\p{L}]+/gu) ?? [];
+  if (!words.length) return false;
+  const strong = new Set(words.filter((w) => FOREIGN_STRONG.has(w)));
+  const weak = new Set(words.filter((w) => FOREIGN_WEAK.has(w)));
+  if (strong.size >= 1) return true;
+  if (weak.size >= 2) return true;
+  return words.length >= 2 && DIACRITICS.test(text);
+}

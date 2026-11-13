@@ -2,7 +2,7 @@ import prisma from "../db.server";
 import { aiFallbackReply, HANDOFF_MARK, translateReply, translateToEnglish } from "./ai.server";
 import { matchFaq, pickFaqReply } from "./faq";
 import { detectIntent, parseSelection, productTerms, type Intent } from "./intent";
-import { detectLanguage, type Lang } from "./lang";
+import { detectLanguage, isLatinForeign, type Lang } from "./lang";
 import { logEvent } from "./log.server";
 import { findLooseOrderRef, findMarkedOrderRef, parseOrderRef, refIsPhone } from "./order-ref";
 import { findPhoneInText, normalizePhone, samePhone } from "./phone";
@@ -568,7 +568,9 @@ export async function handleInbound(shop: string, msg: InboundPayload) {
   // The customer is answering "do you want this order?" / "is the address correct?"
   const confirm = await handleConfirmationReply(shop, conv.id, msg.text, msg.id).catch(() => null);
   if (confirm) {
-    const sent = await sendAndRecord({ shop, conversationId: conv.id, to: phone, body: confirm.reply, sender: "bot", inReplyTo: msg.id });
+    // A customer who has been writing in another language gets the question's answer in that language too.
+    const said = conv.lang.startsWith("x:") ? await translateReply(shop, confirm.reply, conv.lang.slice(2)).catch(() => null) : null;
+    const sent = await sendAndRecord({ shop, conversationId: conv.id, to: phone, body: said ?? confirm.reply, sender: "bot", inReplyTo: msg.id });
     if (confirm.handoffReason) await handoff(shop, conv, confirm.handoffReason);
     if (!sent.ok) throw new Error(sent.error ?? "send failed");
     return;
@@ -581,18 +583,23 @@ export async function handleInbound(shop: string, msg: InboundPayload) {
   // Any-language support: other scripts are translated to English, answered by the normal bot, and translated back.
   let pivot: string | null = null;
   let work = msg;
-  if (rawText && (detected === "other" || (detected === null && conv.lang.startsWith("x:")))) {
-    if (detected === "other") {
+  // Roman-letter text in another language (Spanish, French, Roman Marathi...) is translated too; without AI it simply goes through
+  // the normal English pipeline as before.
+  const latinForeign = !!rawText && (detected === "en" || detected === null) && isLatinForeign(rawText);
+  if (rawText && (detected === "other" || latinForeign || (detected === null && conv.lang.startsWith("x:")))) {
+    if (detected === "other" || latinForeign) {
       const t = rateLimited(`tr:${phone}`, 60, 3_600_000) ? null : await translateToEnglish(shop, rawText);
-      if (!t) {
+      if (!t && detected === "other") {
         const body = `${s.templates.unsupportedLanguage}\n\n${TEMPLATES_HI.unsupportedLanguage}`;
         const sent = await sendAndRecord({ shop, conversationId: conv.id, to: phone, body, sender: "bot", inReplyTo: key });
         if (!sent.ok) throw new Error(sent.error ?? "send failed");
         return;
       }
-      pivot = t.language;
-      work = { ...msg, text: t.english };
-      if (conv.lang !== `x:${pivot}`) await update(conv, { lang: `x:${pivot}` });
+      if (t && !/^english$/i.test(t.language)) {
+        pivot = t.language;
+        work = { ...msg, text: t.english };
+        if (conv.lang !== `x:${pivot}`) await update(conv, { lang: `x:${pivot}` });
+      }
     } else {
       pivot = conv.lang.slice(2);
     }
