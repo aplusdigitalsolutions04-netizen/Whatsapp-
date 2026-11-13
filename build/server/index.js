@@ -1689,9 +1689,9 @@ const settings_server = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.def
 const norm$1 = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim();
 const AUTO_PATTERNS = [
   [/\b(auto[- ]?(reply|response|responder|generated)|automated (message|reply|response|assistant|greeting)|this is an automated|automatic (reply|response|message))\b/i, "says it is an automatic reply"],
-  [/\b(i am|i'm|im|this is|you are chatting with|you're chatting with|chatting with)\s+(a |an |your |our |the )?(virtual|digital|ai|automated)?\s?(assistant|chat ?bot|bot)\b/i, "says it is a bot"],
+  [/\b(i am|i'm|this is|you are chatting with|you're chatting with|chatting with)\s+(a |an |your |our |the )?((virtual|digital|ai|automated)\s+assistant|chat ?bot|bot)\b/i, "says it is a bot"],
   [/\b(thank(s| you) for (contacting|messaging|reaching out|getting in touch|your (message|enquiry|inquiry)))\b[\s\S]{0,160}\b(we will|we'll|will get back|get back to you|respond|reply|shortly|soon|as soon as)\b/i, "'thanks for contacting us, we will get back' style reply"],
-  [/\b(we are|we're|i am|i'm) (currently |right now )?(closed|away|unavailable|offline|not available|out of (the )?office)\b/i, "away message"],
+  [/\bwe(?: are|'re) (?:currently |right now )?(?:closed|away|unavailable|offline|not available)\b/i, "away message"],
   [/\b(out of office|outside (of )?(our |the )?(business|working|office|store) hours|our (business|working|office|store) hours (are|is)|will (reply|respond|get back) (to you )?(during|within|on) )/i, "away / business hours message"],
   [/\b(do not reply|don't reply|please do not respond|no-?reply)\b/i, "says do not reply"],
   [/\b(please |kindly )?(press|select|choose|reply with|type) (option |number |the number )?(1|one)\b[\s\S]{0,80}\b(2|two)\b/i, "a numbered menu from another bot"],
@@ -1703,11 +1703,11 @@ function looksAutomated(text2, recentOut = [], recentIn = []) {
   for (const [re, why] of AUTO_PATTERNS) if (re.test(raw)) return why;
   const n = norm$1(raw);
   if (n.length >= 15 && recentOut.some((o) => norm$1(o) === n)) return "repeats a message JAZZ sent (an echo)";
-  if (n.length >= 60 && recentIn.some((i) => norm$1(i) === n)) return "the same long message again";
+  if (n.length >= 60 && recentIn.filter((i) => norm$1(i) === n).length >= 2) return "the same long message again and again";
   return null;
 }
-const LOOP_LIMIT = 10;
-const LOOP_WINDOW_MS = 10 * 6e4;
+const LOOP_LIMIT = 14;
+const LOOP_WINDOW_MS = 2 * 6e4;
 async function detectAutomatedSender(conversationId, text2, inboundId) {
   const [out, inn, recentReplies] = await Promise.all([
     prisma.message.findMany({ where: { conversationId, direction: "out" }, orderBy: { createdAt: "desc" }, take: 12, select: { body: true } }),
@@ -2357,8 +2357,8 @@ async function searchProducts(shop, term, limit = 5) {
   for (const c of ((_b = viaCollections.collections) == null ? void 0 : _b.nodes) ?? []) {
     for (const n of ((_c = c.products) == null ? void 0 : _c.nodes) ?? []) {
       const hit = byId.get(n.id);
-      if (hit) hit.bonus = 2;
-      else byId.set(n.id, { p: mapProduct(n), bonus: 2 });
+      if (hit) hit.bonus = 1;
+      else byId.set(n.id, { p: mapProduct(n), bonus: 1 });
     }
   }
   const score = (p) => {

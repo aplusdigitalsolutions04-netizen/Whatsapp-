@@ -373,8 +373,8 @@ export async function searchProducts(shop: string, term: string, limit = 5): Pro
   for (const c of viaCollections.collections?.nodes ?? []) {
     for (const n of c.products?.nodes ?? []) {
       const hit = byId.get(n.id);
-      if (hit) hit.bonus = 2;
-      else byId.set(n.id, { p: mapProduct(n), bonus: 2 });
+      if (hit) hit.bonus = 1; // a product that also has the word in its title still ranks above one found only through the collection
+      else byId.set(n.id, { p: mapProduct(n), bonus: 1 });
     }
   }
   const score = (p: ProductSummary) => {

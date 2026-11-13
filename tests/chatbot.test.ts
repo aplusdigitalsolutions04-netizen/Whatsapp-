@@ -813,11 +813,12 @@ test("other bots: auto-replies, echoes and loops are recognised; people and shor
     "Our business hours are 10am to 6pm Monday to Saturday",
     "Welcome! Please press 1 for sales, 2 for support",
   ]) assert.ok(looksAutomated(t), t);
-  for (const t of ["laptop", "printer", "yes", "I want a laptop under 30000", "Please send me the tracking link of my order", "contact support please, my order is late", "ok thanks"]) assert.equal(looksAutomated(t), null, t);
+  for (const t of ["I am away from home, please leave it with my neighbour", "I am assistant manager at ABC Traders, need 5 printers", "laptop", "printer", "yes", "I want a laptop under 30000", "Please send me the tracking link of my order", "contact support please, my order is late", "ok thanks"]) assert.equal(looksAutomated(t), null, t);
   const ours = "Hi, I'm JAZZ! 👋 Welcome to WERY. How can I help you today?";
   assert.match(looksAutomated(ours, [ours]) as string, /echo/);
   const para = "Dear customer your request has been logged with reference 55421 and will be processed within two working days";
-  assert.ok(looksAutomated(para, [], [para]), "the same paragraph twice");
+  assert.ok(looksAutomated(para, [], [para, para]), "the same paragraph three times");
+  assert.equal(looksAutomated(para, [], [para]), null, "a person may repeat a long complaint once");
   assert.equal(looksAutomated(para, [], []), null, "the first time it is not flagged by repetition");
 });
 
@@ -828,9 +829,9 @@ test("other bots: JAZZ does not answer an auto-reply, and stops after too many r
   const conv = await prisma.conversation.findFirstOrThrow({ where: { shop: SHOP, phone }, include: { messages: true } });
   assert.equal(conv.messages.filter((m) => m.direction === "out").length, 0, "nothing was sent back");
   assert.ok(await prisma.activityLog.findFirst({ where: { shop: SHOP, event: "auto_reply_ignored" } }), "and the reason is in the log");
-  for (let i = 0; i < 10; i++) await prisma.message.create({ data: { conversationId: conv.id, direction: "out", sender: "bot", body: `reply ${i}`, status: "sent" } });
+  for (let i = 0; i < 14; i++) await prisma.message.create({ data: { conversationId: conv.id, direction: "out", sender: "bot", body: `reply ${i}`, status: "sent" } });
   await handleInbound(SHOP, { id: "bot-2", from: phone.slice(1), text: "what is the price of hp printer", type: "text" });
-  assert.equal(await prisma.message.count({ where: { conversationId: conv.id, direction: "out", body: { not: { startsWith: "reply" } } } }), 0, "loop guard: no reply after 10 in a row");
+  assert.equal(await prisma.message.count({ where: { conversationId: conv.id, direction: "out", body: { not: { startsWith: "reply" } } } }), 0, "loop guard: no reply after 14 in two minutes");
 });
 
 test("the bot says why it stays silent (Agent mode) instead of failing without a trace", async () => {
