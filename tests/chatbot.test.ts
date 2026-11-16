@@ -1068,3 +1068,13 @@ test("a number without an order gets nothing, not even in Agent mode", async () 
     else process.env.WHATSAPP_PROVIDER = oldProvider;
   }
 });
+
+test("only real Shopify orders count: a row added by hand does not make a number an order customer", async () => {
+  const { isOrderCustomer, forgetOrderNumbers }: any = await loadApp("/app/lib/order-customers.server.ts");
+  await prisma.orderSheet.create({ data: { shop: SHOP, shopifyOrderId: "manual-1", isManual: true, orderName: "manual", primaryMobile: "9777700001" } });
+  await prisma.orderSheet.create({ data: { shop: SHOP, shopifyOrderId: "9901", orderName: "#W9901", primaryMobile: "9777700002", altMobile: "9777700003" } });
+  forgetOrderNumbers();
+  assert.equal(await isOrderCustomer(SHOP, "+919777700001"), false, "manual row only");
+  assert.equal(await isOrderCustomer(SHOP, "+919777700002"), true, "Shopify order");
+  assert.equal(await isOrderCustomer(SHOP, "+919777700003"), true, "alternate number typed on a Shopify order");
+});

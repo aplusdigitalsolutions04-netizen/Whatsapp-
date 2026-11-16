@@ -1988,7 +1988,7 @@ const caches = g$a.__orderNumbers ?? (g$a.__orderNumbers = /* @__PURE__ */ new M
 const FULL_MS = 5 * 6e4;
 const MISS_MS = 2e4;
 async function load(shop) {
-  const rows = await prisma.orderSheet.findMany({ where: { shop }, select: { primaryMobile: true, altMobileShopify: true, altMobile: true } });
+  const rows = await prisma.orderSheet.findMany({ where: { shop, isManual: false }, select: { primaryMobile: true, altMobileShopify: true, altMobile: true } });
   const set = /* @__PURE__ */ new Set();
   for (const r of rows) for (const v of [r.primaryMobile, r.altMobileShopify, r.altMobile]) {
     const d = digits10(v);

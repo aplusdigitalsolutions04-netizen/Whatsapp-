@@ -16,7 +16,8 @@ const FULL_MS = 5 * 60_000; // the whole list is reloaded at most this often
 const MISS_MS = 20_000; // an unknown number may belong to an order that was just created: reload if the list is older than this
 
 async function load(shop: string): Promise<Set<string>> {
-  const rows = await prisma.orderSheet.findMany({ where: { shop }, select: { primaryMobile: true, altMobileShopify: true, altMobile: true } });
+  // Only real Shopify orders count: rows an employee added by hand ("manual") are not orders from the store.
+  const rows = await prisma.orderSheet.findMany({ where: { shop, isManual: false }, select: { primaryMobile: true, altMobileShopify: true, altMobile: true } });
   const set = new Set<string>();
   for (const r of rows) for (const v of [r.primaryMobile, r.altMobileShopify, r.altMobile]) {
     const d = digits10(v);
