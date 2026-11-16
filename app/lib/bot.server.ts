@@ -500,7 +500,10 @@ export async function acknowledgeWaiting(shop: string, conv: Conv, s: Settings, 
 }
 
 /** Writes down why JAZZ did not answer, so "the bot sends nothing" can be explained on the Logs page. */
+const masked = (phone: string) => `***${phone.replace(/\D/g, "").slice(-4)}`;
+
 async function silent(shop: string, phone: string, reason: string, event = "bot_silent") {
+  console.log(`[bot] ${masked(phone)}: no reply - ${reason}`);
   await logEvent({ shop, source: "bot", event, detail: `${phone}: ${reason}` }).catch(() => undefined);
 }
 
@@ -563,7 +566,8 @@ export async function handleInbound(shop: string, msg: InboundPayload) {
   // (A leading "!" is the wake character for anybody, so the owner can test the bot from any phone.)
   const bang = msg.text.trim().startsWith("!");
   if (bang) msg = { ...msg, text: msg.text.trim().slice(1).trim() || "hi" };
-  if (s.onlyOrderNumbers && !woken && !bang && !(await isOrderCustomer(shop, phone).catch(() => true))) {
+  const onOrder = s.onlyOrderNumbers && !woken && !bang ? await isOrderCustomer(shop, phone).catch(() => false) : true;
+  if (!onOrder) {
     const text = s.nonOrderReply.trim();
     if (text) {
       // The owner's own message, exactly as written, at most once in 12 hours per number (so two bots never talk in circles).
@@ -586,6 +590,7 @@ export async function handleInbound(shop: string, msg: InboundPayload) {
   }
 
   // The customer is answering "do you want this order?" / "is the address correct?"
+  console.log(`[bot] ${masked(phone)}: replying (${s.onlyOrderNumbers ? (woken || bang ? "wake character" : "number is on an order") : "order-only setting is OFF"})`);
   const confirm = await handleConfirmationReply(shop, conv.id, msg.text, msg.id).catch(() => null);
   if (confirm) {
     // A customer who has been writing in another language gets the question's answer in that language too.

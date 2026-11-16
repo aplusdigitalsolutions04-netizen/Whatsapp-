@@ -7,6 +7,7 @@ const bs = String.fromCharCode(92);
 const file = "build/server/index.js";
 const text = readFileSync(file, "utf8");
 const fixed = text.split(`assetsBuildDirectory = "build${bs}${bs}client"`).join('assetsBuildDirectory = "build/client"');
+writeFileSync("build/build-info.json", JSON.stringify({ builtAt: new Date().toISOString() }));
 if (fixed !== text) {
   writeFileSync(file, fixed);
   console.log("[build] made the browser-files path portable");

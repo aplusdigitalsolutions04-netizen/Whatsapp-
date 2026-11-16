@@ -3044,7 +3044,9 @@ async function acknowledgeWaiting(shop, conv, s, inboundId, send = sendAndRecord
   const sent = await send({ shop, conversationId: conv.id, to: conv.phone, body, sender: "bot", inReplyTo: `${inboundId}:wait` });
   return sent.ok;
 }
+const masked = (phone) => `***${phone.replace(/\D/g, "").slice(-4)}`;
 async function silent(shop, phone, reason, event = "bot_silent") {
+  console.log(`[bot] ${masked(phone)}: no reply - ${reason}`);
   await logEvent({ shop, source: "bot", event, detail: `${phone}: ${reason}` }).catch(() => void 0);
 }
 async function handleInbound(shop, msg2) {
@@ -3097,7 +3099,8 @@ async function handleInbound(shop, msg2) {
   }
   const bang = msg2.text.trim().startsWith("!");
   if (bang) msg2 = { ...msg2, text: msg2.text.trim().slice(1).trim() || "hi" };
-  if (s.onlyOrderNumbers && !woken && !bang && !await isOrderCustomer(shop, phone).catch(() => true)) {
+  const onOrder = s.onlyOrderNumbers && !woken && !bang ? await isOrderCustomer(shop, phone).catch(() => false) : true;
+  if (!onOrder) {
     const text22 = s.nonOrderReply.trim();
     if (text22) {
       const already = await prisma.message.findFirst({ where: { conversationId: conv.id, inReplyTo: { endsWith: ":noorder" }, createdAt: { gte: new Date(Date.now() - 12 * 36e5) } }, select: { id: true } });
@@ -3115,6 +3118,7 @@ async function handleInbound(shop, msg2) {
     if (!told) await silent(shop, phone, "the chat is in Agent mode (use Return to JAZZ on the Conversations page)");
     return;
   }
+  console.log(`[bot] ${masked(phone)}: replying (${s.onlyOrderNumbers ? woken || bang ? "wake character" : "number is on an order" : "order-only setting is OFF"})`);
   const confirm2 = await handleConfirmationReply(shop, conv.id, msg2.text, msg2.id).catch(() => null);
   if (confirm2) {
     const said = conv.lang.startsWith("x:") ? await translateReply(shop, confirm2.reply, conv.lang.slice(2)).catch(() => null) : null;

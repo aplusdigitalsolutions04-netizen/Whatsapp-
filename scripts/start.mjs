@@ -185,6 +185,11 @@ async function migrateThenServe(prismaCli) {
   }
 
   const serverEntry = path.join(root, "build", "server", "index.js");
+  try {
+    console.log(`[start] build made at ${JSON.parse(readFileSync(path.join(root, "build", "build-info.json"), "utf8")).builtAt}`);
+  } catch {
+    /* older build without the stamp */
+  }
   if (!existsSync(serverEntry)) {
     console.log("[start] build/ not found, building the app first");
     const rrDev = pkgFile("@react-router/dev", "bin.js");
