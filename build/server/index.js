@@ -3095,11 +3095,6 @@ async function handleInbound(shop, msg2) {
       return;
     }
   }
-  if (conv.mode === "human") {
-    const told = await acknowledgeWaiting(shop, conv, s, msg2.id).catch(() => false);
-    if (!told) await silent(shop, phone, "the chat is in Agent mode (use Return to JAZZ on the Conversations page)");
-    return;
-  }
   const bang = msg2.text.trim().startsWith("!");
   if (bang) msg2 = { ...msg2, text: msg2.text.trim().slice(1).trim() || "hi" };
   if (s.onlyOrderNumbers && !woken && !bang && !await isOrderCustomer(shop, phone).catch(() => true)) {
@@ -3113,6 +3108,11 @@ async function handleInbound(shop, msg2) {
       }
     }
     await silent(shop, phone, "this number is not on any order (Settings: reply only to numbers that have placed an order)", "bot_silent");
+    return;
+  }
+  if (conv.mode === "human") {
+    const told = await acknowledgeWaiting(shop, conv, s, msg2.id).catch(() => false);
+    if (!told) await silent(shop, phone, "the chat is in Agent mode (use Return to JAZZ on the Conversations page)");
     return;
   }
   const confirm2 = await handleConfirmationReply(shop, conv.id, msg2.text, msg2.id).catch(() => null);

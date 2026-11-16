@@ -559,13 +559,6 @@ export async function handleInbound(shop: string, msg: InboundPayload) {
       return;
     }
   }
-  if (conv.mode === "human") {
-    // The chat is with a person now. Never leave the customer in silence, though: say once that the team has the request.
-    const told = await acknowledgeWaiting(shop, conv, s, msg.id).catch(() => false);
-    if (!told) await silent(shop, phone, "the chat is in Agent mode (use Return to JAZZ on the Conversations page)");
-    return;
-  }
-
   // Only numbers that are on an order get answers (a message that starts with the wake character ! # $ always gets one).
   // (A leading "!" is the wake character for anybody, so the owner can test the bot from any phone.)
   const bang = msg.text.trim().startsWith("!");
@@ -582,6 +575,13 @@ export async function handleInbound(shop: string, msg: InboundPayload) {
       }
     }
     await silent(shop, phone, "this number is not on any order (Settings: reply only to numbers that have placed an order)", "bot_silent");
+    return;
+  }
+
+  if (conv.mode === "human") {
+    // The chat is with a person now. Never leave the customer in silence, though: say once that the team has the request.
+    const told = await acknowledgeWaiting(shop, conv, s, msg.id).catch(() => false);
+    if (!told) await silent(shop, phone, "the chat is in Agent mode (use Return to JAZZ on the Conversations page)");
     return;
   }
 

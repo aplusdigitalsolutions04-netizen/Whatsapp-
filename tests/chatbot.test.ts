@@ -838,6 +838,7 @@ test("other bots: JAZZ does not answer an auto-reply, and stops after too many r
 test("the bot says why it stays silent (Agent mode) instead of failing without a trace", async () => {
   const { handleInbound }: any = await loadApp("/app/lib/bot.server.ts");
   const phone = "+919833300002";
+  await prisma.orderSheet.create({ data: { shop: SHOP, shopifyOrderId: "9802", orderName: "#W9802", primaryMobile: "9833300002" } }); // an order customer in Agent mode
   await prisma.conversation.create({ data: { shop: SHOP, phone, mode: "human", handoffReason: "test" } });
   await handleInbound(SHOP, { id: "silent-1", from: phone.slice(1), text: "laptop", type: "text" });
   await handleInbound(SHOP, { id: "silent-2", from: phone.slice(1), text: "printer", type: "text" });
@@ -1046,6 +1047,22 @@ test("only order numbers get answers (switchable), the others are silent and log
   await prisma.botSettings.update({ where: { shop: SHOP }, data: { onlyOrderNumbers: false } });
   await handleInbound(SHOP, { id: "oc-4", from: "919999900033", text: "hi", type: "text" }).catch(() => undefined);
   assert.ok((await outCount("+919999900033")) >= 1, "switched off: everyone is answered");
+  } finally {
+    if (oldProvider === undefined) delete process.env.WHATSAPP_PROVIDER;
+    else process.env.WHATSAPP_PROVIDER = oldProvider;
+  }
+});
+
+test("a number without an order gets nothing, not even in Agent mode", async () => {
+  const { handleInbound }: any = await import("./helpers/load-app.ts").then((m) => m.loadApp("/app/lib/bot.server.ts"));
+  const oldProvider = process.env.WHATSAPP_PROVIDER;
+  process.env.WHATSAPP_PROVIDER = "cloud";
+  try {
+    await prisma.botSettings.upsert({ where: { shop: SHOP }, create: { shop: SHOP, onlyOrderNumbers: true }, update: { onlyOrderNumbers: true, nonOrderReply: "" } });
+    const phone = "+919833300077";
+    await prisma.conversation.create({ data: { shop: SHOP, phone, mode: "human", handoffReason: "test" } });
+    await handleInbound(SHOP, { id: "ag-1", from: phone.slice(1), text: "hello anyone there", type: "text" }).catch(() => undefined);
+    assert.equal(await prisma.message.count({ where: { conversation: { shop: SHOP, phone }, direction: "out" } }), 0, "no reply at all");
   } finally {
     if (oldProvider === undefined) delete process.env.WHATSAPP_PROVIDER;
     else process.env.WHATSAPP_PROVIDER = oldProvider;
