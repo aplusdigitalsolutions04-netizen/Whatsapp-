@@ -1036,6 +1036,13 @@ test("only order numbers get answers (switchable), the others are silent and log
   await handleInbound(SHOP, { id: "oc-3", from: "919999900022", text: "!hi", type: "text" }).catch(() => undefined);
   assert.ok((await outCount("+919999900022")) >= 1, "the wake character always works");
 
+  // a fixed message for numbers without an order: sent once, exactly as written, then silence
+  await prisma.botSettings.update({ where: { shop: SHOP }, data: { nonOrderReply: "Hi! This number is only for our order customers." } });
+  await handleInbound(SHOP, { id: "oc-5", from: "919999900044", text: "hi", type: "text" }).catch(() => undefined);
+  await handleInbound(SHOP, { id: "oc-6", from: "919999900044", text: "price of laptop", type: "text" }).catch(() => undefined);
+  const fixed = await prisma.message.findMany({ where: { conversation: { shop: SHOP, phone: "+919999900044" }, direction: "out" } });
+  assert.deepEqual(fixed.map((m) => m.body), ["Hi! This number is only for our order customers."], "one fixed message, nothing else");
+
   await prisma.botSettings.update({ where: { shop: SHOP }, data: { onlyOrderNumbers: false } });
   await handleInbound(SHOP, { id: "oc-4", from: "919999900033", text: "hi", type: "text" }).catch(() => undefined);
   assert.ok((await outCount("+919999900033")) >= 1, "switched off: everyone is answered");

@@ -571,6 +571,16 @@ export async function handleInbound(shop: string, msg: InboundPayload) {
   const bang = msg.text.trim().startsWith("!");
   if (bang) msg = { ...msg, text: msg.text.trim().slice(1).trim() || "hi" };
   if (s.onlyOrderNumbers && !woken && !bang && !(await isOrderCustomer(shop, phone).catch(() => true))) {
+    const text = s.nonOrderReply.trim();
+    if (text) {
+      // The owner's own message, exactly as written, at most once in 12 hours per number (so two bots never talk in circles).
+      const already = await prisma.message.findFirst({ where: { conversationId: conv.id, inReplyTo: { endsWith: ":noorder" }, createdAt: { gte: new Date(Date.now() - 12 * 3_600_000) } }, select: { id: true } });
+      if (!already) {
+        await sendAndRecord({ shop, conversationId: conv.id, to: phone, body: text, sender: "bot", inReplyTo: `${msg.id}:noorder` });
+        await silent(shop, phone, "this number is not on any order: sent your fixed message", "bot_noorder_reply");
+        return;
+      }
+    }
     await silent(shop, phone, "this number is not on any order (Settings: reply only to numbers that have placed an order)", "bot_silent");
     return;
   }

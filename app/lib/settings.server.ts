@@ -18,6 +18,8 @@ export type Settings = {
   orderConfirmFlow: boolean;
   /** Answer only numbers that are on an order; everyone else gets no reply. */
   onlyOrderNumbers: boolean;
+  /** Sent (once in 12 hours) to a number without an order. Empty = stay silent. */
+  nonOrderReply: string;
 };
 
 export async function getSettings(shop: string): Promise<Settings> {
@@ -34,6 +36,7 @@ export async function getSettings(shop: string): Promise<Settings> {
     orderMessages: row?.orderMessages ?? true,
     orderConfirmFlow: row?.orderConfirmFlow ?? true,
     onlyOrderNumbers: row?.onlyOrderNumbers ?? true,
+    nonOrderReply: row?.nonOrderReply ?? "",
   };
 }
 
@@ -67,6 +70,7 @@ export async function saveSettings(shop: string, form: FormData) {
     orderMessages: form.get("orderMessages") === "on",
     orderConfirmFlow: form.get("orderConfirmFlow") === "on",
     onlyOrderNumbers: form.get("onlyOrderNumbers") === "on",
+    nonOrderReply: String(form.get("nonOrderReply") ?? "").trim().slice(0, 600),
   };
   await prisma.botSettings.upsert({
     where: { shop },

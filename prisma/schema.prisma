@@ -57,6 +57,8 @@ model BotSettings {
   orderConfirmFlow       Boolean  @default(true)
   // JAZZ answers only WhatsApp numbers that appear on an order; everyone else gets no reply
   onlyOrderNumbers       Boolean  @default(true)
+  // what a number without an order gets (written in English by the owner); empty = no reply at all
+  nonOrderReply          String   @default("")
   updatedAt              DateTime @updatedAt
 }
 

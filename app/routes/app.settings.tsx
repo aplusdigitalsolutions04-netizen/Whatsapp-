@@ -68,6 +68,10 @@ export default function Settings() {
             <label><input type="checkbox" name="onlyOrderNumbers" defaultChecked={settings.onlyOrderNumbers} /> Reply only to numbers that have placed an order</label>{" "}
             <small>Every other number gets no reply (you still see the chat in Conversations). Turn this off if you also want the bot to answer new people who ask about products.</small>
           </p>
+          <label className="o-field">
+            <span>Message for numbers without an order (English). Leave empty to send nothing.</span>
+            <textarea name="nonOrderReply" rows={3} maxLength={600} defaultValue={settings.nonOrderReply} placeholder="Hi! This number is only for our order customers. For anything else please visit our website." style={{ width: "100%" }} />
+          </label>
           <p>
             <label><input type="checkbox" name="orderConfirmFlow" defaultChecked={settings.orderConfirmFlow} /> Ask the customer to confirm the order and address</label>{" "}
             <small>After the &ldquo;order confirmed&rdquo; message JAZZ asks &ldquo;Do you want this order?&rdquo;, then shows the number and address to confirm. If the customer says no, the chat goes to your team.</small>
