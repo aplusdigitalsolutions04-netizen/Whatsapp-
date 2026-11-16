@@ -16,6 +16,8 @@ export type Settings = {
   orderMessages: boolean;
   /** Ask the customer to confirm the order and then the delivery number and address. */
   orderConfirmFlow: boolean;
+  /** Answer only numbers that are on an order; everyone else gets no reply. */
+  onlyOrderNumbers: boolean;
 };
 
 export async function getSettings(shop: string): Promise<Settings> {
@@ -31,6 +33,7 @@ export async function getSettings(shop: string): Promise<Settings> {
     savedNumbers: parseNumberList(row?.savedNumbers),
     orderMessages: row?.orderMessages ?? true,
     orderConfirmFlow: row?.orderConfirmFlow ?? true,
+    onlyOrderNumbers: row?.onlyOrderNumbers ?? true,
   };
 }
 
@@ -63,6 +66,7 @@ export async function saveSettings(shop: string, form: FormData) {
     savedNumbers: parseNumberList(String(form.get("savedNumbers") ?? "")).join("\n"),
     orderMessages: form.get("orderMessages") === "on",
     orderConfirmFlow: form.get("orderConfirmFlow") === "on",
+    onlyOrderNumbers: form.get("onlyOrderNumbers") === "on",
   };
   await prisma.botSettings.upsert({
     where: { shop },

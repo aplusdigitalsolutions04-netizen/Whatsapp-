@@ -18,6 +18,7 @@ after(async () => {
   await prisma.orderConfirmation.deleteMany({ where: { shop: SHOP } });
   await prisma.orderSheet.deleteMany({ where: { shop: SHOP } });
   await prisma.integrationSecret.deleteMany({ where: { shop: SHOP } });
+  await prisma.botSettings.deleteMany({ where: { shop: SHOP } });
   await prisma.conversation.deleteMany({ where: { shop: SHOP } });
   await prisma.activityLog.deleteMany({ where: { shop: SHOP } });
   await prisma.$disconnect();
@@ -960,4 +961,86 @@ test("languages: Roman-letter foreign text is recognised, English / Hinglish / p
     assert.ok(!isLatinForeign(t) || detectLanguage(t) === "hinglish", t);
   }
   assert.equal(isLatinForeign("मुझे लैपटॉप चाहिए"), false, "other scripts have their own path");
+});
+
+test("order confirmation: the whole reply is read (yes + note, yes + change, no, questions)", async () => {
+  const { readConfirmation }: any = await loadApp("/app/lib/order-confirm.ts");
+  const r = (t: string) => readConfirmation(t);
+  assert.deepEqual(r("yes"), { answer: "yes", extra: "" });
+  assert.equal(r("Haan ji bilkul")?.answer, "yes");
+  const note = r("yes please deliver it in the evening after 6");
+  assert.equal(note?.answer, "yes");
+  assert.match(note!.extra, /deliver it in the evening after 6/);
+  assert.equal(r("yes no problem, thanks")?.answer, "yes", "'no problem' is not a no");
+  assert.equal(r("haan koi dikkat nahi hai")?.answer, "yes");
+  assert.equal(r("yes but address is wrong")?.answer, "change");
+  assert.equal(r("haan lekin address badalna hai")?.answer, "change");
+  assert.equal(r("yes only if it comes by friday")?.answer, "change");
+  assert.equal(r("yes ... no cancel it")?.answer, "no");
+  assert.equal(r("nahi chahiye order")?.answer, "no");
+  assert.equal(r("my address is wrong")?.answer, "change");
+  assert.equal(r("ok when will it arrive?")?.answer, "yes", "yes with a question is still a yes (the question is noted)");
+  assert.equal(r("when will it arrive"), null);
+  assert.equal(r("what is the price of the hp printer you sell here these days please tell me"), null);
+});
+
+test("order confirmation: yes + a note confirms and the note reaches the sheet; yes + a change goes to an agent", async () => {
+  const { handleConfirmationReply }: any = await loadApp("/app/lib/order-confirm.server.ts");
+  const mk = async (n: number) => {
+    const phone = `+91986660000${n}`;
+    const conv = await prisma.conversation.create({ data: { shop: SHOP, phone } });
+    await prisma.orderConfirmation.create({ data: { shop: SHOP, orderGid: `gid://shopify/Order/${9700 + n}`, orderName: `#W${9700 + n}`, conversationId: conv.id, phone, address: "1 Road" } });
+    await prisma.orderSheet.create({ data: { shop: SHOP, shopifyOrderId: String(9700 + n), orderName: `#W${9700 + n}` } });
+    return { conv: conv.id, id: String(9700 + n), conf: `gid://shopify/Order/${9700 + n}` };
+  };
+  const sheet = (id: string) => prisma.orderSheet.findUniqueOrThrow({ where: { shop_shopifyOrderId: { shop: SHOP, shopifyOrderId: id } } });
+  const a = await mk(1);
+  const s1 = await handleConfirmationReply(SHOP, a.conv, "yes, please deliver in the evening", "n-1");
+  assert.match(s1.reply, /Mobile number/);
+  assert.match(s1.reply, /noted your message: “please deliver in the evening”/);
+  const s2 = await handleConfirmationReply(SHOP, a.conv, "haan sab sahi hai", "n-2");
+  assert.match(s2.reply, /is confirmed/);
+  const row = await sheet(a.id);
+  assert.equal(row.finalDecision, "Confirmed");
+  assert.match(row.employeeRemark ?? "", /Customer note: “please deliver in the evening”|JAZZ: customer confirmed/);
+
+  const b = await mk(2);
+  const c1 = await handleConfirmationReply(SHOP, b.conv, "yes but change the address to 5 Park Street", "n-3");
+  assert.match(c1.reply, /connecting you with our team/);
+  assert.match(c1.handoffReason, /#W9702/);
+  assert.equal((await prisma.orderConfirmation.findFirstOrThrow({ where: { conversationId: b.conv } })).state, "review");
+  const r2 = await sheet(b.id);
+  assert.equal(r2.finalDecision, null, "not confirmed: an agent has to look");
+  assert.match(r2.employeeRemark ?? "", /change the address to 5 Park Street/);
+  assert.equal(r2.employeeName, "JAZZ");
+});
+
+test("only order numbers get answers (switchable), the others are silent and logged", async () => {
+  const oldProvider = process.env.WHATSAPP_PROVIDER;
+  process.env.WHATSAPP_PROVIDER = "cloud"; // sending fails at once (no keys) instead of waiting for WhatsApp Web
+  try {
+  const { handleInbound }: any = await loadApp("/app/lib/bot.server.ts");
+  const { forgetOrderNumbers }: any = await loadApp("/app/lib/order-customers.server.ts");
+  await prisma.botSettings.upsert({ where: { shop: SHOP }, create: { shop: SHOP, onlyOrderNumbers: true }, update: { onlyOrderNumbers: true } });
+  await prisma.orderSheet.create({ data: { shop: SHOP, shopifyOrderId: "9801", orderName: "#W9801", primaryMobile: "98765 00011" } });
+  forgetOrderNumbers();
+  const outCount = async (phone: string) => prisma.message.count({ where: { conversation: { shop: SHOP, phone }, direction: "out" } });
+
+  await handleInbound(SHOP, { id: "oc-1", from: "919999900022", text: "hi", type: "text" }).catch(() => undefined);
+  assert.equal(await outCount("+919999900022"), 0, "not on any order: no reply");
+  assert.ok(await prisma.activityLog.findFirst({ where: { shop: SHOP, event: "bot_silent", detail: { contains: "not on any order" } } }));
+
+  await handleInbound(SHOP, { id: "oc-2", from: "919876500011", text: "hi", type: "text" }).catch(() => undefined);
+  assert.ok((await outCount("+919876500011")) >= 1, "on an order (number written with a space): answered");
+
+  await handleInbound(SHOP, { id: "oc-3", from: "919999900022", text: "!hi", type: "text" }).catch(() => undefined);
+  assert.ok((await outCount("+919999900022")) >= 1, "the wake character always works");
+
+  await prisma.botSettings.update({ where: { shop: SHOP }, data: { onlyOrderNumbers: false } });
+  await handleInbound(SHOP, { id: "oc-4", from: "919999900033", text: "hi", type: "text" }).catch(() => undefined);
+  assert.ok((await outCount("+919999900033")) >= 1, "switched off: everyone is answered");
+  } finally {
+    if (oldProvider === undefined) delete process.env.WHATSAPP_PROVIDER;
+    else process.env.WHATSAPP_PROVIDER = oldProvider;
+  }
 });

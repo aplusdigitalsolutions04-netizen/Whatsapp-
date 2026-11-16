@@ -1,6 +1,6 @@
 import prisma from "../db.server";
 import { logEvent } from "./log.server";
-import { askAddressText, blank, BOT_EMPLOYEE, confirmedText, declinedText, parseYesNo, sheetFill } from "./order-confirm";
+import { askAddressText, blank, BOT_EMPLOYEE, confirmedText, declinedText, noteLine, readConfirmation, reviewText, sheetFill } from "./order-confirm";
 
 /** How long a question stays open. After that the customer's "yes" is treated like any other message. */
 const OPEN_MS = 72 * 3_600_000;
@@ -9,9 +9,10 @@ export type ConfirmReply = { reply: string; handoffReason?: string };
 
 type Row = NonNullable<Awaited<ReturnType<typeof prisma.orderConfirmation.findFirst>>>;
 
-function replyFor(row: Row): ConfirmReply {
-  if (row.state === "address") return { reply: askAddressText({ orderName: row.orderName, customerName: row.customerName, phone: row.phone, address: row.address }) };
-  if (row.state === "confirmed") return { reply: confirmedText(row.orderName) };
+function replyFor(row: Row, note = ""): ConfirmReply {
+  if (row.state === "address") return { reply: askAddressText({ orderName: row.orderName, customerName: row.customerName, phone: row.phone, address: row.address }) + noteLine(note) };
+  if (row.state === "confirmed") return { reply: confirmedText(row.orderName) + noteLine(note) };
+  if (row.state === "review") return { reply: reviewText(row.orderName), handoffReason: `Customer replied about order ${row.orderName}: ${note || "asked for a change"}`.slice(0, 200) };
   return { reply: declinedText(row.orderName), handoffReason: `Customer did not confirm order ${row.orderName}` };
 }
 
@@ -31,24 +32,25 @@ export async function handleConfirmationReply(shop: string, conversationId: stri
     orderBy: { createdAt: "desc" },
   });
   if (!row) return null;
-  const answer = parseYesNo(text);
-  if (!answer) return null;
+  const reading = readConfirmation(text);
+  if (!reading) return null;
+  const answer = reading.answer;
 
-  const state = answer === "no" ? "declined" : row.state === "asked" ? "address" : "confirmed";
+  const state = answer === "no" ? "declined" : answer === "change" ? "review" : row.state === "asked" ? "address" : "confirmed";
   const next = await prisma.orderConfirmation.update({ where: { id: row.id }, data: { state, lastInboundId: inboundId } });
-  await fillOrderSheet(shop, row.orderGid, row.state, state).catch((e) =>
+  await fillOrderSheet(shop, row.orderGid, row.state, state, reading.extra).catch((e) =>
     logEvent({ shop, source: "bot", level: "error", event: "order_sheet_fill_failed", detail: `${row.orderName}: ${(e as Error).message}` }).catch(() => undefined),
   );
   await logEvent({ shop, source: "bot", event: `order_${state}`, detail: `${row.orderName}: customer answered ${answer.toUpperCase()}` });
-  return replyFor(next);
+  return replyFor(next, reading.extra);
 }
 
 /**
  * Writes what the customer told JAZZ into the order's row of the Order Calling Sheet, with Employee Name "JAZZ", exactly as an
  * employee would after calling. Only empty cells are filled, so an employee's own entry is never replaced.
  */
-export async function fillOrderSheet(shop: string, orderGid: string, prev: string, next: string): Promise<boolean> {
-  const fill = sheetFill(prev, next);
+export async function fillOrderSheet(shop: string, orderGid: string, prev: string, next: string, note = ""): Promise<boolean> {
+  const fill = sheetFill(prev, next, note);
   if (!fill) return false;
   const shopifyOrderId = orderGid.split("/").pop() ?? orderGid;
   const row = await prisma.orderSheet.findUnique({ where: { shop_shopifyOrderId: { shop, shopifyOrderId } } });
@@ -81,7 +83,7 @@ export async function fillOrderSheet(shop: string, orderGid: string, prev: strin
  * to the sheet now. Safe to run again and again: an already filled row is left alone, an employee's entry is never replaced.
  */
 export async function backfillSheetFromConfirmations(shop: string): Promise<number> {
-  const rows = await prisma.orderConfirmation.findMany({ where: { shop, state: { in: ["address", "confirmed", "declined"] } }, orderBy: { updatedAt: "desc" }, take: 500 });
+  const rows = await prisma.orderConfirmation.findMany({ where: { shop, state: { in: ["address", "confirmed", "declined", "review"] } }, orderBy: { updatedAt: "desc" }, take: 500 });
   let filled = 0;
   for (const r of rows) {
     let prev = "asked";

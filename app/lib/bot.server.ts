@@ -13,6 +13,7 @@ import { getSettings, type Settings } from "./settings.server";
 import { SYSTEM_TYPES } from "./bridge-parse";
 import { detectAutomatedSender } from "./bot-detect.server";
 import { handleConfirmationReply } from "./order-confirm.server";
+import { isOrderCustomer } from "./order-customers.server";
 import { applyWakeRule } from "./saved-contacts";
 import { isSavedContact } from "./saved-contacts.server";
 import { findOrderEverywhere, findOrdersEverywhere, getOrdersEverywhere } from "./order-lookup.server";
@@ -562,6 +563,15 @@ export async function handleInbound(shop: string, msg: InboundPayload) {
     // The chat is with a person now. Never leave the customer in silence, though: say once that the team has the request.
     const told = await acknowledgeWaiting(shop, conv, s, msg.id).catch(() => false);
     if (!told) await silent(shop, phone, "the chat is in Agent mode (use Return to JAZZ on the Conversations page)");
+    return;
+  }
+
+  // Only numbers that are on an order get answers (a message that starts with the wake character ! # $ always gets one).
+  // (A leading "!" is the wake character for anybody, so the owner can test the bot from any phone.)
+  const bang = msg.text.trim().startsWith("!");
+  if (bang) msg = { ...msg, text: msg.text.trim().slice(1).trim() || "hi" };
+  if (s.onlyOrderNumbers && !woken && !bang && !(await isOrderCustomer(shop, phone).catch(() => true))) {
+    await silent(shop, phone, "this number is not on any order (Settings: reply only to numbers that have placed an order)", "bot_silent");
     return;
   }
 

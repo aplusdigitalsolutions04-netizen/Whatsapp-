@@ -57,12 +57,16 @@ export type SheetFill = { customerWants?: string; addressConfirmed?: string; cal
  * What the customer's answer means for the Order Calling Sheet (the columns an employee fills after calling).
  * prev = where the chat was (asked | address), next = where it is now (address | confirmed | declined).
  */
-export function sheetFill(prev: string, next: string): SheetFill | null {
-  if (next === "address") return { customerWants: "Yes", employeeRemark: "JAZZ: customer said YES to the order on WhatsApp, waiting for the address check" };
+export function sheetFill(prev: string, next: string, note = ""): SheetFill | null {
+  const withNote = (t: string) => (note ? `${t}. Customer note: “${note}”` : t);
+  if (next === "address") return { customerWants: "Yes", employeeRemark: withNote("JAZZ: customer said YES to the order on WhatsApp, waiting for the address check") };
+  if (next === "review") {
+    return { employeeRemark: note ? `JAZZ: customer replied “${note}” on WhatsApp, chat sent to an agent to check` : "JAZZ: customer asked for a change on WhatsApp, chat sent to an agent to check" };
+  }
   if (next === "confirmed") {
     return {
       customerWants: "Yes", addressConfirmed: "Yes", callStatus: "Connected", finalDecision: "Confirmed",
-      employeeRemark: "JAZZ: customer confirmed the order, mobile number and address on WhatsApp",
+      employeeRemark: withNote("JAZZ: customer confirmed the order, mobile number and address on WhatsApp"),
     };
   }
   if (next === "declined" && prev === "address") {
@@ -74,3 +78,36 @@ export function sheetFill(prev: string, next: string): SheetFill | null {
 
 /** An employee's entry is never overwritten: only empty cells (or a select still on "Pending") are filled. */
 export const blank = (v: string | null | undefined) => !v || !v.trim() || v.trim().toLowerCase() === "pending";
+
+// ---- reading a whole reply, not only "yes" / "no" ----
+// "yes please deliver in the evening" is a YES with a note. "yes but the address is wrong" is NOT a clean yes: an agent must look.
+const CHANGE = new Set(["change", "edit", "wrong", "incorrect", "galat", "badlo", "badal", "badalna", "badalni", "update", "different", "alag", "instead", "correction", "naya", "new", "बदलो", "गलत"]);
+const CONDITION = new Set(["but", "however", "lekin", "magar", "par", "parantu", "only", "unless", "agar", "if", "wait", "hold", "बस", "लेकिन", "मगर", "पर"]);
+// "no problem" / "koi dikkat nahi" contain a NO word but mean the opposite
+const NO_PROBLEM = /\b(no|any)\s+(problem|problems|issue|issues|worries|worry|dikkat|tension)\b|\b(problem|dikkat|issue)\s+(nahi|nhi|nahin)\b|\bkoi\s+(problem|dikkat|issue)\s+(nahi|nhi|nahin)\b/gi;
+
+export type Reading = { answer: "yes" | "no" | "change"; extra: string };
+
+/** What the customer meant by a reply to "do you want this order?" / "is this address correct?", or null when it is unclear. */
+export function readConfirmation(text: string): Reading | null {
+  const cleaned = String(text ?? "").toLowerCase().replace(NO_PROBLEM, " ").replace(/[.,!?;:()"'“”‘’]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleaned) return null;
+  const tokens = cleaned.split(" ");
+  const yes = tokens.some((t) => YES.has(t)) || /^(theek|thik|sahi) hai/.test(cleaned);
+  const strongNo = tokens.some((t) => NO.has(t) && !CHANGE.has(t));
+  const change = tokens.some((t) => CHANGE.has(t));
+  const condition = tokens.some((t) => CONDITION.has(t));
+  const extra = () => {
+    const rest = String(text).replace(NO_PROBLEM, " ").split(/\s+/).filter((w) => !YES.has(w.toLowerCase().replace(/[.,!?;:]+$/g, ""))).join(" ").replace(/^[\s,.;:!-]+|[\s,.;:!-]+$/g, "");
+    return (rest.match(/\p{L}/gu)?.length ?? 0) >= 6 ? rest.slice(0, 160) : "";
+  };
+  if (strongNo) return { answer: "no", extra: extra() }; // "yes ... no" is a no
+  if (change && (yes || tokens.length <= 12)) return { answer: "change", extra: extra() || String(text).trim().slice(0, 160) };
+  if (yes && condition) return { answer: "change", extra: extra() || String(text).trim().slice(0, 160) };
+  if (yes) return { answer: "yes", extra: extra() };
+  return null;
+}
+
+export const noteLine = (note: string) => (note ? `\n\n📝 I have noted your message: “${note}”. Our team will see it.` : "");
+export const reviewText = (orderName: string) =>
+  `Thank you! 🙏 I have noted your message. I am connecting you with our team to sort out ${orderName}.\nSomeone will reply here shortly.`;

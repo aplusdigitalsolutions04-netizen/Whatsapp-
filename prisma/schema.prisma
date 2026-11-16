@@ -55,6 +55,8 @@ model BotSettings {
   orderMessages          Boolean  @default(true)
   // after the "confirmed" message JAZZ asks the customer to confirm the order, then the delivery number and address
   orderConfirmFlow       Boolean  @default(true)
+  // JAZZ answers only WhatsApp numbers that appear on an order; everyone else gets no reply
+  onlyOrderNumbers       Boolean  @default(true)
   updatedAt              DateTime @updatedAt
 }
 

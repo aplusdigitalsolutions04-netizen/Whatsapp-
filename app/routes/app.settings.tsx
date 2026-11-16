@@ -65,6 +65,10 @@ export default function Settings() {
             <small>JAZZ messages the customer when an order is confirmed, when it is dispatched (tracking ID and link), when it is delivered and when it is cancelled.</small>
           </p>
           <p>
+            <label><input type="checkbox" name="onlyOrderNumbers" defaultChecked={settings.onlyOrderNumbers} /> Reply only to numbers that have placed an order</label>{" "}
+            <small>Every other number gets no reply (you still see the chat in Conversations). Turn this off if you also want the bot to answer new people who ask about products.</small>
+          </p>
+          <p>
             <label><input type="checkbox" name="orderConfirmFlow" defaultChecked={settings.orderConfirmFlow} /> Ask the customer to confirm the order and address</label>{" "}
             <small>After the &ldquo;order confirmed&rdquo; message JAZZ asks &ldquo;Do you want this order?&rdquo;, then shows the number and address to confirm. If the customer says no, the chat goes to your team.</small>
           </p>
