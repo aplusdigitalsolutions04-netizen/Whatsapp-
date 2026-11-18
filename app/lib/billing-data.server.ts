@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { BILLING_FIELDS, orderToRows, parseOrderIds, type BillingRow } from "./billing-data";
+import { BILLING_FIELDS, MAX_BILLING_ORDERS, orderToRows, parseOrderIds, type BillingRow } from "./billing-data";
 import { orderNameMatches, parseOrderRef, type OrderRef } from "./order-ref";
 import { gql, shopOrderPrefix, type GqlRunner } from "./shopify-data.server";
 
-export const MAX_BILLING_ORDERS = 100;
+export { MAX_BILLING_ORDERS };
 const CHUNK = 20; // order names per Shopify search
 
 export type BillingResult = {

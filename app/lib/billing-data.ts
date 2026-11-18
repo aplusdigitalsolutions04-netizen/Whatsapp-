@@ -15,6 +15,9 @@ export const BILLING_FIELDS = `
   } }
 `;
 
+/** Orders handled at once. */
+export const MAX_BILLING_ORDERS = 100;
+
 /** One row of the sheet = one item of an order (an order with 3 items gives 3 rows that repeat the order details). */
 export type BillingRow = {
   orderId: string;
