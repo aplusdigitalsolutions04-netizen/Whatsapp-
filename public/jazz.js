@@ -86,6 +86,9 @@
 
     var host = el("div");
     host.id = "jazz-chat-root";
+    // Store themes often hide empty divs (div:empty { display: none }) or restyle every div. Inline !important beats any stylesheet rule,
+    // so the host always renders; the icon itself is position: fixed inside it and does not depend on the host's size.
+    host.style.cssText = "display:block!important;visibility:visible!important;position:static!important;width:0!important;height:0!important;margin:0!important;padding:0!important;border:0!important;overflow:visible!important;opacity:1!important;transform:none!important;filter:none!important;";
     var root = host.attachShadow({ mode: "open" });
     var css = document.createElement("link");
     css.rel = "stylesheet";

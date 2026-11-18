@@ -1153,3 +1153,10 @@ test("website chat belongs to the shop where the icon is switched on, whatever t
   assert.equal(await web.widgetShop(), SHOP, "the shop that switched it on is the one the visitors talk to");
   assert.equal((await web.webChatConfig(await web.widgetShop())).enabled, true);
 });
+
+test("store website chat: the icon cannot be hidden by the store's CSS (empty divs are hidden by many themes)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../public/jazz.js", import.meta.url), "utf8");
+  assert.ok(src.includes("display:block!important"), "the host div is forced visible with an inline !important style");
+  assert.ok(src.includes("host.style.cssText"), "set inline, which beats any stylesheet rule");
+});
