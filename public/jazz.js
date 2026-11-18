@@ -1,6 +1,7 @@
 /*! JAZZ chat icon for the store website (wery.in).
  * Add ONE line before </body> in the theme (theme.liquid):
  *   <script src="https://YOUR-APP-DOMAIN/jazz.js" defer></script>
+ * Optional: data-top="90" data-right="20" (pixels) move the icon, e.g. below a sticky header.
  * The icon only appears while "Show the JAZZ chat icon on the website" is ON in ShopPilot > Bot Settings.
  * Plain JavaScript, no libraries; it lives in a Shadow DOM, so the store's own CSS cannot change it and it cannot change the store.
  */
@@ -91,14 +92,20 @@
     css.href = ORIGIN + "/jazz-widget.css";
     root.appendChild(css);
 
-    var wrap = el("div", "jw jw-public");
+    var wrap = el("div", "jw");
+    var top = parseInt(script.getAttribute("data-top"), 10);
+    var right = parseInt(script.getAttribute("data-right"), 10);
+    if (top >= 0) wrap.style.setProperty("--jw-top", top + "px");
+    if (right >= 0) wrap.style.setProperty("--jw-right", right + "px");
     var fab = el("button", "jw-fab");
     fab.type = "button";
     fab.title = "Ask JAZZ";
     fab.setAttribute("aria-label", "Ask JAZZ, the assistant");
     fab.setAttribute("aria-expanded", "false");
-    fab.appendChild(svg(FACE, 26));
+    fab.appendChild(svg(FACE, 36));
     fab.appendChild(el("span", "jw-ring"));
+    fab.appendChild(el("span", "jw-live"));
+    fab.appendChild(el("span", "jw-tip", "Ask JAZZ"));
     wrap.appendChild(fab);
     root.appendChild(wrap);
 
@@ -146,6 +153,8 @@
       p2.appendChild(document.createTextNode("I can help you "));
       p2.appendChild(el("b", null, "track your order"));
       p2.appendChild(document.createTextNode(", check its status and answer your questions about our products."));
+      var pills = el("div", "jw-pills");
+      ["Order status", "Tracking", "Products", "Hindi & English"].forEach(function (t) { pills.appendChild(el("span", null, t)); });
       var a = el("a", "jw-btn jw-wa");
       a.href = "https://wa.me/" + wa + "?text=" + encodeURIComponent("Hi JAZZ");
       a.target = "_blank";
@@ -157,7 +166,7 @@
       c.appendChild(icon("M4 5h16v11H9l-5 4V5Z", 18));
       c.appendChild(document.createTextNode("Chat here"));
       c.onclick = function () { show("chat"); };
-      [p1, p2, a, c].forEach(function (n) { b.appendChild(n); });
+      [p1, p2, pills, a, c, el("p", "jw-foot", "JAZZ is an automated assistant. A person can join the chat if needed.")].forEach(function (n) { b.appendChild(n); });
       return b;
     }
 
@@ -291,6 +300,23 @@
         setTimeout(function () { input.focus(); }, 50);
       }
     }
+    var hello = null;
+    function dropHello() { if (hello) hello.remove(), (hello = null); }
+    function sayHello() {
+      try { if (sessionStorage.getItem("jazz-hello")) return; sessionStorage.setItem("jazz-hello", "1"); } catch (e) { /* storage blocked: show it once per page */ }
+      hello = el("div", "jw-hello");
+      hello.appendChild(el("b", null, "Hi, I’m JAZZ 👋"));
+      hello.appendChild(el("span", null, "Need help with your order? Ask me."));
+      var x = el("button", "jw-x", "×");
+      x.type = "button";
+      x.setAttribute("aria-label", "Dismiss");
+      x.onclick = function (e) { e.stopPropagation(); dropHello(); };
+      hello.appendChild(x);
+      hello.onclick = function () { dropHello(); fab.click(); };
+      wrap.appendChild(hello);
+      setTimeout(dropHello, 9000);
+    }
+    setTimeout(function () { if (!panel) sayHello(); }, 3500);
     function close() {
       if (timer) clearInterval(timer), (timer = null);
       if (panel) panel.remove(), (panel = null);
@@ -298,6 +324,7 @@
       fab.setAttribute("aria-expanded", "false");
     }
     fab.onclick = function () {
+      dropHello();
       if (panel) return close();
       fab.classList.add("on");
       fab.setAttribute("aria-expanded", "true");

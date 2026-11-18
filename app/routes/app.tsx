@@ -8,11 +8,10 @@ import { authenticate } from "../shopify.server";
 import { getWaiting } from "../lib/waiting.server";
 import orderlyStyles from "../styles/orderly.css?url";
 import dashboardStyles from "../styles/dashboard.css?url";
-import jazzWidgetStyles from "../styles/jazz-widget.css?url";
 import { Shell } from "../components/Shell";
 import { ClientOnly } from "../components/ui";
 
-export const links: LinksFunction = () => [{ rel: "stylesheet", href: orderlyStyles }, { rel: "stylesheet", href: dashboardStyles }, { rel: "stylesheet", href: jazzWidgetStyles }];
+export const links: LinksFunction = () => [{ rel: "stylesheet", href: orderlyStyles }, { rel: "stylesheet", href: dashboardStyles }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);

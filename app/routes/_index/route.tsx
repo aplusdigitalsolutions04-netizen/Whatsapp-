@@ -6,9 +6,7 @@ import { login } from "../../shopify.server";
 import { loginErrorMessage } from "./error.server";
 import { MASCOT_SVG } from "./mascot";
 
-import { JazzWidget } from "../../components/JazzWidget";
 import pageStyles from "./jazz.css?url";
-import widgetStyles from "../../styles/jazz-widget.css?url";
 
 export const meta: MetaFunction = () => [
   { title: "ShopPilot: chat bot, order updates and store tools for Shopify" },
@@ -18,7 +16,6 @@ export const meta: MetaFunction = () => [
 // The tab icon is the ShopPilot / JAZZ logo (SVG for modern browsers, PNG and ICO as fallbacks).
 export const links: LinksFunction = () => [
   { rel: "stylesheet", href: pageStyles },
-  { rel: "stylesheet", href: widgetStyles },
   { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
   { rel: "icon", href: "/favicon-32.png", type: "image/png", sizes: "32x32" },
   { rel: "shortcut icon", href: "/favicon.ico" },
@@ -183,6 +180,16 @@ export default function App() {
   const errors = actionData?.errors;
   const root = useRef<HTMLDivElement>(null);
 
+  // The JAZZ chat icon is the same script the store website uses (public/jazz.js): one design everywhere, and it follows the Bot Settings switch.
+  useEffect(() => {
+    if (document.querySelector("script[data-jazz]")) return;
+    const s = document.createElement("script");
+    s.src = "/jazz.js";
+    s.defer = true;
+    s.dataset.jazz = "1";
+    document.body.appendChild(s);
+  }, []);
+
   useEffect(() => {
     const el = root.current;
     if (!el) return;
@@ -268,8 +275,6 @@ export default function App() {
   return (
     <div className="jp" ref={root}>
       <div className="ambient" aria-hidden="true"><i /><i /><i /></div>
-      {/* The JAZZ icon: shown only when it is switched on in Bot Settings */}
-      <JazzWidget mode="public" />
 
       {/* ------------------------------------------------ nav */}
       <nav className="top">
