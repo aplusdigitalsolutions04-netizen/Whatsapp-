@@ -1,7 +1,9 @@
 /*! JAZZ chat icon for the store website (wery.in).
  * Add ONE line before </body> in the theme (theme.liquid):
  *   <script src="https://YOUR-APP-DOMAIN/jazz.js" defer></script>
- * Optional: data-top="90" data-right="20" (pixels) move the icon, e.g. below a sticky header.
+ * The icon sits at the bottom right (it does not cover the header's cart / wishlist). Optional settings on the script tag:
+ *   data-bottom="90"  data-right="20"   pixels from the bottom / right edge (e.g. to clear a sticky "Add to cart" bar)
+ *   data-position="top"  data-top="90"   put the icon at the top right instead, 90 px from the top
  * The icon only appears while "Show the JAZZ chat icon on the website" is ON in ShopPilot > Bot Settings.
  * Plain JavaScript, no libraries; it lives in a Shadow DOM, so the store's own CSS cannot change it and it cannot change the store.
  */
@@ -98,6 +100,9 @@
     var wrap = el("div", "jw");
     var top = parseInt(script.getAttribute("data-top"), 10);
     var right = parseInt(script.getAttribute("data-right"), 10);
+    var bottom = parseInt(script.getAttribute("data-bottom"), 10);
+    if (script.getAttribute("data-position") === "top") wrap.classList.add("top");
+    if (bottom >= 0) wrap.style.setProperty("--jw-bottom", bottom + "px");
     if (top >= 0) wrap.style.setProperty("--jw-top", top + "px");
     if (right >= 0) wrap.style.setProperty("--jw-right", right + "px");
     var fab = el("button", "jw-fab");

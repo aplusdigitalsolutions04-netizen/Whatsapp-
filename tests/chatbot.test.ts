@@ -1160,3 +1160,13 @@ test("store website chat: the icon cannot be hidden by the store's CSS (empty di
   assert.ok(src.includes("display:block!important"), "the host div is forced visible with an inline !important style");
   assert.ok(src.includes("host.style.cssText"), "set inline, which beats any stylesheet rule");
 });
+
+test("store website chat: the icon sits at the bottom right (never over the header's cart / wishlist) and can be moved", async () => {
+  const { readFileSync } = await import("node:fs");
+  const js = readFileSync(new URL("../public/jazz.js", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../public/jazz-widget.css", import.meta.url), "utf8");
+  assert.match(css, /\.jw \{[^}]*bottom: var\(--jw-bottom, 22px\)/s, "bottom right by default");
+  assert.ok(!/\.jw \{[^}]*\btop:/s.test(css.split("}")[2] ?? ""), "no top offset on the base rule");
+  assert.ok(css.includes(".jw.top"), "top position is still available");
+  assert.ok(js.includes("data-bottom") && js.includes("data-position"), "the script tag can move it");
+});

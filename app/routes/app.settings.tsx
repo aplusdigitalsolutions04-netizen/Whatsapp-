@@ -107,7 +107,8 @@ export default function Settings() {
           </label>
           <p className="o-muted" style={{ marginTop: 14 }}>
             <b>Show it on your store website (wery.in):</b> in Shopify go to Online Store → Themes → ⋯ → Edit code → <b>theme.liquid</b> and paste this
-            line just above <code>&lt;/body&gt;</code>. Save. The icon then follows the switch above.
+            line just above <code>&lt;/body&gt;</code>. Save. The icon then follows the switch above. It sits at the bottom right, so it does not cover the cart or wishlist. If
+            something else is in that corner, add <code>data-bottom=&quot;90&quot;</code> to the script (pixels from the bottom), or <code>data-position=&quot;top&quot;</code> to put it at the top right.
           </p>
           <input readOnly value={widgetScript} aria-label="Script line for theme.liquid" onFocus={(e) => e.currentTarget.select()} style={{ fontFamily: "monospace", fontSize: 12.5 }} />
         </Card>
