@@ -1143,3 +1143,13 @@ test("store website chat: the jazz.js script is valid JavaScript and reads the a
   assert.doesNotThrow(() => new Function(src), "jazz.js has a syntax error");
   assert.ok(src.includes("/api/chat") && src.includes("jazz-widget.css"));
 });
+
+test("website chat belongs to the shop where the icon is switched on, whatever the server's default shop is", async () => {
+  const web: any = await loadApp("/app/lib/web-chat.server.ts");
+  await prisma.botSettings.upsert({ where: { shop: SHOP }, create: { shop: SHOP, webWidget: false }, update: { webWidget: false } });
+  const before = await web.widgetShop();
+  assert.notEqual(before, SHOP, "a shop with the icon off is not picked");
+  await prisma.botSettings.upsert({ where: { shop: SHOP }, create: { shop: SHOP, webWidget: true }, update: { webWidget: true } });
+  assert.equal(await web.widgetShop(), SHOP, "the shop that switched it on is the one the visitors talk to");
+  assert.equal((await web.webChatConfig(await web.widgetShop())).enabled, true);
+});

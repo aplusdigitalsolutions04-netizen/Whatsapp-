@@ -1,7 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { resolveShop } from "../lib/settings.server";
 import { allowedWidgetOrigin } from "../lib/web-chat-origin";
-import { readWebMessages, sendWebMessage, webChatConfig } from "../lib/web-chat.server";
+import { readWebMessages, sendWebMessage, webChatConfig, widgetShop } from "../lib/web-chat.server";
 
 // The JAZZ chat box on the website talks to this route.
 //   GET  /api/chat?config=1            -> { enabled, whatsapp }   (should the icon be shown, and which WhatsApp number)
@@ -24,7 +23,7 @@ const ipOf = (request: Request) => request.headers.get("x-forwarded-for")?.split
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
-  const shop = await resolveShop();
+  const shop = await widgetShop();
   if (!shop) return json(request, { enabled: false, whatsapp: "", messages: [] });
   if (url.searchParams.get("config")) return json(request, await webChatConfig(shop));
   const cfg = await webChatConfig(shop);
@@ -43,7 +42,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
   }
   if (request.method !== "POST") return json(request, { ok: false, error: "Method not allowed" }, 405);
-  const shop = await resolveShop();
+  const shop = await widgetShop();
   if (!shop) return json(request, { ok: false, error: "Chat is not available right now." }, 503);
   let body: { sid?: unknown; text?: unknown; name?: unknown } | null;
   try {

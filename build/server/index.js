@@ -6178,6 +6178,10 @@ function allowedWidgetOrigin(origin, env = process.env) {
 const DEFAULT_WIDGET_WHATSAPP = "919211890093";
 const SESSION_RE = /^[A-Za-z0-9_-]{16,64}$/;
 const MAX_TEXT = 500;
+async function widgetShop() {
+  const on = await prisma.botSettings.findFirst({ where: { webWidget: true }, orderBy: { updatedAt: "desc" }, select: { shop: true } });
+  return (on == null ? void 0 : on.shop) ?? await resolveShop();
+}
 async function webChatConfig(shop) {
   if (!shop) return { enabled: false, whatsapp: DEFAULT_WIDGET_WHATSAPP };
   const s = await getSettings(shop);
@@ -6242,7 +6246,7 @@ const loader$o = async ({
   request
 }) => {
   const url = new URL(request.url);
-  const shop = await resolveShop();
+  const shop = await widgetShop();
   if (!shop) return json$3(request, {
     enabled: false,
     whatsapp: "",
@@ -6277,7 +6281,7 @@ const action$d = async ({
     ok: false,
     error: "Method not allowed"
   }, 405);
-  const shop = await resolveShop();
+  const shop = await widgetShop();
   if (!shop) return json$3(request, {
     ok: false,
     error: "Chat is not available right now."

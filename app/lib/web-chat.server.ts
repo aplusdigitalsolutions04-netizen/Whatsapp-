@@ -2,7 +2,7 @@ import prisma from "../db.server";
 import { handleInbound } from "./bot.server";
 import { logEvent } from "./log.server";
 import { rateLimited } from "./rate-limit.server";
-import { getSettings } from "./settings.server";
+import { getSettings, resolveShop } from "./settings.server";
 
 // A chat with JAZZ on the website. It uses the same bot as WhatsApp (handleInbound); the conversation is marked channel "web",
 // so replies are stored for the visitor's chat box instead of being sent through WhatsApp.
@@ -12,6 +12,16 @@ export const DEFAULT_WIDGET_WHATSAPP = "919211890093";
 
 export const SESSION_RE = /^[A-Za-z0-9_-]{16,64}$/;
 const MAX_TEXT = 500;
+
+/**
+ * The shop the website chat belongs to: the one whose owner switched the icon ON in Bot Settings. The public chat has no login, so
+ * "which shop" cannot come from a session; taking the shop that has the switch on means the toggle always matches what visitors get,
+ * even if the server's default shop (SHOPIFY_STORE_DOMAIN / newest session) is a different one. Falls back to that default.
+ */
+export async function widgetShop(): Promise<string | null> {
+  const on = await prisma.botSettings.findFirst({ where: { webWidget: true }, orderBy: { updatedAt: "desc" }, select: { shop: true } });
+  return on?.shop ?? (await resolveShop());
+}
 
 export async function webChatConfig(shop: string | null): Promise<{ enabled: boolean; whatsapp: string }> {
   if (!shop) return { enabled: false, whatsapp: DEFAULT_WIDGET_WHATSAPP };
