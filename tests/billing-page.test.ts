@@ -17,7 +17,7 @@ test("billing page renders empty and with results", async () => {
   };
   const html = await render();
   assert.ok(html.includes("Billing Data") && html.includes("Fetch billing data"));
-  const rows = [{ orderId: "#W1", orderDate: "14 Nov 2026", customerName: "Asha", phone: "9876543210", email: "a@b.c", address: "x", gstNumber: "", companyName: "", itemName: "Printer", quantity: 1, price: "10.00", gstPercent: "18", gstAmount: "1.80" }];
+  const rows = [{ orderId: "#W1", orderDate: "14 Nov 2026", customerName: "Asha", phone: "9876543210", email: "a@b.c", address: "x", hasGst: "No", gstNumber: "", companyName: "", itemName: "Printer", quantity: 1, price: "10.00", gstPercent: "18", gstAmount: "1.80", totalAmount: "11.80" }];
   const html2 = await render({ ok: true, text: "#W1", error: null, result: { rows, found: ["#W1"], missing: ["#W9"], invalid: [], skipped: [] } });
   assert.ok(html2.includes("Download CSV") && html2.includes("Printer") && html2.includes("Not found"), html2.slice(0, 500));
   const html3 = await render({ ok: false, text: "", error: "Type or paste at least one order id.", result: null });

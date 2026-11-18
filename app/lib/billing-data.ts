@@ -4,6 +4,7 @@
 
 export const BILLING_FIELDS = `
   id name createdAt email phone note
+  currentTotalPriceSet { shopMoney { amount currencyCode } }
   customAttributes { key value }
   customer { firstName lastName }
   shippingAddress { name firstName lastName company address1 address2 city province zip country phone }
@@ -26,6 +27,7 @@ export type BillingRow = {
   phone: string;
   email: string;
   address: string;
+  hasGst: string;
   gstNumber: string;
   companyName: string;
   itemName: string;
@@ -33,6 +35,8 @@ export type BillingRow = {
   price: string;
   gstPercent: string;
   gstAmount: string;
+  /** The whole order's total (items, tax and shipping), the same on every row of that order. */
+  totalAmount: string;
 };
 
 export const BILLING_COLUMNS: { key: keyof BillingRow; label: string }[] = [
@@ -42,6 +46,7 @@ export const BILLING_COLUMNS: { key: keyof BillingRow; label: string }[] = [
   { key: "phone", label: "Phone No" },
   { key: "email", label: "Email" },
   { key: "address", label: "Address" },
+  { key: "hasGst", label: "Has GST" },
   { key: "gstNumber", label: "GST Number" },
   { key: "companyName", label: "Company Name" },
   { key: "itemName", label: "Item Name" },
@@ -49,6 +54,7 @@ export const BILLING_COLUMNS: { key: keyof BillingRow; label: string }[] = [
   { key: "price", label: "Price (per item)" },
   { key: "gstPercent", label: "GST %" },
   { key: "gstAmount", label: "GST Amount" },
+  { key: "totalAmount", label: "Total Amount" },
 ];
 
 // ---------- order ids typed by the person ----------
@@ -75,25 +81,41 @@ const GSTIN = /\b\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]\b/i;
 const GST_KEY = /gst|vat|tax[\s_-]*(id|no|number)/i;
 const COMPANY_KEY = /company|business|firm|organi[sz]ation/i;
 
-/** The customer's GST number and company name. Looks at the checkout's extra fields first, then the order note, then the address company line. */
-export function extractGst(o: any): { gstNumber: string; companyName: string } {
+const YES = /^(yes|y|true|haan|han|ha|हाँ|हां)$/i;
+const NO = /^(no|n|false|nahi|nahin|na|नहीं)$/i;
+
+/**
+ * The customer's GST details. A checkout often has a "GST: Yes / No" question AND a separate field for the number, so a Yes/No answer is
+ * never taken as the number:
+ *  1. a real GSTIN (15 characters) found in any checkout field, the order note or the address company line;
+ *  2. otherwise the value of a GST field that is not a Yes/No answer.
+ * `hasGst` is "Yes" when a number was found or the customer answered Yes, "No" when they answered No, "" when nothing was asked.
+ */
+export function extractGst(o: any): { hasGst: string; gstNumber: string; companyName: string } {
   const attrs: { key: string; value: string }[] = (o?.customAttributes ?? []).map((a: any) => ({ key: String(a?.key ?? ""), value: String(a?.value ?? "").trim() }));
   let gstNumber = "";
-  const byKey = attrs.find((a) => GST_KEY.test(a.key) && a.value);
-  if (byKey) gstNumber = (byKey.value.match(GSTIN)?.[0] ?? byKey.value).toUpperCase();
-  if (!gstNumber) {
-    const hay = [o?.note, ...attrs.map((a) => a.value), o?.billingAddress?.company, o?.shippingAddress?.company].map((s) => String(s ?? ""));
-    for (const h of hay) {
-      const m = h.match(GSTIN);
-      if (m) {
-        gstNumber = m[0].toUpperCase();
-        break;
-      }
+  let answer = "";
+
+  const hay = [...attrs.filter((a) => GST_KEY.test(a.key)).map((a) => a.value), o?.note, ...attrs.map((a) => a.value), o?.billingAddress?.company, o?.shippingAddress?.company].map((s) => String(s ?? ""));
+  for (const h of hay) {
+    const m = h.match(GSTIN);
+    if (m) {
+      gstNumber = m[0].toUpperCase();
+      break;
+    }
+  }
+  for (const a of attrs) {
+    if (!GST_KEY.test(a.key) || !a.value) continue;
+    if (YES.test(a.value)) answer ||= "Yes";
+    else if (NO.test(a.value)) answer ||= "No";
+    else if (!gstNumber) {
+      const cleaned = a.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+      if (cleaned.length >= 5) gstNumber = cleaned; // a number typed in the wrong format is still shown, as typed
     }
   }
   const companyAttr = attrs.find((a) => COMPANY_KEY.test(a.key) && a.value)?.value;
   const companyName = String(o?.billingAddress?.company || o?.shippingAddress?.company || companyAttr || "").trim();
-  return { gstNumber, companyName };
+  return { hasGst: gstNumber ? "Yes" : answer, gstNumber, companyName };
 }
 
 // ---------- one order -> rows ----------
@@ -139,8 +161,10 @@ export function orderToRows(o: any): BillingRow[] {
     phone,
     email: String(o?.email ?? "").trim(),
     address: addressLine(ship) || addressLine(bill),
+    hasGst: gst.hasGst,
     gstNumber: gst.gstNumber,
     companyName: gst.companyName,
+    totalAmount: o?.currentTotalPriceSet ? fixed(money(o.currentTotalPriceSet)) : "",
   };
   const items: any[] = o?.lineItems?.nodes ?? [];
   if (!items.length) return [{ ...base, itemName: "", quantity: 0, price: "", gstPercent: "", gstAmount: "" }];

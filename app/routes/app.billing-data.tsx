@@ -109,7 +109,7 @@ export default function BillingData() {
                 </table>
               </div>
               <p className="o-muted" style={{ marginTop: 10 }}>
-                One row per item. An order with 3 items gives 3 rows with the same order details. The GST number is taken from the checkout&apos;s GST field, the order note or the company line of the address.
+                One row per item. An order with 3 items gives 3 rows with the same order details. <b>Total Amount</b> is the whole order&apos;s total (items, tax and shipping) and repeats on each row of that order, so do not add that column up. <b>Has GST</b> is the customer&apos;s Yes / No answer; the GST number is fetched from the checkout&apos;s GST field, the order note or the company line of the address.
               </p>
             </Card>
           )}

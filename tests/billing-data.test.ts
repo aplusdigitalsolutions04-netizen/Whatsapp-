@@ -15,6 +15,7 @@ const order = (name: string, over: Record<string, unknown> = {}) => ({
   email: "asha@example.com",
   phone: "+919876543210",
   note: null,
+  currentTotalPriceSet: { shopMoney: { amount: "11398.0", currencyCode: "INR" } },
   customAttributes: [],
   customer: { firstName: "Asha", lastName: "Kumar" },
   shippingAddress: { name: "Asha Kumar", company: "", address1: "12 MG Road", address2: "Flat 4", city: "Pune", province: "Maharashtra", zip: "411001", country: "India", phone: null },
@@ -54,6 +55,10 @@ test("billing rows: one row per item with every requested detail", () => {
   assert.equal(b.price, "199.50");
   assert.equal(b.gstAmount, "", "no tax line: empty, not 0");
   assert.equal(b.orderId, a.orderId, "order details repeat on every item row");
+  assert.equal(a.totalAmount, "11398.00", "the order total is on every row");
+  assert.equal(b.totalAmount, "11398.00");
+  assert.equal(BILLING_COLUMNS[BILLING_COLUMNS.length - 1].key, "totalAmount", "Total Amount is the last column");
+  assert.equal(orderToRows(order("#W9", { currentTotalPriceSet: null }))[0].totalAmount, "", "no total known: empty");
 });
 
 test("billing rows: falls back to billing address, customer name and the address phone", () => {
@@ -72,6 +77,30 @@ test("GST number: checkout field, order note or address company; company name fr
   assert.equal(extractGst(order("#4")).gstNumber, "", "none given");
   assert.equal(extractGst(order("#5", { billingAddress: { company: "Acme Traders" } })).companyName, "Acme Traders");
   assert.equal(extractGst(order("#6", { customAttributes: [{ key: "Company Name", value: "Beta Ltd" }] })).companyName, "Beta Ltd");
+});
+
+test("GST: a Yes / No answer is never taken as the number; the real number is fetched when there is one", () => {
+  const G = "27ABCDE1234F1Z5";
+  // "GST: Yes" and a separate field for the number
+  const yes = extractGst(order("#1", { customAttributes: [{ key: "GST", value: "Yes" }, { key: "GST Number", value: G }] }));
+  assert.deepEqual([yes.hasGst, yes.gstNumber], ["Yes", G]);
+  // the number field comes first, the question after
+  const swapped = extractGst(order("#2", { customAttributes: [{ key: "Enter GST number", value: G }, { key: "Do you have GST?", value: "yes" }] }));
+  assert.deepEqual([swapped.hasGst, swapped.gstNumber], ["Yes", G]);
+  // only the question, answered Yes: no number to show (never "YES" as a number)
+  const onlyYes = extractGst(order("#3", { customAttributes: [{ key: "GST", value: "Yes" }] }));
+  assert.deepEqual([onlyYes.hasGst, onlyYes.gstNumber], ["Yes", ""]);
+  // answered No
+  const no = extractGst(order("#4", { customAttributes: [{ key: "GST", value: "No" }] }));
+  assert.deepEqual([no.hasGst, no.gstNumber], ["No", ""]);
+  // Hindi / Hinglish answers
+  assert.equal(extractGst(order("#5", { customAttributes: [{ key: "GST", value: "हाँ" }] })).hasGst, "Yes");
+  assert.equal(extractGst(order("#6", { customAttributes: [{ key: "GST", value: "nahi" }] })).hasGst, "No");
+  // a number typed with spaces / dashes / lower case is cleaned; the wrong format is still shown as typed
+  assert.equal(extractGst(order("#7", { customAttributes: [{ key: "GSTIN", value: "27abcde 1234f-1z5" }] })).gstNumber, G);
+  assert.equal(extractGst(order("#8", { customAttributes: [{ key: "GST No", value: "27ABC123" }] })).gstNumber, "27ABC123");
+  // nothing asked
+  assert.deepEqual(Object.values(extractGst(order("#9"))), ["", "", ""]);
 });
 
 test("phones: Indian numbers become 10 digits, others stay as they are", () => {
