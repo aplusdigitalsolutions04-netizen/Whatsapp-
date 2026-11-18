@@ -174,9 +174,9 @@ export default function Dashboard() {
           <ul>
             {d.waiting.slice(0, 4).map((c) => (
               <li key={c.id}>
-                <div><b>{c.name}</b><small>{c.reason || "Asked for the support team"}</small></div>
+                <div><b>{c.name}{c.channel === "web" ? " 🌐" : ""}</b><small>{c.reason || "Asked for the support team"}</small></div>
                 <time>{ago(c.at)}</time>
-                <Link className="sa-btn" to={`/app/conversations?c=${c.id}&filter=human`}>Attend</Link>
+                <Link className="sa-btn" to={`/app/conversations?c=${c.id}&channel=${c.channel}&filter=human`}>Attend</Link>
               </li>
             ))}
           </ul>
@@ -445,8 +445,8 @@ export default function Dashboard() {
             <ul className="db-list">
               {d.waiting.map((c) => (
                 <li key={c.id}>
-                  <Link to={`/app/conversations?c=${c.id}`}>
-                    <span className="db-list-main"><b>{c.name}</b><span>{c.reason || c.preview || "—"}</span></span>
+                  <Link to={`/app/conversations?c=${c.id}&channel=${c.channel}`}>
+                    <span className="db-list-main"><b>{c.name}{c.channel === "web" ? " 🌐" : ""}</b><span>{c.reason || c.preview || "—"}</span></span>
                     <span className="db-list-side"><small>{ago(c.at)}</small></span>
                   </Link>
                 </li>

@@ -102,10 +102,10 @@ export function SupportAlert({ initial }: { initial: Waiting[] }) {
           </span>
           <div className="sa-text">
             <b>Customer needs you</b>
-            <span>{w.name} asked for our support team</span>
+            <span>{w.name} asked for our support team{w.channel === "web" ? " (on your website)" : ""}</span>
             <small>Waiting {waitedFor(w.at)}. Please attend this customer.</small>
           </div>
-          <Link className="sa-btn" to={`/app/conversations?c=${w.id}&filter=human`} onClick={() => dismiss(w.id)}>
+          <Link className="sa-btn" to={`/app/conversations?c=${w.id}&channel=${w.channel}&filter=human`} onClick={() => dismiss(w.id)}>
             Attend
           </Link>
           <button className="sa-x" onClick={() => dismiss(w.id)} aria-label="Hide this alert">

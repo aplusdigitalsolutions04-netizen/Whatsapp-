@@ -1,4 +1,5 @@
 import prisma from "../db.server";
+import { normalizePhone } from "./phone";
 import { parseNumberList } from "./saved-contacts";
 import { mergeTemplates, type Templates } from "./templates";
 
@@ -20,6 +21,10 @@ export type Settings = {
   onlyOrderNumbers: boolean;
   /** Sent (once in 12 hours) to a number without an order. Empty = stay silent. */
   nonOrderReply: string;
+  /** Show the JAZZ chat icon on the website. */
+  webWidget: boolean;
+  /** Digits (country code first) the icon's WhatsApp button opens; empty = the support number. */
+  widgetWhatsapp: string;
 };
 
 export async function getSettings(shop: string): Promise<Settings> {
@@ -37,6 +42,8 @@ export async function getSettings(shop: string): Promise<Settings> {
     orderConfirmFlow: row?.orderConfirmFlow ?? true,
     onlyOrderNumbers: row?.onlyOrderNumbers ?? true,
     nonOrderReply: row?.nonOrderReply ?? "",
+    webWidget: row?.webWidget ?? false,
+    widgetWhatsapp: row?.widgetWhatsapp ?? "",
   };
 }
 
@@ -71,6 +78,8 @@ export async function saveSettings(shop: string, form: FormData) {
     orderConfirmFlow: form.get("orderConfirmFlow") === "on",
     onlyOrderNumbers: form.get("onlyOrderNumbers") === "on",
     nonOrderReply: String(form.get("nonOrderReply") ?? "").trim().slice(0, 600),
+    webWidget: form.get("webWidget") === "on",
+    widgetWhatsapp: (normalizePhone(String(form.get("widgetWhatsapp") ?? "")) ?? "").replace(/\D/g, ""),
   };
   await prisma.botSettings.upsert({
     where: { shop },

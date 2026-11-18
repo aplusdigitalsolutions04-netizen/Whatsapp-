@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router";
 import { SupportAlert } from "./SupportAlert";
+import { JazzWidget } from "./JazzWidget";
 import type { Waiting } from "../lib/waiting.server";
 import { ChevronsLeft, ChevronsRight, ClipboardList, ScanSearch, WandSparkles, LayoutDashboard, Menu, MessagesSquare, PackageSearch, Plug, ScrollText, SearchCheck, Smartphone, Sparkles, X, Zap, type LucideIcon } from "lucide-react";
 
@@ -130,6 +131,7 @@ export function Shell({ data, children }: { data: ShellData; children: ReactNode
               </>
             )}
           </nav>
+          <JazzWidget mode="admin" />
         </header>
         <SupportAlert initial={data.waiting} />
         <main className="content">{children}</main>

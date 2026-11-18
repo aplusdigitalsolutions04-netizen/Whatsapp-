@@ -219,7 +219,7 @@ export async function loadDashboardData(shop: string, range: number, now = Date.
     },
     conversations: { human: humanOpen, bot: botOpen, closed },
     waiting: waiting.map((c) => ({
-      id: c.id, name: c.customerName || c.phone, phone: c.phone, reason: c.handoffReason, at: (c.lastInboundAt ?? c.lastMessageAt).toISOString(),
+      id: c.id, name: c.customerName || (c.channel === "web" ? `Website visitor ${c.phone.replace(/^web:/, "").slice(0, 4).toUpperCase()}` : c.phone), channel: c.channel, phone: c.phone, reason: c.handoffReason, at: (c.lastInboundAt ?? c.lastMessageAt).toISOString(),
       preview: (c.messages[0]?.body || (c.messages[0]?.mediaKind ? `📎 ${c.messages[0].mediaKind}` : "")).slice(0, 90),
     })),
     orders: {

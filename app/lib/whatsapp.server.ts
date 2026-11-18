@@ -103,6 +103,13 @@ export async function sendAndRecord(args: {
     return { ok: false, error };
   };
 
+  if (conv?.channel === "web") {
+    // A website chat has no WhatsApp number: the message is only stored; the visitor's chat box reads it from there.
+    await prisma.message.update({ where: { id: row.id }, data: { status: "sent", error: null } });
+    await prisma.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: new Date() } });
+    return { ok: true };
+  }
+
   // Dynamic import: bridge.server -> webhook-processor -> bot -> this file would be circular.
   const { activeProvider, bridgeSendText, bridgeSendMedia } = await import("./bridge.server");
   let result: SendResult;

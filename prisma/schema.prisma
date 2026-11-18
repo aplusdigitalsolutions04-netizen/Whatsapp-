@@ -59,6 +59,10 @@ model BotSettings {
   onlyOrderNumbers       Boolean  @default(true)
   // what a number without an order gets (written in English by the owner); empty = no reply at all
   nonOrderReply          String   @default("")
+  // the JAZZ chat icon on the website (link page and store website): off until the owner switches it on
+  webWidget              Boolean  @default(false)
+  // the number the icon's "Chat on WhatsApp" button opens (digits with country code, e.g. 919211890093); empty = support number
+  widgetWhatsapp         String   @default("")
   updatedAt              DateTime @updatedAt
 }
 
@@ -78,6 +82,8 @@ model Conversation {
   verifyAttempts Int       @default(0)
   // "en" | "hi": language the customer last wrote in
   lang           String    @default("en")
+  // "whatsapp" | "web": where the customer is writing from. A web chat has phone "web:<session id>" until the visitor gives a number
+  channel        String    @default("whatsapp")
   handoffReason  String?
   lastInboundAt  DateTime?
   // WhatsApp profile picture, cached on disk under WHATSAPP_MEDIA_DIR (QR connection only)

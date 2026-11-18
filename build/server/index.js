@@ -17,7 +17,7 @@ import path from "node:path";
 import QRCode from "qrcode";
 import makeWASocket, { useMultiFileAuthState, fetchLatestBaileysVersion, Browsers, DisconnectReason, downloadMediaMessage } from "@whiskeysockets/baileys";
 import { createDecipheriv, scryptSync, randomBytes, createCipheriv, timingSafeEqual, createHmac, createSign, createHash, randomUUID } from "node:crypto";
-import { useRef, useEffect, useState, Fragment as Fragment$1, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, Fragment as Fragment$1 } from "react";
 import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
 import { zipSync, ZipPassThrough, Zip, unzipSync } from "fflate";
@@ -1638,7 +1638,9 @@ async function getSettings(shop) {
     orderMessages: (row == null ? void 0 : row.orderMessages) ?? true,
     orderConfirmFlow: (row == null ? void 0 : row.orderConfirmFlow) ?? true,
     onlyOrderNumbers: (row == null ? void 0 : row.onlyOrderNumbers) ?? true,
-    nonOrderReply: (row == null ? void 0 : row.nonOrderReply) ?? ""
+    nonOrderReply: (row == null ? void 0 : row.nonOrderReply) ?? "",
+    webWidget: (row == null ? void 0 : row.webWidget) ?? false,
+    widgetWhatsapp: (row == null ? void 0 : row.widgetWhatsapp) ?? ""
   };
 }
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, Math.round(Number.isFinite(n) ? n : lo)));
@@ -1668,7 +1670,9 @@ async function saveSettings(shop, form) {
     orderMessages: form.get("orderMessages") === "on",
     orderConfirmFlow: form.get("orderConfirmFlow") === "on",
     onlyOrderNumbers: form.get("onlyOrderNumbers") === "on",
-    nonOrderReply: String(form.get("nonOrderReply") ?? "").trim().slice(0, 600)
+    nonOrderReply: String(form.get("nonOrderReply") ?? "").trim().slice(0, 600),
+    webWidget: form.get("webWidget") === "on",
+    widgetWhatsapp: (normalizePhone(String(form.get("widgetWhatsapp") ?? "")) ?? "").replace(/\D/g, "")
   };
   await prisma.botSettings.upsert({
     where: { shop },
@@ -2625,6 +2629,11 @@ async function sendAndRecord(args) {
     await logEvent({ shop, source: "whatsapp", level: "error", event: "send_failed", detail: error });
     return { ok: false, error };
   };
+  if ((conv == null ? void 0 : conv.channel) === "web") {
+    await prisma.message.update({ where: { id: row.id }, data: { status: "sent", error: null } });
+    await prisma.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: /* @__PURE__ */ new Date() } });
+    return { ok: true };
+  }
   const { activeProvider: activeProvider2, bridgeSendText: bridgeSendText2, bridgeSendMedia: bridgeSendMedia2 } = await Promise.resolve().then(() => bridge_server);
   let result;
   if (activeProvider2() === "qr") {
@@ -2817,6 +2826,7 @@ async function phoneFlow(shop, conv, typed, s, deps, lang) {
 }
 async function askOrderHow(conv, s) {
   await update(conv, { state: "awaiting_order_choice" });
+  if (conv.channel === "web") return "Sure! 😊 How would you like to check your order?\n\n1. Send your Order Number (Example: #W1219)\n2. Send your registered mobile number\n\nReply with 1 or 2.";
   return tpl(conv, s).askOrderDetails;
 }
 const readIds = (conv) => {
@@ -2889,11 +2899,12 @@ async function decideReply(shop, conv, msg2, s, fixedLang, deps = defaultDeps) {
     if (/^(no|nope|nahi|nahin|नहीं|nothing|thanks?|thank you|thankyou|ok|okay|done|bas|shukriya|dhanyavad|धन्यवाद|शुक्रिया)\b/i.test(text2)) return t.thanksReply;
   }
   if (conv.state === "awaiting_order_choice") {
-    const pick2 = parseSelection(text2, 3);
-    if (pick2 === 1) return orderOverview(shop, conv, s, deps, lang);
-    if (pick2 === 2 || pick2 === 3) {
+    const onWeb = conv.channel === "web";
+    const pick2 = parseSelection(text2, onWeb ? 2 : 3);
+    if (pick2 === 1 && !onWeb) return orderOverview(shop, conv, s, deps, lang);
+    if (onWeb ? pick2 === 1 || pick2 === 2 : pick2 === 2 || pick2 === 3) {
       await update(conv, { state: "awaiting_order_number" });
-      return pick2 === 2 ? t.typeOrderNumber : t.typeMobileNumber;
+      return (onWeb ? pick2 === 1 : pick2 === 2) ? t.typeOrderNumber : t.typeMobileNumber;
     }
   }
   if (conv.state === "awaiting_order_selection") {
@@ -3049,14 +3060,15 @@ async function silent(shop, phone, reason, event = "bot_silent") {
   console.log(`[bot] ${masked(phone)}: no reply - ${reason}`);
   await logEvent({ shop, source: "bot", event, detail: `${phone}: ${reason}` }).catch(() => void 0);
 }
-async function handleInbound(shop, msg2) {
+async function handleInbound(shop, msg2, opts = {}) {
   var _a2, _b, _c, _d;
+  const web = opts.channel === "web";
   if (SYSTEM_TYPES.has(msg2.type)) return;
-  const phone = normalizePhone(msg2.from) ?? `+${msg2.from.replace(/\D/g, "")}`;
+  const phone = web ? String(opts.phone) : normalizePhone(msg2.from) ?? `+${msg2.from.replace(/\D/g, "")}`;
   const now = /* @__PURE__ */ new Date();
   const conv = await prisma.conversation.upsert({
     where: { shop_phone: { shop, phone } },
-    create: { shop, phone, customerName: msg2.name ?? null, lastInboundAt: now, lastMessageAt: now },
+    create: { shop, phone, customerName: msg2.name ?? null, lastInboundAt: now, lastMessageAt: now, channel: web ? "web" : "whatsapp" },
     update: {
       lastInboundAt: now,
       lastMessageAt: now,
@@ -3083,14 +3095,14 @@ async function handleInbound(shop, msg2) {
     await silent(shop, phone, "the bot is switched off in Settings");
     return;
   }
-  const wake = applyWakeRule(msg2.text, isSavedContact(phone, s.savedNumbers));
+  const wake = web ? { reply: true, text: msg2.text } : applyWakeRule(msg2.text, isSavedContact(phone, s.savedNumbers));
   if (!wake.reply) {
     await silent(shop, phone, "this number is in your saved contacts (start the message with ! to wake JAZZ)");
     return;
   }
   const woken = wake.text !== msg2.text;
   if (woken) msg2 = { ...msg2, text: wake.text };
-  if (!woken) {
+  if (!woken && !web) {
     const auto = await detectAutomatedSender(conv.id, msg2.text, msg2.id).catch(() => null);
     if (auto) {
       await silent(shop, phone, `looks like a bot, not a customer: ${auto}`, "auto_reply_ignored");
@@ -3099,7 +3111,7 @@ async function handleInbound(shop, msg2) {
   }
   const bang = msg2.text.trim().startsWith("!");
   if (bang) msg2 = { ...msg2, text: msg2.text.trim().slice(1).trim() || "hi" };
-  const onOrder = s.onlyOrderNumbers && !woken && !bang ? await isOrderCustomer(shop, phone).catch(() => false) : true;
+  const onOrder = !web && s.onlyOrderNumbers && !woken && !bang ? await isOrderCustomer(shop, phone).catch(() => false) : true;
   if (!onOrder) {
     const text22 = s.nonOrderReply.trim();
     if (text22) {
@@ -3165,7 +3177,7 @@ ${TEMPLATES_HI.unsupportedLanguage}`;
   const out = typeof decided === "string" ? { text: decided } : decided;
   if (!out.text.trim()) return;
   let text2 = out.text;
-  if (out.image && !pivot && await canSendMedia()) {
+  if (out.image && !pivot && !web && await canSendMedia()) {
     const media = await fetchProductImage(out.image.url);
     if (media) {
       const img = await sendAndRecord({
@@ -4879,7 +4891,193 @@ const MASCOT_SVG = `<svg id="bot" viewBox="0 0 420 480" role="img" aria-label="J
           <path class="talk" d="M190 206Q210 226 230 206" fill="none" stroke="#ffd89a" stroke-width="5" stroke-linecap="round"/>
         </g>
       </svg>`;
+const SID_KEY = "jazz-sid";
+const newSid = () => {
+  var _a2, _b;
+  const a = new Uint8Array(18);
+  (_b = (_a2 = globalThis.crypto ?? {}).getRandomValues) == null ? void 0 : _b.call(_a2, a);
+  return Array.from(a, (b) => b.toString(36).padStart(2, "0")).join("").slice(0, 32).padEnd(24, "x");
+};
+function getSid() {
+  try {
+    const s = localStorage.getItem(SID_KEY);
+    if (s && /^[A-Za-z0-9_-]{16,64}$/.test(s)) return s;
+    const n = newSid();
+    localStorage.setItem(SID_KEY, n);
+    return n;
+  } catch {
+    return newSid();
+  }
+}
+const URL_RE = /(https?:\/\/[^\s]+)/g;
+function Linked({ text: text2 }) {
+  return /* @__PURE__ */ jsx(Fragment, { children: text2.split(URL_RE).map(
+    (part, i) => /^https?:\/\//.test(part) ? /* @__PURE__ */ jsx("a", { href: part, target: "_blank", rel: "noopener noreferrer", children: part }, i) : /* @__PURE__ */ jsx("span", { children: part }, i)
+  ) });
+}
+function Face({ size = 26 }) {
+  return /* @__PURE__ */ jsxs("svg", { className: "jw-face", width: size, height: size, viewBox: "0 0 40 40", "aria-hidden": "true", children: [
+    /* @__PURE__ */ jsx("rect", { x: "4", y: "9", width: "32", height: "26", rx: "10", fill: "#fffaf0" }),
+    /* @__PURE__ */ jsx("rect", { x: "8", y: "13", width: "24", height: "16", rx: "7", fill: "#1a120c" }),
+    /* @__PURE__ */ jsx("circle", { className: "jw-eye", cx: "16", cy: "21", r: "2.8", fill: "#ffd89a" }),
+    /* @__PURE__ */ jsx("circle", { className: "jw-eye", cx: "24", cy: "21", r: "2.8", fill: "#ffd89a" }),
+    /* @__PURE__ */ jsx("path", { d: "M17 26.2q3 2.2 6 0", fill: "none", stroke: "#ffd89a", strokeWidth: "1.6", strokeLinecap: "round" }),
+    /* @__PURE__ */ jsx("rect", { x: "19", y: "2.5", width: "2", height: "7", rx: "1", fill: "#fffaf0" }),
+    /* @__PURE__ */ jsx("circle", { cx: "20", cy: "3.2", r: "2.4", fill: "#ffe3b0" })
+  ] });
+}
+function JazzWidget({ mode }) {
+  const api2 = mode === "admin" ? "/api/chat-admin" : "/api/chat";
+  const [cfg, setCfg] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState("home");
+  const [msgs, setMsgs] = useState([]);
+  const [pending, setPending] = useState([]);
+  const [text2, setText] = useState("");
+  const [waiting, setWaiting] = useState(false);
+  const [error, setError] = useState(null);
+  const sid = useRef("");
+  const last = useRef(null);
+  const log2 = useRef(null);
+  useEffect(() => {
+    let live = true;
+    fetch("/api/chat?config=1").then((r) => r.json()).then((c) => live && setCfg({ enabled: !!c.enabled, whatsapp: String(c.whatsapp || "") })).catch(() => live && setCfg({ enabled: false, whatsapp: "" }));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const poll = useCallback(async () => {
+    if (!sid.current) return;
+    try {
+      const r = await fetch(`${api2}?sid=${encodeURIComponent(sid.current)}${last.current ? `&after=${encodeURIComponent(last.current)}` : ""}`);
+      if (!r.ok) return;
+      const j = await r.json();
+      const fresh = j.messages ?? [];
+      if (fresh.length) {
+        last.current = fresh[fresh.length - 1].at;
+        setMsgs((cur) => {
+          const have = new Set(cur.map((m) => m.id));
+          return [...cur, ...fresh.filter((m) => !have.has(m.id))];
+        });
+        setPending([]);
+        if (fresh.some((m) => m.from !== "me")) setWaiting(false);
+      }
+    } catch {
+    }
+  }, [api2]);
+  useEffect(() => {
+    if (!open || view !== "chat") return;
+    sid.current || (sid.current = getSid());
+    void poll();
+    const t = setInterval(poll, 3e3);
+    return () => clearInterval(t);
+  }, [open, view, poll]);
+  useEffect(() => {
+    var _a2;
+    (_a2 = log2.current) == null ? void 0 : _a2.scrollTo({ top: log2.current.scrollHeight, behavior: "smooth" });
+  }, [msgs, pending, waiting, view]);
+  const send = async (value) => {
+    const t = value.trim();
+    if (!t || waiting) return;
+    sid.current || (sid.current = getSid());
+    setError(null);
+    setText("");
+    setPending((p) => [...p, t]);
+    setWaiting(true);
+    try {
+      const r = await fetch(api2, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sid: sid.current, text: t }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.ok === false) {
+        setError(j.error ?? "Could not send. Please try again.");
+        setPending([]);
+        setWaiting(false);
+        return;
+      }
+      await poll();
+    } catch {
+      setError("No connection. Please try again.");
+      setPending([]);
+    } finally {
+      setWaiting(false);
+    }
+  };
+  if (!cfg) return null;
+  if (mode === "public" && !cfg.enabled) return null;
+  const wa = (cfg.whatsapp || "919211890093").replace(/\D/g, "");
+  return /* @__PURE__ */ jsxs("div", { className: `jw jw-${mode}`, children: [
+    /* @__PURE__ */ jsxs("button", { type: "button", className: `jw-fab${open ? " on" : ""}`, onClick: () => setOpen((o) => !o), "aria-label": "Ask JAZZ, the assistant", "aria-expanded": open, title: "Ask JAZZ", children: [
+      /* @__PURE__ */ jsx(Face, {}),
+      /* @__PURE__ */ jsx("span", { className: "jw-ring", "aria-hidden": "true" })
+    ] }),
+    open && /* @__PURE__ */ jsxs("div", { className: "jw-panel", role: "dialog", "aria-label": "JAZZ assistant", children: [
+      /* @__PURE__ */ jsxs("header", { className: "jw-head", children: [
+        view === "chat" && /* @__PURE__ */ jsx("button", { type: "button", className: "jw-icon", onClick: () => setView("home"), "aria-label": "Back", children: "‹" }),
+        /* @__PURE__ */ jsx("span", { className: "jw-avatar", children: /* @__PURE__ */ jsx(Face, { size: 24 }) }),
+        /* @__PURE__ */ jsxs("span", { className: "jw-title", children: [
+          /* @__PURE__ */ jsx("b", { children: "JAZZ" }),
+          /* @__PURE__ */ jsxs("small", { children: [
+            /* @__PURE__ */ jsx("i", { className: "jw-dot" }),
+            " Assistant · Chat bot"
+          ] })
+        ] }),
+        /* @__PURE__ */ jsx("button", { type: "button", className: "jw-icon", onClick: () => setOpen(false), "aria-label": "Close", children: "×" })
+      ] }),
+      view === "home" ? /* @__PURE__ */ jsxs("div", { className: "jw-body", children: [
+        /* @__PURE__ */ jsxs("p", { className: "jw-hi", children: [
+          "Hi! I'm ",
+          /* @__PURE__ */ jsx("b", { children: "JAZZ" }),
+          ", the assistant (chat bot) of WERY. 👋"
+        ] }),
+        /* @__PURE__ */ jsxs("p", { children: [
+          "I can help you ",
+          /* @__PURE__ */ jsx("b", { children: "track your order" }),
+          ", check its status and answer your questions about our products."
+        ] }),
+        mode === "admin" && /* @__PURE__ */ jsx("p", { className: "jw-note", children: "This is a test chat. Customers see this icon on your website once you switch it on in Bot Settings." }),
+        /* @__PURE__ */ jsxs("a", { className: "jw-btn jw-wa", href: `https://wa.me/${wa}?text=${encodeURIComponent("Hi JAZZ")}`, target: "_blank", rel: "noopener noreferrer", children: [
+          /* @__PURE__ */ jsx("svg", { width: "18", height: "18", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.9", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: /* @__PURE__ */ jsx("path", { d: "M21 12a8.5 8.5 0 0 1-12.4 7.5L3 21l1.6-5.4A8.5 8.5 0 1 1 21 12Z" }) }),
+          "Chat on WhatsApp"
+        ] }),
+        /* @__PURE__ */ jsxs("button", { type: "button", className: "jw-btn jw-chat", onClick: () => setView("chat"), children: [
+          /* @__PURE__ */ jsx("svg", { width: "18", height: "18", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.9", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: /* @__PURE__ */ jsx("path", { d: "M4 5h16v11H9l-5 4V5Z" }) }),
+          "Chat here"
+        ] })
+      ] }) : /* @__PURE__ */ jsxs("div", { className: "jw-chatview", children: [
+        /* @__PURE__ */ jsxs("div", { className: "jw-log", ref: log2, role: "log", "aria-live": "polite", children: [
+          msgs.length === 0 && pending.length === 0 && /* @__PURE__ */ jsx("div", { className: "jw-msg jazz", children: /* @__PURE__ */ jsx("div", { children: "Hi, I'm JAZZ! 👋 How can I help you today?" }) }),
+          msgs.map((m) => /* @__PURE__ */ jsxs("div", { className: `jw-msg ${m.from}`, children: [
+            m.from === "agent" && /* @__PURE__ */ jsx("small", { children: "Team" }),
+            /* @__PURE__ */ jsx("div", { children: /* @__PURE__ */ jsx(Linked, { text: m.text }) })
+          ] }, m.id)),
+          pending.map((p, i) => /* @__PURE__ */ jsx("div", { className: "jw-msg me", children: /* @__PURE__ */ jsx("div", { children: p }) }, `p${i}`)),
+          waiting && /* @__PURE__ */ jsx("div", { className: "jw-msg jazz", children: /* @__PURE__ */ jsxs("div", { className: "jw-typing", "aria-label": "JAZZ is typing", children: [
+            /* @__PURE__ */ jsx("i", {}),
+            /* @__PURE__ */ jsx("i", {}),
+            /* @__PURE__ */ jsx("i", {})
+          ] }) })
+        ] }),
+        msgs.length === 0 && pending.length === 0 && /* @__PURE__ */ jsx("div", { className: "jw-chips", children: ["Track my order", "Find a product", "Talk to a person"].map((c) => /* @__PURE__ */ jsx("button", { type: "button", onClick: () => void send(c), children: c }, c)) }),
+        error && /* @__PURE__ */ jsx("p", { className: "jw-error", role: "alert", children: error }),
+        /* @__PURE__ */ jsxs(
+          "form",
+          {
+            className: "jw-form",
+            onSubmit: (e) => {
+              e.preventDefault();
+              void send(text2);
+            },
+            children: [
+              /* @__PURE__ */ jsx("input", { value: text2, onChange: (e) => setText(e.target.value), placeholder: "Type your message…", maxLength: 500, "aria-label": "Message to JAZZ", autoComplete: "off" }),
+              /* @__PURE__ */ jsx("button", { type: "submit", disabled: waiting || !text2.trim(), "aria-label": "Send", children: "➤" })
+            ]
+          }
+        )
+      ] })
+    ] })
+  ] });
+}
 const pageStyles = "/assets/jazz-CyWdCZg7.css";
+const jazzWidgetStyles = "/assets/jazz-widget-CZgSPD7K.css";
 const meta = () => [{
   title: "ShopPilot: chat bot, order updates and store tools for Shopify"
 }, {
@@ -4889,6 +5087,9 @@ const meta = () => [{
 const links$5 = () => [{
   rel: "stylesheet",
   href: pageStyles
+}, {
+  rel: "stylesheet",
+  href: jazzWidgetStyles
 }, {
   rel: "icon",
   href: "/favicon.svg",
@@ -4905,7 +5106,7 @@ const links$5 = () => [{
   rel: "apple-touch-icon",
   href: "/apple-touch-icon.png"
 }];
-const loader$r = async ({
+const loader$t = async ({
   request
 }) => {
   const url = new URL(request.url);
@@ -4916,7 +5117,7 @@ const loader$r = async ({
     showForm: Boolean(login)
   };
 };
-const action$i = async ({
+const action$k = async ({
   request
 }) => {
   const errors = loginErrorMessage(await login(request));
@@ -5218,6 +5419,8 @@ const route = UNSAFE_withComponentProps(function App2() {
       className: "ambient",
       "aria-hidden": "true",
       children: [/* @__PURE__ */ jsx("i", {}), /* @__PURE__ */ jsx("i", {}), /* @__PURE__ */ jsx("i", {})]
+    }), /* @__PURE__ */ jsx(JazzWidget, {
+      mode: "public"
     }), /* @__PURE__ */ jsx("nav", {
       className: "top",
       children: /* @__PURE__ */ jsxs("div", {
@@ -5868,10 +6071,10 @@ const route = UNSAFE_withComponentProps(function App2() {
 });
 const route1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$i,
+  action: action$k,
   default: route,
   links: links$5,
-  loader: loader$r,
+  loader: loader$t,
   meta
 }, Symbol.toStringTag, { value: "Module" }));
 function assetCount() {
@@ -5924,7 +6127,7 @@ async function schemaCheck() {
     };
   }
 }
-const loader$q = async ({
+const loader$s = async ({
   request
 }) => {
   const debug = new URL(request.url).searchParams.get("debug") === "1";
@@ -5958,9 +6161,9 @@ const loader$q = async ({
 };
 const route2 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  loader: loader$q
+  loader: loader$s
 }, Symbol.toStringTag, { value: "Module" }));
-const loader$p = async ({
+const loader$r = async ({
   request
 }) => {
   await authenticate.admin(request);
@@ -5972,9 +6175,9 @@ const headers$h = (headersArgs) => {
 const route3 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   headers: headers$h,
-  loader: loader$p
+  loader: loader$r
 }, Symbol.toStringTag, { value: "Module" }));
-const action$h = async ({
+const action$j = async ({
   request
 }) => {
   const {
@@ -5999,9 +6202,9 @@ const action$h = async ({
 };
 const route4 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$h
+  action: action$j
 }, Symbol.toStringTag, { value: "Module" }));
-const action$g = async ({
+const action$i = async ({
   request
 }) => {
   const {
@@ -6021,7 +6224,7 @@ const action$g = async ({
 };
 const route5 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$g
+  action: action$i
 }, Symbol.toStringTag, { value: "Module" }));
 async function handleOrderWebhook(shop, topic, payload) {
   try {
@@ -6033,7 +6236,7 @@ async function handleOrderWebhook(shop, topic, payload) {
     await logEvent({ shop, source: "shopify", level: "error", event: "order_webhook_failed", detail: `${topic}: ${e.message}` });
   }
 }
-const action$f = async ({
+const action$h = async ({
   request
 }) => {
   const {
@@ -6048,9 +6251,9 @@ const action$f = async ({
 };
 const route6 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$f
+  action: action$h
 }, Symbol.toStringTag, { value: "Module" }));
-const action$e = async ({
+const action$g = async ({
   request
 }) => {
   const {
@@ -6065,9 +6268,9 @@ const action$e = async ({
 };
 const route7 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$e
+  action: action$g
 }, Symbol.toStringTag, { value: "Module" }));
-const action$d = async ({
+const action$f = async ({
   request
 }) => {
   const {
@@ -6082,9 +6285,9 @@ const action$d = async ({
 };
 const route8 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$d
+  action: action$f
 }, Symbol.toStringTag, { value: "Module" }));
-const action$c = async ({
+const action$e = async ({
   request
 }) => {
   const {
@@ -6098,9 +6301,9 @@ const action$c = async ({
 };
 const route9 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  action: action$c
+  action: action$e
 }, Symbol.toStringTag, { value: "Module" }));
-const loader$o = async ({
+const loader$q = async ({
   request,
   params
 }) => {
@@ -6133,6 +6336,171 @@ const loader$o = async ({
 };
 const route10 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
+  loader: loader$q
+}, Symbol.toStringTag, { value: "Module" }));
+const DEFAULT_WIDGET_WHATSAPP = "919211890093";
+const SESSION_RE = /^[A-Za-z0-9_-]{16,64}$/;
+const MAX_TEXT = 500;
+async function webChatConfig(shop) {
+  if (!shop) return { enabled: false, whatsapp: DEFAULT_WIDGET_WHATSAPP };
+  const s = await getSettings(shop);
+  return { enabled: s.webWidget, whatsapp: s.widgetWhatsapp || DEFAULT_WIDGET_WHATSAPP };
+}
+async function sendWebMessage(args) {
+  const { shop, sid, ip } = args;
+  if (!SESSION_RE.test(sid)) return { ok: false, error: "Bad session", status: 400 };
+  const text2 = args.text.replace(/\s+/g, " ").trim().slice(0, MAX_TEXT);
+  if (!text2) return { ok: false, error: "Type a message", status: 400 };
+  if (rateLimited(`webchat:sid:${sid}`, 20, 6e4) || ip && rateLimited(`webchat:ip:${ip}`, 60, 6e4)) {
+    return { ok: false, error: "You are sending messages too fast. Please wait a moment.", status: 429 };
+  }
+  const settings = await getSettings(shop);
+  if (!args.test && !settings.webWidget) return { ok: false, error: "Chat is not available right now.", status: 403 };
+  const name = (args.name ?? "").trim().slice(0, 40) || (args.test ? "You (test chat)" : "");
+  try {
+    await handleInbound(
+      shop,
+      { from: sid, id: `web-${sid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type: "text", text: text2, name: name || void 0 },
+      { channel: "web", phone: `web:${sid}` }
+    );
+  } catch (e) {
+    await logEvent({ shop, source: "bot", level: "error", event: "web_chat_failed", detail: e.message });
+  }
+  return { ok: true };
+}
+async function readWebMessages(shop, sid, after) {
+  if (!SESSION_RE.test(sid)) return { messages: [], mode: "bot" };
+  const conv = await prisma.conversation.findUnique({ where: { shop_phone: { shop, phone: `web:${sid}` } } });
+  if (!conv || conv.channel !== "web") return { messages: [], mode: "bot" };
+  const since = after && !Number.isNaN(Date.parse(after)) ? new Date(after) : null;
+  const rows = await prisma.message.findMany({
+    where: { conversationId: conv.id, status: { not: "failed" }, ...since ? { createdAt: { gt: since } } : {} },
+    orderBy: { createdAt: "asc" },
+    take: 60
+  });
+  return {
+    mode: conv.mode,
+    messages: rows.filter((m) => m.body.trim()).map((m) => ({ id: m.id, from: m.direction === "in" ? "me" : m.sender === "agent" ? "agent" : "jazz", text: m.body, at: m.createdAt.toISOString() }))
+  };
+}
+const json$4 = (data, status = 200) => new Response(JSON.stringify(data), {
+  status,
+  headers: {
+    "Content-Type": "application/json",
+    "Cache-Control": "no-store"
+  }
+});
+const ipOf = (request) => {
+  var _a2, _b;
+  return ((_b = (_a2 = request.headers.get("x-forwarded-for")) == null ? void 0 : _a2.split(",")[0]) == null ? void 0 : _b.trim()) ?? "unknown";
+};
+const loader$p = async ({
+  request
+}) => {
+  const url = new URL(request.url);
+  const shop = await resolveShop();
+  if (!shop) return json$4({
+    enabled: false,
+    whatsapp: "",
+    messages: []
+  });
+  if (url.searchParams.get("config")) return json$4(await webChatConfig(shop));
+  const cfg = await webChatConfig(shop);
+  const sid = url.searchParams.get("sid") ?? "";
+  const res = await readWebMessages(shop, sid, url.searchParams.get("after"));
+  return json$4({
+    enabled: cfg.enabled,
+    ...res
+  });
+};
+const action$d = async ({
+  request
+}) => {
+  if (request.method !== "POST") return json$4({
+    ok: false,
+    error: "Method not allowed"
+  }, 405);
+  const shop = await resolveShop();
+  if (!shop) return json$4({
+    ok: false,
+    error: "Chat is not available right now."
+  }, 503);
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json$4({
+      ok: false,
+      error: "Bad request"
+    }, 400);
+  }
+  const r = await sendWebMessage({
+    shop,
+    sid: String((body == null ? void 0 : body.sid) ?? ""),
+    text: String((body == null ? void 0 : body.text) ?? ""),
+    name: (body == null ? void 0 : body.name) ? String(body.name) : void 0,
+    ip: ipOf(request),
+    test: false
+  });
+  return r.ok ? json$4({
+    ok: true
+  }) : json$4({
+    ok: false,
+    error: r.error
+  }, r.status);
+};
+const route11 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  action: action$d,
+  loader: loader$p
+}, Symbol.toStringTag, { value: "Module" }));
+const json$3 = (data, status = 200) => new Response(JSON.stringify(data), {
+  status,
+  headers: {
+    "Content-Type": "application/json",
+    "Cache-Control": "no-store"
+  }
+});
+const loader$o = async ({
+  request
+}) => {
+  const {
+    session
+  } = await authenticate.admin(request);
+  const url = new URL(request.url);
+  return json$3(await readWebMessages(session.shop, url.searchParams.get("sid") ?? "", url.searchParams.get("after")));
+};
+const action$c = async ({
+  request
+}) => {
+  const {
+    session
+  } = await authenticate.admin(request);
+  let body = {};
+  try {
+    body = await request.json();
+  } catch {
+    return json$3({
+      ok: false,
+      error: "Bad request"
+    }, 400);
+  }
+  const r = await sendWebMessage({
+    shop: session.shop,
+    sid: String(body.sid ?? ""),
+    text: String(body.text ?? ""),
+    test: true
+  });
+  return r.ok ? json$3({
+    ok: true
+  }) : json$3({
+    ok: false,
+    error: r.error
+  }, r.status);
+};
+const route12 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  action: action$c,
   loader: loader$o
 }, Symbol.toStringTag, { value: "Module" }));
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
@@ -6890,7 +7258,7 @@ const loader$n = async ({
     status: 404
   });
 };
-const route11 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route13 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   loader: loader$n
 }, Symbol.toStringTag, { value: "Module" }));
@@ -7903,7 +8271,7 @@ const action$b = async ({
     }, 400);
   }
 };
-const route12 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route14 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$b,
   loader: loader$m
@@ -7944,7 +8312,7 @@ const loader$l = async ({
     }
   });
 };
-const route13 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route15 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   loader: loader$l
 }, Symbol.toStringTag, { value: "Module" }));
@@ -8038,7 +8406,7 @@ const action$a = async ({
     id: r.id
   });
 };
-const route14 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route16 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$a,
   loader: loader$k
@@ -8874,7 +9242,7 @@ const action$9 = async ({
     }, 500);
   }
 };
-const route15 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route17 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$9,
   loader: loader$j
@@ -8959,11 +9327,12 @@ const action$8 = async ({
     status: 200
   });
 };
-const route16 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route18 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$8,
   loader: loader$i
 }, Symbol.toStringTag, { value: "Module" }));
+const waitingName = (c) => c.customerName || (c.channel === "web" ? `Website visitor ${c.phone.replace(/^web:/, "").slice(0, 4).toUpperCase()}` : c.phone);
 async function getWaiting(shop, take = 5) {
   const rows = await prisma.conversation.findMany({
     where: { shop, status: "open", mode: "human" },
@@ -8972,13 +9341,14 @@ async function getWaiting(shop, take = 5) {
   });
   return rows.map((c) => ({
     id: c.id,
-    name: c.customerName || c.phone,
+    name: waitingName(c),
     phone: c.phone,
+    channel: c.channel === "web" ? "web" : "whatsapp",
     reason: c.handoffReason,
     at: (c.lastInboundAt ?? c.lastMessageAt).toISOString()
   }));
 }
-const orderlyStyles = "/assets/orderly-Gk0bV69A.css";
+const orderlyStyles = "/assets/orderly-zH2MZ8o3.css";
 const dashboardStyles = "/assets/dashboard-j6vCbuOj.css";
 function waitedFor(iso, now = Date.now()) {
   const s = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1e3));
@@ -9063,7 +9433,8 @@ function SupportAlert({ initial }) {
         /* @__PURE__ */ jsx("b", { children: "Customer needs you" }),
         /* @__PURE__ */ jsxs("span", { children: [
           w.name,
-          " asked for our support team"
+          " asked for our support team",
+          w.channel === "web" ? " (on your website)" : ""
         ] }),
         /* @__PURE__ */ jsxs("small", { children: [
           "Waiting ",
@@ -9071,7 +9442,7 @@ function SupportAlert({ initial }) {
           ". Please attend this customer."
         ] })
       ] }),
-      /* @__PURE__ */ jsx(Link, { className: "sa-btn", to: `/app/conversations?c=${w.id}&filter=human`, onClick: () => dismiss(w.id), children: "Attend" }),
+      /* @__PURE__ */ jsx(Link, { className: "sa-btn", to: `/app/conversations?c=${w.id}&channel=${w.channel}&filter=human`, onClick: () => dismiss(w.id), children: "Attend" }),
       /* @__PURE__ */ jsx("button", { className: "sa-x", onClick: () => dismiss(w.id), "aria-label": "Hide this alert", children: /* @__PURE__ */ jsx(X, { size: 14 }) })
     ] }, w.id)),
     visible.length > 3 && /* @__PURE__ */ jsxs(Link, { className: "sa-more", to: "/app/conversations?filter=human", children: [
@@ -9189,7 +9560,8 @@ function Shell({ data, children }) {
             /* @__PURE__ */ jsx("span", { children: "/" }),
             /* @__PURE__ */ jsx("b", { children: "Dashboard" })
           ] })
-        ] })
+        ] }),
+        /* @__PURE__ */ jsx(JazzWidget, { mode: "admin" })
       ] }),
       /* @__PURE__ */ jsx(SupportAlert, { initial: data.waiting }),
       /* @__PURE__ */ jsx("main", { className: "content", children })
@@ -9234,6 +9606,9 @@ const links$4 = () => [{
 }, {
   rel: "stylesheet",
   href: dashboardStyles
+}, {
+  rel: "stylesheet",
+  href: jazzWidgetStyles
 }];
 const loader$h = async ({
   request
@@ -9293,7 +9668,7 @@ const ErrorBoundary = UNSAFE_withErrorBoundaryProps(function ErrorBoundary2() {
 const headers$g = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
-const route17 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route19 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   ErrorBoundary,
   default: app,
@@ -9540,7 +9915,8 @@ async function loadDashboardData(shop, range, now = Date.now()) {
       var _a3, _b2;
       return {
         id: c.id,
-        name: c.customerName || c.phone,
+        name: c.customerName || (c.channel === "web" ? `Website visitor ${c.phone.replace(/^web:/, "").slice(0, 4).toUpperCase()}` : c.phone),
+        channel: c.channel,
         phone: c.phone,
         reason: c.handoffReason,
         at: (c.lastInboundAt ?? c.lastMessageAt).toISOString(),
@@ -10078,8 +10454,8 @@ const app__index = UNSAFE_withComponentProps(function Dashboard() {
       }), /* @__PURE__ */ jsx("ul", {
         children: d.waiting.slice(0, 4).map((c) => /* @__PURE__ */ jsxs("li", {
           children: [/* @__PURE__ */ jsxs("div", {
-            children: [/* @__PURE__ */ jsx("b", {
-              children: c.name
+            children: [/* @__PURE__ */ jsxs("b", {
+              children: [c.name, c.channel === "web" ? " 🌐" : ""]
             }), /* @__PURE__ */ jsx("small", {
               children: c.reason || "Asked for the support team"
             })]
@@ -10087,7 +10463,7 @@ const app__index = UNSAFE_withComponentProps(function Dashboard() {
             children: ago$1(c.at)
           }), /* @__PURE__ */ jsx(Link, {
             className: "sa-btn",
-            to: `/app/conversations?c=${c.id}&filter=human`,
+            to: `/app/conversations?c=${c.id}&channel=${c.channel}&filter=human`,
             children: "Attend"
           })]
         }, c.id))
@@ -10777,11 +11153,11 @@ const app__index = UNSAFE_withComponentProps(function Dashboard() {
           className: "db-list",
           children: d.waiting.map((c) => /* @__PURE__ */ jsx("li", {
             children: /* @__PURE__ */ jsxs(Link, {
-              to: `/app/conversations?c=${c.id}`,
+              to: `/app/conversations?c=${c.id}&channel=${c.channel}`,
               children: [/* @__PURE__ */ jsxs("span", {
                 className: "db-list-main",
-                children: [/* @__PURE__ */ jsx("b", {
-                  children: c.name
+                children: [/* @__PURE__ */ jsxs("b", {
+                  children: [c.name, c.channel === "web" ? " 🌐" : ""]
                 }), /* @__PURE__ */ jsx("span", {
                   children: c.reason || c.preview || "—"
                 })]
@@ -10916,7 +11292,7 @@ const app__index = UNSAFE_withComponentProps(function Dashboard() {
   });
 });
 const headers$f = (headersArgs) => boundary.headers(headersArgs);
-const route18 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route20 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app__index,
   headers: headers$f,
@@ -10948,9 +11324,11 @@ const loader$f = async ({
   const q = (url.searchParams.get("q") ?? "").trim().slice(0, 60);
   const filter = url.searchParams.get("filter") ?? "all";
   const selectedId = url.searchParams.get("c");
+  const channel = url.searchParams.get("channel") === "web" ? "web" : url.searchParams.get("channel") === "whatsapp" ? "whatsapp" : "all";
   const where = {
     shop: session.shop
   };
+  if (channel !== "all") where.channel = channel;
   if (q) where.OR = [{
     phone: {
       contains: q.replace(/[^\d+]/g, "") || q
@@ -10993,10 +11371,30 @@ const loader$f = async ({
       }
     }
   }) : null;
+  const grouped = await prisma.conversation.groupBy({
+    by: ["channel", "mode"],
+    where: {
+      shop: session.shop,
+      status: "open"
+    },
+    _count: {
+      _all: true
+    }
+  });
+  const tally = (ch) => ({
+    total: grouped.filter((g2) => g2.channel === ch).reduce((n, g2) => n + g2._count._all, 0),
+    agent: grouped.filter((g2) => g2.channel === ch && g2.mode === "human").reduce((n, g2) => n + g2._count._all, 0)
+  });
+  const counts = {
+    whatsapp: tally("whatsapp"),
+    web: tally("web")
+  };
   const preview = (m) => !m ? "" : `${m.direction === "out" ? "✓ " : ""}${m.body || (m.mediaKind ? `📎 ${m.mediaKind}` : "")}`.slice(0, 70);
   return {
     q,
     filter,
+    channel,
+    counts,
     canSendFiles: activeProvider() === "qr",
     list: list2.map((c) => ({
       id: c.id,
@@ -11004,6 +11402,7 @@ const loader$f = async ({
       name: c.customerName,
       mode: c.mode,
       status: c.status,
+      channel: c.channel,
       avatar: c.avatarFile ? signedAvatarUrl(c.id) : null,
       last: c.lastMessageAt.toISOString(),
       preview: preview(c.messages[0])
@@ -11013,6 +11412,7 @@ const loader$f = async ({
       phone: selected.phone,
       name: selected.customerName,
       mode: selected.mode,
+      channel: selected.channel,
       avatar: selected.avatarFile ? signedAvatarUrl(selected.id) : null,
       status: selected.status,
       handoffReason: selected.handoffReason,
@@ -11146,6 +11546,10 @@ const action$7 = async ({
         ok: false,
         message: "Take over the conversation before replying."
       };
+      if (conv.channel === "web" && hasFile) return {
+        ok: false,
+        message: "Files cannot be sent in website chats. Send text only."
+      };
       let media;
       if (hasFile) {
         const mime = (file.type || "").split(";")[0].toLowerCase();
@@ -11212,6 +11616,18 @@ const dayLabel = (iso) => {
     year: "numeric"
   });
 };
+const who = (c) => c.name ?? (c.channel === "web" ? `Website visitor ${c.phone.replace(/^web:/, "").slice(0, 4).toUpperCase()}` : c.phone);
+const ChannelBadge = ({
+  channel
+}) => channel === "web" ? /* @__PURE__ */ jsx("span", {
+  className: "o-badge info",
+  title: "Chatting on your website",
+  children: "🌐 Website"
+}) : /* @__PURE__ */ jsx("span", {
+  className: "o-badge success",
+  title: "Chatting on WhatsApp",
+  children: "WhatsApp"
+});
 const initials = (n) => (n.replace(/[^\p{L}\p{N} ]/gu, "").trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join("") || "#").toUpperCase();
 function Avatar({
   src,
@@ -11325,6 +11741,8 @@ const app_conversations = UNSAFE_withComponentProps(function Conversations() {
     selected,
     q,
     filter,
+    channel,
+    counts,
     canSendFiles
   } = useLoaderData();
   const result = useActionData();
@@ -11374,10 +11792,31 @@ const app_conversations = UNSAFE_withComponentProps(function Conversations() {
       className: "wa",
       children: [/* @__PURE__ */ jsxs("aside", {
         className: "wa-side",
-        children: [/* @__PURE__ */ jsxs(Form, {
+        children: [/* @__PURE__ */ jsx("div", {
+          className: "wa-tabs",
+          role: "tablist",
+          "aria-label": "Chat channel",
+          children: [["all", "All", 0], ["whatsapp", "WhatsApp", counts.whatsapp.agent], ["web", "🌐 Website", counts.web.agent]].map(([key2, label2, waiting]) => /* @__PURE__ */ jsxs(Link, {
+            role: "tab",
+            "aria-selected": channel === key2,
+            className: `wa-tab${channel === key2 ? " on" : ""}`,
+            to: `?channel=${key2}&filter=${filter}&q=${encodeURIComponent(q)}`,
+            children: [label2, key2 !== "all" && /* @__PURE__ */ jsx("small", {
+              children: counts[key2].total
+            }), waiting > 0 && /* @__PURE__ */ jsx("span", {
+              className: "o-badge warning",
+              title: "Waiting for a person",
+              children: waiting
+            })]
+          }, key2))
+        }), /* @__PURE__ */ jsxs(Form, {
           method: "get",
           className: "wa-search",
           children: [/* @__PURE__ */ jsx("input", {
+            type: "hidden",
+            name: "channel",
+            value: channel
+          }), /* @__PURE__ */ jsx("input", {
             name: "q",
             defaultValue: q,
             placeholder: "Search name or number",
@@ -11413,19 +11852,19 @@ const app_conversations = UNSAFE_withComponentProps(function Conversations() {
             style: {
               padding: 16
             },
-            children: "No conversations yet. Messages appear here when customers write in on WhatsApp."
+            children: channel === "web" ? "No website chats yet. Turn on the JAZZ icon in Bot Settings and chats from your website appear here." : "No conversations yet. Messages appear here when customers write in on WhatsApp."
           }), list2.map((c) => /* @__PURE__ */ jsxs(Link, {
             className: `wa-item ${(selected == null ? void 0 : selected.id) === c.id ? "active" : ""}`,
-            to: `?c=${c.id}&filter=${filter}&q=${encodeURIComponent(q)}`,
+            to: `?c=${c.id}&channel=${channel}&filter=${filter}&q=${encodeURIComponent(q)}`,
             children: [/* @__PURE__ */ jsx(Avatar, {
               src: c.avatar,
-              label: c.name ?? c.phone
+              label: c.channel === "web" && !c.name ? "W" : c.name ?? c.phone
             }), /* @__PURE__ */ jsxs("span", {
               className: "wa-item-main",
               children: [/* @__PURE__ */ jsxs("span", {
                 className: "wa-item-top",
                 children: [/* @__PURE__ */ jsx("b", {
-                  children: c.name ?? c.phone
+                  children: who(c)
                 }), /* @__PURE__ */ jsx("small", {
                   children: listTime(c.last)
                 })]
@@ -11434,6 +11873,8 @@ const app_conversations = UNSAFE_withComponentProps(function Conversations() {
                 children: [/* @__PURE__ */ jsx("span", {
                   className: "wa-preview",
                   children: c.preview
+                }), channel === "all" && /* @__PURE__ */ jsx(ChannelBadge, {
+                  channel: c.channel
                 }), c.mode === "human" && /* @__PURE__ */ jsx("span", {
                   className: "o-badge warning",
                   children: "Agent"
@@ -11465,13 +11906,15 @@ const app_conversations = UNSAFE_withComponentProps(function Conversations() {
             className: "wa-head",
             children: [/* @__PURE__ */ jsx(Avatar, {
               src: selected.avatar,
-              label: selected.name ?? selected.phone
+              label: selected.channel === "web" && !selected.name ? "W" : selected.name ?? selected.phone
             }), /* @__PURE__ */ jsxs("div", {
               className: "wa-head-main",
-              children: [/* @__PURE__ */ jsx("b", {
-                children: selected.name ?? selected.phone
+              children: [/* @__PURE__ */ jsxs("b", {
+                children: [who(selected), " ", /* @__PURE__ */ jsx(ChannelBadge, {
+                  channel: selected.channel
+                })]
               }), /* @__PURE__ */ jsxs("small", {
-                children: [selected.name ? `${selected.phone} · ` : "", selected.mode === "human" ? `Agent mode${selected.handoffReason ? ` (${selected.handoffReason})` : ""}` : "JAZZ is replying"]
+                children: [selected.name && selected.channel !== "web" ? `${selected.phone} · ` : "", selected.mode === "human" ? `Agent mode${selected.handoffReason ? ` (${selected.handoffReason})` : ""}` : "JAZZ is replying"]
               })]
             }), /* @__PURE__ */ jsxs("div", {
               className: "wa-actions",
@@ -11580,7 +12023,7 @@ const app_conversations = UNSAFE_withComponentProps(function Conversations() {
               className: "wa-compose-row",
               children: [/* @__PURE__ */ jsx(EmojiPicker, {
                 onPick: insertEmoji
-              }), canSendFiles ? /* @__PURE__ */ jsxs(Fragment, {
+              }), canSendFiles && selected.channel !== "web" ? /* @__PURE__ */ jsxs(Fragment, {
                 children: [/* @__PURE__ */ jsx("button", {
                   type: "button",
                   className: "o-icon",
@@ -11623,7 +12066,10 @@ const app_conversations = UNSAFE_withComponentProps(function Conversations() {
                 "aria-label": "Send",
                 children: "➤"
               })]
-            }), !canSendFiles && /* @__PURE__ */ jsx("small", {
+            }), selected.channel === "web" && /* @__PURE__ */ jsx("small", {
+              className: "o-muted",
+              children: "This visitor is on your website: they see your reply in their chat box. Text only."
+            }), !canSendFiles && selected.channel !== "web" && /* @__PURE__ */ jsx("small", {
               className: "o-muted",
               children: "Sending files needs the WhatsApp Web (QR) connection."
             })]
@@ -11651,7 +12097,7 @@ const app_conversations = UNSAFE_withComponentProps(function Conversations() {
   });
 });
 const headers$e = (headersArgs) => boundary.headers(headersArgs);
-const route19 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route21 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$7,
   default: app_conversations,
@@ -11961,7 +12407,7 @@ const app_enquiries = UNSAFE_withComponentProps(function Enquiries() {
   });
 });
 const headers$d = (headersArgs) => boundary.headers(headersArgs);
-const route20 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route22 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app_enquiries,
   headers: headers$d,
@@ -12520,7 +12966,7 @@ The old images are removed from those products and cannot be restored from this 
   });
 });
 const headers$c = (headersArgs) => boundary.headers(headersArgs);
-const route21 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route23 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app_imageBulk,
   headers: headers$c,
@@ -13271,7 +13717,7 @@ const app_imageEditor = UNSAFE_withComponentProps(function ImageEditor() {
   });
 });
 const headers$b = (headersArgs) => boundary.headers(headersArgs);
-const route22 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route24 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app_imageEditor,
   headers: headers$b,
@@ -13886,7 +14332,7 @@ The original of each image is saved first, so you can restore it with one click.
   });
 });
 const headers$a = (headersArgs) => boundary.headers(headersArgs);
-const route23 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route25 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app_imageProducts,
   headers: headers$a,
@@ -14131,7 +14577,7 @@ const app_integrations = UNSAFE_withComponentProps(function Integrations() {
   });
 });
 const headers$9 = (headersArgs) => boundary.headers(headersArgs);
-const route24 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route26 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$6,
   default: app_integrations,
@@ -14292,7 +14738,7 @@ const app_logs = UNSAFE_withComponentProps(function Logs() {
   });
 });
 const headers$8 = (headersArgs) => boundary.headers(headersArgs);
-const route25 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route27 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$5,
   default: app_logs,
@@ -15426,7 +15872,7 @@ const app_orderSheet = UNSAFE_withComponentProps(function OrderSheet() {
   });
 });
 const headers$7 = (headersArgs) => boundary.headers(headersArgs);
-const route26 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route28 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$4,
   default: app_orderSheet,
@@ -15553,7 +15999,7 @@ const app_orders = UNSAFE_withComponentProps(function Orders() {
   });
 });
 const headers$6 = (headersArgs) => boundary.headers(headersArgs);
-const route27 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route29 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app_orders,
   headers: headers$6,
@@ -16193,7 +16639,7 @@ const app_productScrapper = UNSAFE_withComponentProps(function ProductScrapper()
   });
 });
 const headers$5 = (headersArgs) => boundary.headers(headersArgs);
-const route28 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route30 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$3,
   default: app_productScrapper,
@@ -16321,7 +16767,7 @@ const app_products = UNSAFE_withComponentProps(function Products() {
   });
 });
 const headers$4 = (headersArgs) => boundary.headers(headersArgs);
-const route29 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route31 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app_products,
   headers: headers$4,
@@ -16632,7 +17078,7 @@ const app_quickReplies = UNSAFE_withComponentProps(function QuickReplies() {
   });
 });
 const headers$3 = (headersArgs) => boundary.headers(headersArgs);
-const route30 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route32 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$2,
   default: app_quickReplies,
@@ -18027,7 +18473,7 @@ const app_seo = UNSAFE_withComponentProps(function Seo() {
   });
 });
 const headers$2 = (headersArgs) => boundary.headers(headersArgs);
-const route31 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route33 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: app_seo,
   headers: headers$2,
@@ -18209,6 +18655,34 @@ const app_settings = UNSAFE_withComponentProps(function Settings() {
           })
         })]
       }), /* @__PURE__ */ jsxs(Card, {
+        title: "JAZZ icon on the website",
+        children: [/* @__PURE__ */ jsx("p", {
+          children: /* @__PURE__ */ jsxs("label", {
+            children: [/* @__PURE__ */ jsx("input", {
+              type: "checkbox",
+              name: "webWidget",
+              defaultChecked: settings.webWidget
+            }), " Show the JAZZ chat icon on the website"]
+          })
+        }), /* @__PURE__ */ jsxs("p", {
+          className: "o-muted",
+          children: ["A round JAZZ button appears at the top right of the website. A visitor can open it to read what JAZZ does, tap ", /* @__PURE__ */ jsx("b", {
+            children: "Chat on WhatsApp"
+          }), ", or chat with JAZZ right on the page. Those chats show up in Live Inbox under ", /* @__PURE__ */ jsx("b", {
+            children: "Website"
+          }), ". Off = the icon is hidden for visitors."]
+        }), /* @__PURE__ */ jsxs("label", {
+          className: "o-field",
+          children: [/* @__PURE__ */ jsx("span", {
+            children: "WhatsApp number for the button (with country code, e.g. +91 92118 90093). Empty = the support number."
+          }), /* @__PURE__ */ jsx("input", {
+            name: "widgetWhatsapp",
+            defaultValue: settings.widgetWhatsapp ? `+${settings.widgetWhatsapp}` : "",
+            placeholder: "+91 92118 90093",
+            inputMode: "tel"
+          })]
+        })]
+      }), /* @__PURE__ */ jsxs(Card, {
         title: "Personal numbers (bot stays silent)",
         children: [/* @__PURE__ */ jsxs("p", {
           className: "o-muted",
@@ -18382,7 +18856,7 @@ const app_settings = UNSAFE_withComponentProps(function Settings() {
   });
 });
 const headers$1 = (headersArgs) => boundary.headers(headersArgs);
-const route32 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route34 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$1,
   default: app_settings,
@@ -18399,7 +18873,7 @@ const loader$1 = async ({
     waiting: await getWaiting(session.shop)
   };
 };
-const route33 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route35 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   loader: loader$1
 }, Symbol.toStringTag, { value: "Module" }));
@@ -18702,14 +19176,14 @@ const app_whatsappWeb = UNSAFE_withComponentProps(function WhatsAppWeb() {
   });
 });
 const headers = (headersArgs) => boundary.headers(headersArgs);
-const route34 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route36 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action,
   default: app_whatsappWeb,
   headers,
   loader
 }, Symbol.toStringTag, { value: "Module" }));
-const serverManifest = { "entry": { "module": "/assets/entry.client-De-QXFzv.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-Bgn1TnLL.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index/route": { "id": "routes/_index/route", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-CbXaqBCC.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/health": { "id": "routes/health", "parentId": "root", "path": "health", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/health-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.cancelled": { "id": "routes/webhooks.orders.cancelled", "parentId": "root", "path": "webhooks/orders/cancelled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.cancelled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.create": { "id": "routes/webhooks.orders.create", "parentId": "root", "path": "webhooks/orders/create", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.create-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.updated": { "id": "routes/webhooks.orders.updated", "parentId": "root", "path": "webhooks/orders/updated", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.updated-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.products.update": { "id": "routes/webhooks.products.update", "parentId": "root", "path": "webhooks/products/update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.products.update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.avatar.$id": { "id": "routes/api.avatar.$id", "parentId": "root", "path": "api/avatar/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.avatar._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.finder.$": { "id": "routes/api.finder.$", "parentId": "root", "path": "api/finder/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.finder._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.image-editor.$": { "id": "routes/api.image-editor.$", "parentId": "root", "path": "api/image-editor/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.image-editor._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.media.$id": { "id": "routes/api.media.$id", "parentId": "root", "path": "api/media/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.media._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.send": { "id": "routes/api.send", "parentId": "root", "path": "api/send", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.send-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.seo.$": { "id": "routes/api.seo.$", "parentId": "root", "path": "api/seo/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.seo._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.webhooks.whatsapp": { "id": "routes/api.webhooks.whatsapp", "parentId": "root", "path": "api/webhooks/whatsapp", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.webhooks.whatsapp-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-B1XOFBU8.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/wand-sparkles-BdPk82tl.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/sparkles-xFG9LRwy.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-DtrZvsik.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/wand-sparkles-BdPk82tl.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/circle-check-CgxXrolP.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.conversations": { "id": "routes/app.conversations", "parentId": "routes/app", "path": "conversations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.conversations-BNXOjWJh.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.enquiries": { "id": "routes/app.enquiries", "parentId": "routes/app", "path": "enquiries", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.enquiries-COB6tued.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-bulk": { "id": "routes/app.image-bulk", "parentId": "routes/app", "path": "image-bulk", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-bulk-DqWooGbZ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-editor": { "id": "routes/app.image-editor", "parentId": "routes/app", "path": "image-editor", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-editor-BnCa-ubo.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BgNR0BkF.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js", "/assets/x-DIQ7-F4l.js", "/assets/chevron-down-DgceB_EA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-products": { "id": "routes/app.image-products", "parentId": "routes/app", "path": "image-products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-products-Nq2XpDHu.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BgNR0BkF.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js", "/assets/chevron-down-DgceB_EA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.integrations": { "id": "routes/app.integrations", "parentId": "routes/app", "path": "integrations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.integrations-C8fIC8u9.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.logs": { "id": "routes/app.logs", "parentId": "routes/app", "path": "logs", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.logs-lqPVshDm.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.order-sheet": { "id": "routes/app.order-sheet", "parentId": "routes/app", "path": "order-sheet", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.order-sheet-AP8WeaL_.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/x-DIQ7-F4l.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.orders": { "id": "routes/app.orders", "parentId": "routes/app", "path": "orders", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.orders-Dn87TNmU.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.product-scrapper": { "id": "routes/app.product-scrapper", "parentId": "routes/app", "path": "product-scrapper", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.product-scrapper-CpJb0ZY2.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/search-Brt88N_W.js", "/assets/trash-B5HXC6TW.js", "/assets/download-2kZZwBYa.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.products": { "id": "routes/app.products", "parentId": "routes/app", "path": "products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.products-bWC2Cbow.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.quick-replies": { "id": "routes/app.quick-replies", "parentId": "routes/app", "path": "quick-replies", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.quick-replies-C0KLsZI0.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.seo": { "id": "routes/app.seo", "parentId": "routes/app", "path": "seo", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.seo-eZqunjrD.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/scan-search-B8PBngg6.js", "/assets/circle-check-CgxXrolP.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/chevron-down-DgceB_EA.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/rotate-ccw-B15igVXZ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.settings": { "id": "routes/app.settings", "parentId": "routes/app", "path": "settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.settings-32-KZDeT.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.waiting": { "id": "routes/app.waiting", "parentId": "routes/app", "path": "waiting", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/app.waiting-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.whatsapp-web": { "id": "routes/app.whatsapp-web", "parentId": "routes/app", "path": "whatsapp-web", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.whatsapp-web-DVCBcFNB.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-e4e486a4.js", "version": "e4e486a4", "sri": void 0 };
+const serverManifest = { "entry": { "module": "/assets/entry.client-De-QXFzv.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-Bgn1TnLL.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index/route": { "id": "routes/_index/route", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-Ddaioa3q.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/jazz-widget-BhYXlPL4.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/health": { "id": "routes/health", "parentId": "root", "path": "health", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/health-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.cancelled": { "id": "routes/webhooks.orders.cancelled", "parentId": "root", "path": "webhooks/orders/cancelled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.cancelled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.create": { "id": "routes/webhooks.orders.create", "parentId": "root", "path": "webhooks/orders/create", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.create-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.updated": { "id": "routes/webhooks.orders.updated", "parentId": "root", "path": "webhooks/orders/updated", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.updated-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.products.update": { "id": "routes/webhooks.products.update", "parentId": "root", "path": "webhooks/products/update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.products.update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.avatar.$id": { "id": "routes/api.avatar.$id", "parentId": "root", "path": "api/avatar/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.avatar._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.chat": { "id": "routes/api.chat", "parentId": "root", "path": "api/chat", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.chat-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.chat-admin": { "id": "routes/api.chat-admin", "parentId": "root", "path": "api/chat-admin", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.chat-admin-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.finder.$": { "id": "routes/api.finder.$", "parentId": "root", "path": "api/finder/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.finder._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.image-editor.$": { "id": "routes/api.image-editor.$", "parentId": "root", "path": "api/image-editor/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.image-editor._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.media.$id": { "id": "routes/api.media.$id", "parentId": "root", "path": "api/media/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.media._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.send": { "id": "routes/api.send", "parentId": "root", "path": "api/send", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.send-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.seo.$": { "id": "routes/api.seo.$", "parentId": "root", "path": "api/seo/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.seo._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.webhooks.whatsapp": { "id": "routes/api.webhooks.whatsapp", "parentId": "root", "path": "api/webhooks/whatsapp", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.webhooks.whatsapp-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-9Mt-17iu.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/jazz-widget-BhYXlPL4.js", "/assets/wand-sparkles-BdPk82tl.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/sparkles-xFG9LRwy.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-DxZANANM.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/wand-sparkles-BdPk82tl.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/circle-check-CgxXrolP.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.conversations": { "id": "routes/app.conversations", "parentId": "routes/app", "path": "conversations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.conversations-DQBsNSar.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.enquiries": { "id": "routes/app.enquiries", "parentId": "routes/app", "path": "enquiries", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.enquiries-COB6tued.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-bulk": { "id": "routes/app.image-bulk", "parentId": "routes/app", "path": "image-bulk", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-bulk-DqWooGbZ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-editor": { "id": "routes/app.image-editor", "parentId": "routes/app", "path": "image-editor", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-editor-BnCa-ubo.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BgNR0BkF.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js", "/assets/x-DIQ7-F4l.js", "/assets/chevron-down-DgceB_EA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-products": { "id": "routes/app.image-products", "parentId": "routes/app", "path": "image-products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-products-Nq2XpDHu.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BgNR0BkF.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js", "/assets/chevron-down-DgceB_EA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.integrations": { "id": "routes/app.integrations", "parentId": "routes/app", "path": "integrations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.integrations-C8fIC8u9.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.logs": { "id": "routes/app.logs", "parentId": "routes/app", "path": "logs", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.logs-lqPVshDm.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.order-sheet": { "id": "routes/app.order-sheet", "parentId": "routes/app", "path": "order-sheet", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.order-sheet-AP8WeaL_.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/x-DIQ7-F4l.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.orders": { "id": "routes/app.orders", "parentId": "routes/app", "path": "orders", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.orders-Dn87TNmU.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.product-scrapper": { "id": "routes/app.product-scrapper", "parentId": "routes/app", "path": "product-scrapper", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.product-scrapper-CpJb0ZY2.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/search-Brt88N_W.js", "/assets/trash-B5HXC6TW.js", "/assets/download-2kZZwBYa.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.products": { "id": "routes/app.products", "parentId": "routes/app", "path": "products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.products-bWC2Cbow.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.quick-replies": { "id": "routes/app.quick-replies", "parentId": "routes/app", "path": "quick-replies", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.quick-replies-C0KLsZI0.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.seo": { "id": "routes/app.seo", "parentId": "routes/app", "path": "seo", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.seo-eZqunjrD.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/scan-search-B8PBngg6.js", "/assets/circle-check-CgxXrolP.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/chevron-down-DgceB_EA.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/rotate-ccw-B15igVXZ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.settings": { "id": "routes/app.settings", "parentId": "routes/app", "path": "settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.settings-kRvsMYfT.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.waiting": { "id": "routes/app.waiting", "parentId": "routes/app", "path": "waiting", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/app.waiting-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.whatsapp-web": { "id": "routes/app.whatsapp-web", "parentId": "routes/app", "path": "whatsapp-web", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.whatsapp-web-DVCBcFNB.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-b000a359.js", "version": "b000a359", "sri": void 0 };
 const assetsBuildDirectory = "build/client";
 const basename = "/";
 const future = { "unstable_optimizeDeps": false, "v8_passThroughRequests": false, "v8_trailingSlashAwareDataRequests": false, "unstable_previewServerPrerendering": false, "v8_middleware": false, "v8_splitRouteModules": false, "v8_viteEnvironmentApi": false };
@@ -18808,13 +19282,29 @@ const routes = {
     caseSensitive: void 0,
     module: route10
   },
+  "routes/api.chat": {
+    id: "routes/api.chat",
+    parentId: "root",
+    path: "api/chat",
+    index: void 0,
+    caseSensitive: void 0,
+    module: route11
+  },
+  "routes/api.chat-admin": {
+    id: "routes/api.chat-admin",
+    parentId: "root",
+    path: "api/chat-admin",
+    index: void 0,
+    caseSensitive: void 0,
+    module: route12
+  },
   "routes/api.finder.$": {
     id: "routes/api.finder.$",
     parentId: "root",
     path: "api/finder/*",
     index: void 0,
     caseSensitive: void 0,
-    module: route11
+    module: route13
   },
   "routes/api.image-editor.$": {
     id: "routes/api.image-editor.$",
@@ -18822,7 +19312,7 @@ const routes = {
     path: "api/image-editor/*",
     index: void 0,
     caseSensitive: void 0,
-    module: route12
+    module: route14
   },
   "routes/api.media.$id": {
     id: "routes/api.media.$id",
@@ -18830,7 +19320,7 @@ const routes = {
     path: "api/media/:id",
     index: void 0,
     caseSensitive: void 0,
-    module: route13
+    module: route15
   },
   "routes/api.send": {
     id: "routes/api.send",
@@ -18838,7 +19328,7 @@ const routes = {
     path: "api/send",
     index: void 0,
     caseSensitive: void 0,
-    module: route14
+    module: route16
   },
   "routes/api.seo.$": {
     id: "routes/api.seo.$",
@@ -18846,7 +19336,7 @@ const routes = {
     path: "api/seo/*",
     index: void 0,
     caseSensitive: void 0,
-    module: route15
+    module: route17
   },
   "routes/api.webhooks.whatsapp": {
     id: "routes/api.webhooks.whatsapp",
@@ -18854,7 +19344,7 @@ const routes = {
     path: "api/webhooks/whatsapp",
     index: void 0,
     caseSensitive: void 0,
-    module: route16
+    module: route18
   },
   "routes/app": {
     id: "routes/app",
@@ -18862,7 +19352,7 @@ const routes = {
     path: "app",
     index: void 0,
     caseSensitive: void 0,
-    module: route17
+    module: route19
   },
   "routes/app._index": {
     id: "routes/app._index",
@@ -18870,7 +19360,7 @@ const routes = {
     path: void 0,
     index: true,
     caseSensitive: void 0,
-    module: route18
+    module: route20
   },
   "routes/app.conversations": {
     id: "routes/app.conversations",
@@ -18878,7 +19368,7 @@ const routes = {
     path: "conversations",
     index: void 0,
     caseSensitive: void 0,
-    module: route19
+    module: route21
   },
   "routes/app.enquiries": {
     id: "routes/app.enquiries",
@@ -18886,7 +19376,7 @@ const routes = {
     path: "enquiries",
     index: void 0,
     caseSensitive: void 0,
-    module: route20
+    module: route22
   },
   "routes/app.image-bulk": {
     id: "routes/app.image-bulk",
@@ -18894,7 +19384,7 @@ const routes = {
     path: "image-bulk",
     index: void 0,
     caseSensitive: void 0,
-    module: route21
+    module: route23
   },
   "routes/app.image-editor": {
     id: "routes/app.image-editor",
@@ -18902,7 +19392,7 @@ const routes = {
     path: "image-editor",
     index: void 0,
     caseSensitive: void 0,
-    module: route22
+    module: route24
   },
   "routes/app.image-products": {
     id: "routes/app.image-products",
@@ -18910,7 +19400,7 @@ const routes = {
     path: "image-products",
     index: void 0,
     caseSensitive: void 0,
-    module: route23
+    module: route25
   },
   "routes/app.integrations": {
     id: "routes/app.integrations",
@@ -18918,7 +19408,7 @@ const routes = {
     path: "integrations",
     index: void 0,
     caseSensitive: void 0,
-    module: route24
+    module: route26
   },
   "routes/app.logs": {
     id: "routes/app.logs",
@@ -18926,7 +19416,7 @@ const routes = {
     path: "logs",
     index: void 0,
     caseSensitive: void 0,
-    module: route25
+    module: route27
   },
   "routes/app.order-sheet": {
     id: "routes/app.order-sheet",
@@ -18934,7 +19424,7 @@ const routes = {
     path: "order-sheet",
     index: void 0,
     caseSensitive: void 0,
-    module: route26
+    module: route28
   },
   "routes/app.orders": {
     id: "routes/app.orders",
@@ -18942,7 +19432,7 @@ const routes = {
     path: "orders",
     index: void 0,
     caseSensitive: void 0,
-    module: route27
+    module: route29
   },
   "routes/app.product-scrapper": {
     id: "routes/app.product-scrapper",
@@ -18950,7 +19440,7 @@ const routes = {
     path: "product-scrapper",
     index: void 0,
     caseSensitive: void 0,
-    module: route28
+    module: route30
   },
   "routes/app.products": {
     id: "routes/app.products",
@@ -18958,7 +19448,7 @@ const routes = {
     path: "products",
     index: void 0,
     caseSensitive: void 0,
-    module: route29
+    module: route31
   },
   "routes/app.quick-replies": {
     id: "routes/app.quick-replies",
@@ -18966,7 +19456,7 @@ const routes = {
     path: "quick-replies",
     index: void 0,
     caseSensitive: void 0,
-    module: route30
+    module: route32
   },
   "routes/app.seo": {
     id: "routes/app.seo",
@@ -18974,7 +19464,7 @@ const routes = {
     path: "seo",
     index: void 0,
     caseSensitive: void 0,
-    module: route31
+    module: route33
   },
   "routes/app.settings": {
     id: "routes/app.settings",
@@ -18982,7 +19472,7 @@ const routes = {
     path: "settings",
     index: void 0,
     caseSensitive: void 0,
-    module: route32
+    module: route34
   },
   "routes/app.waiting": {
     id: "routes/app.waiting",
@@ -18990,7 +19480,7 @@ const routes = {
     path: "waiting",
     index: void 0,
     caseSensitive: void 0,
-    module: route33
+    module: route35
   },
   "routes/app.whatsapp-web": {
     id: "routes/app.whatsapp-web",
@@ -18998,7 +19488,7 @@ const routes = {
     path: "whatsapp-web",
     index: void 0,
     caseSensitive: void 0,
-    module: route34
+    module: route36
   }
 };
 const allowedActionOrigins = false;

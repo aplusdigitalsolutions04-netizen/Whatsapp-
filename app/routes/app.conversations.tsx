@@ -21,8 +21,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const q = (url.searchParams.get("q") ?? "").trim().slice(0, 60);
   const filter = url.searchParams.get("filter") ?? "all";
   const selectedId = url.searchParams.get("c");
+  const channel = url.searchParams.get("channel") === "web" ? "web" : url.searchParams.get("channel") === "whatsapp" ? "whatsapp" : "all";
 
   const where: Record<string, unknown> = { shop: session.shop };
+  if (channel !== "all") where.channel = channel;
   if (q) where.OR = [{ phone: { contains: q.replace(/[^\d+]/g, "") || q } }, { customerName: { contains: q } }];
   if (filter === "human") where.mode = "human";
   if (filter === "bot") where.mode = "bot";
@@ -42,20 +44,30 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       })
     : null;
 
+  // How many chats each channel has, and how many of them wait for a person (shown on the tabs).
+  const grouped = await prisma.conversation.groupBy({ by: ["channel", "mode"], where: { shop: session.shop, status: "open" }, _count: { _all: true } });
+  const tally = (ch: string) => ({
+    total: grouped.filter((g) => g.channel === ch).reduce((n, g) => n + g._count._all, 0),
+    agent: grouped.filter((g) => g.channel === ch && g.mode === "human").reduce((n, g) => n + g._count._all, 0),
+  });
+  const counts = { whatsapp: tally("whatsapp"), web: tally("web") };
+
   const preview = (m?: { body: string; mediaKind: string | null; direction: string }) =>
     !m ? "" : `${m.direction === "out" ? "✓ " : ""}${m.body || (m.mediaKind ? `📎 ${m.mediaKind}` : "")}`.slice(0, 70);
 
   return {
     q,
     filter,
+    channel,
+    counts,
     canSendFiles: activeProvider() === "qr",
     list: list.map((c) => ({
-      id: c.id, phone: c.phone, name: c.customerName, mode: c.mode, status: c.status,
+      id: c.id, phone: c.phone, name: c.customerName, mode: c.mode, status: c.status, channel: c.channel,
       avatar: c.avatarFile ? signedAvatarUrl(c.id) : null,
       last: c.lastMessageAt.toISOString(), preview: preview(c.messages[0]),
     })),
     selected: selected && {
-      id: selected.id, phone: selected.phone, name: selected.customerName, mode: selected.mode,
+      id: selected.id, phone: selected.phone, name: selected.customerName, mode: selected.mode, channel: selected.channel,
       avatar: selected.avatarFile ? signedAvatarUrl(selected.id) : null,
       status: selected.status, handoffReason: selected.handoffReason,
       messages: selected.messages.map((m) => ({
@@ -101,6 +113,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const hasFile = file instanceof File && file.size > 0;
       if (!body && !hasFile) return { ok: false, message: "Type a message or attach a file." };
       if (conv.mode !== "human") return { ok: false, message: "Take over the conversation before replying." };
+      if (conv.channel === "web" && hasFile) return { ok: false, message: "Files cannot be sent in website chats. Send text only." };
 
       let media: { kind: string; mime: string; name?: string; file: string } | undefined;
       if (hasFile) {
@@ -131,6 +144,11 @@ const dayLabel = (iso: string) => {
   if (d.toDateString() === yest.toDateString()) return "Yesterday";
   return d.toLocaleDateString([], { day: "numeric", month: "long", year: "numeric" });
 };
+/** What the owner sees for a chat: the customer's name, or for a website visitor "Website visitor" plus a short code. */
+const who = (c: { name: string | null; phone: string; channel: string }) =>
+  c.name ?? (c.channel === "web" ? `Website visitor ${c.phone.replace(/^web:/, "").slice(0, 4).toUpperCase()}` : c.phone);
+const ChannelBadge = ({ channel }: { channel: string }) =>
+  channel === "web" ? <span className="o-badge info" title="Chatting on your website">🌐 Website</span> : <span className="o-badge success" title="Chatting on WhatsApp">WhatsApp</span>;
 const initials = (n: string) => (n.replace(/[^\p{L}\p{N} ]/gu, "").trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join("") || "#").toUpperCase();
 
 /** WhatsApp profile picture, or initials when the customer has none (or keeps it private). */
@@ -182,7 +200,7 @@ function Ticks({ status }: { status: string }) {
 }
 
 export default function Conversations() {
-  const { list, selected, q, filter, canSendFiles } = useLoaderData<typeof loader>();
+  const { list, selected, q, filter, channel, counts, canSendFiles } = useLoaderData<typeof loader>();
   const result = useActionData<typeof action>();
   const nav = useNavigation();
   const shopify = useAppBridge();
@@ -230,7 +248,17 @@ export default function Conversations() {
     <Page title="Conversations">
       <div className="wa">
         <aside className="wa-side">
+          <div className="wa-tabs" role="tablist" aria-label="Chat channel">
+            {([["all", "All", 0], ["whatsapp", "WhatsApp", counts.whatsapp.agent], ["web", "🌐 Website", counts.web.agent]] as const).map(([key, label, waiting]) => (
+              <Link key={key} role="tab" aria-selected={channel === key} className={`wa-tab${channel === key ? " on" : ""}`} to={`?channel=${key}&filter=${filter}&q=${encodeURIComponent(q)}`}>
+                {label}
+                {key !== "all" && <small>{counts[key].total}</small>}
+                {waiting > 0 && <span className="o-badge warning" title="Waiting for a person">{waiting}</span>}
+              </Link>
+            ))}
+          </div>
           <Form method="get" className="wa-search">
+            <input type="hidden" name="channel" value={channel} />
             <input name="q" defaultValue={q} placeholder="Search name or number" aria-label="Search conversations" />
             <select name="filter" defaultValue={filter} aria-label="Filter">
               <option value="all">All</option>
@@ -242,17 +270,22 @@ export default function Conversations() {
             <button type="submit">Go</button>
           </Form>
           <div className="wa-list">
-            {list.length === 0 && <p className="o-muted" style={{ padding: 16 }}>No conversations yet. Messages appear here when customers write in on WhatsApp.</p>}
+            {list.length === 0 && (
+              <p className="o-muted" style={{ padding: 16 }}>
+                {channel === "web" ? "No website chats yet. Turn on the JAZZ icon in Bot Settings and chats from your website appear here." : "No conversations yet. Messages appear here when customers write in on WhatsApp."}
+              </p>
+            )}
             {list.map((c) => (
-              <Link key={c.id} className={`wa-item ${selected?.id === c.id ? "active" : ""}`} to={`?c=${c.id}&filter=${filter}&q=${encodeURIComponent(q)}`}>
-                <Avatar src={c.avatar} label={c.name ?? c.phone} />
+              <Link key={c.id} className={`wa-item ${selected?.id === c.id ? "active" : ""}`} to={`?c=${c.id}&channel=${channel}&filter=${filter}&q=${encodeURIComponent(q)}`}>
+                <Avatar src={c.avatar} label={c.channel === "web" && !c.name ? "W" : (c.name ?? c.phone)} />
                 <span className="wa-item-main">
                   <span className="wa-item-top">
-                    <b>{c.name ?? c.phone}</b>
+                    <b>{who(c)}</b>
                     <small>{listTime(c.last)}</small>
                   </span>
                   <span className="wa-item-bottom">
                     <span className="wa-preview">{c.preview}</span>
+                    {channel === "all" && <ChannelBadge channel={c.channel} />}
                     {c.mode === "human" && <span className="o-badge warning">Agent</span>}
                     {c.status === "closed" && <span className="o-badge">Closed</span>}
                   </span>
@@ -272,10 +305,10 @@ export default function Conversations() {
           ) : (
             <>
               <header className="wa-head">
-                <Avatar src={selected.avatar} label={selected.name ?? selected.phone} />
+                <Avatar src={selected.avatar} label={selected.channel === "web" && !selected.name ? "W" : (selected.name ?? selected.phone)} />
                 <div className="wa-head-main">
-                  <b>{selected.name ?? selected.phone}</b>
-                  <small>{selected.name ? `${selected.phone} · ` : ""}{selected.mode === "human" ? `Agent mode${selected.handoffReason ? ` (${selected.handoffReason})` : ""}` : "JAZZ is replying"}</small>
+                  <b>{who(selected)} <ChannelBadge channel={selected.channel} /></b>
+                  <small>{selected.name && selected.channel !== "web" ? `${selected.phone} · ` : ""}{selected.mode === "human" ? `Agent mode${selected.handoffReason ? ` (${selected.handoffReason})` : ""}` : "JAZZ is replying"}</small>
                 </div>
                 <div className="wa-actions">
                   {([selected.mode === "human" ? "return" : "takeover", "reset", "close"] as const).map((i) => (
@@ -328,7 +361,7 @@ export default function Conversations() {
                   )}
                   <div className="wa-compose-row">
                     <EmojiPicker onPick={insertEmoji} />
-                    {canSendFiles ? (
+                    {canSendFiles && selected.channel !== "web" ? (
                       <>
                         <button type="button" className="o-icon" aria-label="Attach file" onClick={() => fileInput.current?.click()}>📎</button>
                         <input
@@ -349,7 +382,8 @@ export default function Conversations() {
                     />
                     <button className="wa-send" name="intent" value="reply" disabled={busy} aria-label="Send">➤</button>
                   </div>
-                  {!canSendFiles && <small className="o-muted">Sending files needs the WhatsApp Web (QR) connection.</small>}
+                  {selected.channel === "web" && <small className="o-muted">This visitor is on your website: they see your reply in their chat box. Text only.</small>}
+                  {!canSendFiles && selected.channel !== "web" && <small className="o-muted">Sending files needs the WhatsApp Web (QR) connection.</small>}
                 </Form>
               ) : (
                 <div className="wa-bar">

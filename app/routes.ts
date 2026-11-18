@@ -25,6 +25,8 @@ export default [
 
   // Resource routes
   route("api/avatar/:id", "routes/api.avatar.$id.tsx"),
+  route("api/chat", "routes/api.chat.tsx"),
+  route("api/chat-admin", "routes/api.chat-admin.tsx"),
   route("api/finder/*", "routes/api.finder.$.tsx"),
   route("api/image-editor/*", "routes/api.image-editor.$.tsx"),
   route("api/media/:id", "routes/api.media.$id.tsx"),

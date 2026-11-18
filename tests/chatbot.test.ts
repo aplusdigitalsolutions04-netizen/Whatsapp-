@@ -1078,3 +1078,47 @@ test("only real Shopify orders count: a row added by hand does not make a number
   assert.equal(await isOrderCustomer(SHOP, "+919777700002"), true, "Shopify order");
   assert.equal(await isOrderCustomer(SHOP, "+919777700003"), true, "alternate number typed on a Shopify order");
 });
+
+test("website chat: the icon setting gates it, visitors get answers in their own chat, and chats stay separate from WhatsApp", async () => {
+  const web: any = await loadApp("/app/lib/web-chat.server.ts");
+  const sid = "testvisitor_abcdefghij12345";
+  await prisma.botSettings.deleteMany({ where: { shop: SHOP } });
+
+  assert.equal((await web.webChatConfig(SHOP)).enabled, false, "off until the owner switches it on");
+  const off = await web.sendWebMessage({ shop: SHOP, sid, text: "hi" });
+  assert.equal(off.ok, false);
+  assert.equal(off.status, 403, "visitors cannot chat while the icon is off");
+
+  await prisma.botSettings.upsert({ where: { shop: SHOP }, create: { shop: SHOP, webWidget: true }, update: { webWidget: true } });
+  const cfg = await web.webChatConfig(SHOP);
+  assert.equal(cfg.enabled, true);
+  assert.equal(cfg.whatsapp, "919211890093", "default support number for the WhatsApp button");
+
+  assert.equal((await web.sendWebMessage({ shop: SHOP, sid: "short", text: "hi" })).status, 400, "bad session id");
+  assert.equal((await web.sendWebMessage({ shop: SHOP, sid, text: "   " })).status, 400, "empty message");
+
+  assert.equal((await web.sendWebMessage({ shop: SHOP, sid, text: "hi" })).ok, true);
+  const conv = await prisma.conversation.findUnique({ where: { shop_phone: { shop: SHOP, phone: `web:${sid}` } } });
+  assert.equal(conv?.channel, "web", "stored as a website chat, not a WhatsApp one");
+  const { messages } = await web.readWebMessages(SHOP, sid);
+  assert.equal(messages[0].from, "me");
+  assert.ok(messages.some((m: any) => m.from === "jazz" && m.text.length > 0), "JAZZ answered inside the chat box");
+  const rows = await prisma.message.findMany({ where: { conversationId: conv!.id, direction: "out" } });
+  assert.ok(rows.length > 0 && rows.every((m) => m.status === "sent"), "replies are stored as sent, nothing goes to WhatsApp");
+
+  const other = await web.readWebMessages(SHOP, "otherperson_abcdefghij12345");
+  assert.equal(other.messages.length, 0, "another visitor never sees this chat");
+  assert.equal((await prisma.conversation.count({ where: { shop: SHOP, channel: "whatsapp", phone: { startsWith: "web:" } } })), 0);
+
+  // the settings form carries the on/off switch and the number
+  const { saveSettings, getSettings }: any = await loadApp("/app/lib/settings.server.ts");
+  const form = new FormData();
+  form.set("webWidget", "on");
+  form.set("widgetWhatsapp", "+91 98765 43210");
+  await saveSettings(SHOP, form);
+  const s = await getSettings(SHOP);
+  assert.equal(s.webWidget, true);
+  assert.equal(s.widgetWhatsapp, "919876543210");
+  await saveSettings(SHOP, new FormData());
+  assert.equal((await getSettings(SHOP)).webWidget, false, "an unticked box turns it off");
+});

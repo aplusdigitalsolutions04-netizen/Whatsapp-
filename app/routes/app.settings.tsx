@@ -92,6 +92,20 @@ export default function Settings() {
           </p>
         </Card>
 
+        <Card title="JAZZ icon on the website">
+          <p>
+            <label><input type="checkbox" name="webWidget" defaultChecked={settings.webWidget} /> Show the JAZZ chat icon on the website</label>
+          </p>
+          <p className="o-muted">
+            A round JAZZ button appears at the top right of the website. A visitor can open it to read what JAZZ does, tap <b>Chat on WhatsApp</b>, or
+            chat with JAZZ right on the page. Those chats show up in Live Inbox under <b>Website</b>. Off = the icon is hidden for visitors.
+          </p>
+          <label className="o-field">
+            <span>WhatsApp number for the button (with country code, e.g. +91 92118 90093). Empty = the support number.</span>
+            <input name="widgetWhatsapp" defaultValue={settings.widgetWhatsapp ? `+${settings.widgetWhatsapp}` : ""} placeholder="+91 92118 90093" inputMode="tel" />
+          </label>
+        </Card>
+
         <Card title="Personal numbers (bot stays silent)">
           <p className="o-muted">
             JAZZ never replies to numbers saved in your phone&apos;s contacts (family, friends, suppliers). A saved number can still

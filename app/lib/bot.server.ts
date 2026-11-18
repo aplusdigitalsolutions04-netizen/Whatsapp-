@@ -218,6 +218,8 @@ async function phoneFlow(shop: string, conv: Conv, typed: string, s: Settings, d
 /** "How would you like to check your order?" with numbered choices (answered by awaiting_order_choice). */
 async function askOrderHow(conv: Conv, s: Settings) {
   await update(conv, { state: "awaiting_order_choice" });
+  // On the website there is no "this WhatsApp number" to use, so only the two typed choices are offered.
+  if (conv.channel === "web") return "Sure! 😊 How would you like to check your order?\n\n1. Send your Order Number (Example: #W1219)\n2. Send your registered mobile number\n\nReply with 1 or 2.";
   return tpl(conv, s).askOrderDetails;
 }
 
@@ -312,11 +314,12 @@ export async function decideReply(
 
   // "How would you like to check your order?": 1 this WhatsApp number, 2 order number, 3 registered mobile number.
   if (conv.state === "awaiting_order_choice") {
-    const pick = parseSelection(text, 3);
-    if (pick === 1) return orderOverview(shop, conv, s, deps, lang);
-    if (pick === 2 || pick === 3) {
+    const onWeb = conv.channel === "web";
+    const pick = parseSelection(text, onWeb ? 2 : 3);
+    if (pick === 1 && !onWeb) return orderOverview(shop, conv, s, deps, lang);
+    if (onWeb ? pick === 1 || pick === 2 : pick === 2 || pick === 3) {
       await update(conv, { state: "awaiting_order_number" });
-      return pick === 2 ? t.typeOrderNumber : t.typeMobileNumber;
+      return (onWeb ? pick === 1 : pick === 2) ? t.typeOrderNumber : t.typeMobileNumber;
     }
     // A number typed straight away ("#W1219", "9876543210") is handled with the next block.
   }
@@ -508,14 +511,15 @@ async function silent(shop: string, phone: string, reason: string, event = "bot_
 }
 
 /** Processes one inbound WhatsApp message. Safe to call again for the same message id. */
-export async function handleInbound(shop: string, msg: InboundPayload) {
+export async function handleInbound(shop: string, msg: InboundPayload, opts: { channel?: "web"; phone?: string } = {}) {
+  const web = opts.channel === "web"; // a chat on the website, not WhatsApp: no WhatsApp number, no WhatsApp-only rules
   // WhatsApp's own notices (disappearing-message timer, reactions, ...) are not questions: never answer them.
   if (SYSTEM_TYPES.has(msg.type)) return;
-  const phone = normalizePhone(msg.from) ?? `+${msg.from.replace(/\D/g, "")}`;
+  const phone = web ? String(opts.phone) : normalizePhone(msg.from) ?? `+${msg.from.replace(/\D/g, "")}`;
   const now = new Date();
   const conv = await prisma.conversation.upsert({
     where: { shop_phone: { shop, phone } },
-    create: { shop, phone, customerName: msg.name ?? null, lastInboundAt: now, lastMessageAt: now },
+    create: { shop, phone, customerName: msg.name ?? null, lastInboundAt: now, lastMessageAt: now, channel: web ? "web" : "whatsapp" },
     update: {
       lastInboundAt: now,
       lastMessageAt: now,
@@ -547,7 +551,7 @@ export async function handleInbound(shop: string, msg: InboundPayload) {
     return;
   }
   // Numbers saved in the owner's phone are not customers: stay silent unless the message starts with ! # or $.
-  const wake = applyWakeRule(msg.text, isSavedContact(phone, s.savedNumbers));
+  const wake = web ? { reply: true, text: msg.text } : applyWakeRule(msg.text, isSavedContact(phone, s.savedNumbers));
   if (!wake.reply) {
     await silent(shop, phone, "this number is in your saved contacts (start the message with ! to wake JAZZ)");
     return;
@@ -555,7 +559,7 @@ export async function handleInbound(shop: string, msg: InboundPayload) {
   const woken = wake.text !== msg.text;
   if (woken) msg = { ...msg, text: wake.text };
   // Another bot (a business auto-reply, a chatbot, our own message echoed back): read it, never answer it.
-  if (!woken) {
+  if (!woken && !web) {
     const auto = await detectAutomatedSender(conv.id, msg.text, msg.id).catch(() => null);
     if (auto) {
       await silent(shop, phone, `looks like a bot, not a customer: ${auto}`, "auto_reply_ignored");
@@ -566,7 +570,7 @@ export async function handleInbound(shop: string, msg: InboundPayload) {
   // (A leading "!" is the wake character for anybody, so the owner can test the bot from any phone.)
   const bang = msg.text.trim().startsWith("!");
   if (bang) msg = { ...msg, text: msg.text.trim().slice(1).trim() || "hi" };
-  const onOrder = s.onlyOrderNumbers && !woken && !bang ? await isOrderCustomer(shop, phone).catch(() => false) : true;
+  const onOrder = !web && s.onlyOrderNumbers && !woken && !bang ? await isOrderCustomer(shop, phone).catch(() => false) : true;
   if (!onOrder) {
     const text = s.nonOrderReply.trim();
     if (text) {
@@ -646,7 +650,7 @@ export async function handleInbound(shop: string, msg: InboundPayload) {
 
   // Product photo first (caption = name/price), then the rest as text. Any photo problem falls back to plain text.
   let text = out.text;
-  if (out.image && !pivot && (await canSendMedia())) {
+  if (out.image && !pivot && !web && (await canSendMedia())) {
     const media = await fetchProductImage(out.image.url);
     if (media) {
       const img = await sendAndRecord({
