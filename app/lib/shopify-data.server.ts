@@ -174,7 +174,7 @@ export async function findOrdersByPhone(shop: string, e164: string, run: GqlRunn
 const prefixCache = new Map<string, { prefix: string; at: number }>();
 
 /** The store's order number prefix ("W" for #W1219), so a customer who types only "1219" still finds the order. */
-async function shopOrderPrefix(shop: string, run: GqlRunner): Promise<string> {
+export async function shopOrderPrefix(shop: string, run: GqlRunner): Promise<string> {
   const hit = prefixCache.get(shop);
   if (hit && Date.now() - hit.at < 3_600_000) return hit.prefix;
   let prefix = "";

@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router";
 import { SupportAlert } from "./SupportAlert";
 import type { Waiting } from "../lib/waiting.server";
-import { ChevronsLeft, ChevronsRight, ClipboardList, ScanSearch, WandSparkles, LayoutDashboard, Menu, MessagesSquare, PackageSearch, Plug, ScrollText, SearchCheck, Smartphone, Sparkles, X, Zap, type LucideIcon } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, ClipboardList, FileSpreadsheet, ScanSearch, WandSparkles, LayoutDashboard, Menu, MessagesSquare, PackageSearch, Plug, ScrollText, SearchCheck, Smartphone, Sparkles, X, Zap, type LucideIcon } from "lucide-react";
 
 type Item = { to: string; label: string; icon: LucideIcon; end?: boolean; badge?: number; also?: string };
 type Group = { title: string; items: Item[] };
@@ -18,6 +18,7 @@ function groups(d: ShellData): Group[] {
         { to: "/app/conversations", label: "Live Inbox", icon: MessagesSquare, badge: d.handoffs },
         { to: "/app/enquiries", label: "Product Enquiries", icon: PackageSearch },
         { to: "/app/order-sheet", label: "Order Update", icon: ClipboardList },
+        { to: "/app/billing-data", label: "Billing Data", icon: FileSpreadsheet },
         { to: "/app/product-scrapper", label: "Product Scrapper", icon: ScanSearch },
         { to: "/app/image-editor", label: "Image Editor", icon: WandSparkles, also: "/app/image-" },
         { to: "/app/seo", label: "SEO", icon: SearchCheck },
@@ -37,7 +38,7 @@ function groups(d: ShellData): Group[] {
 }
 
 const CRUMBS: Record<string, string> = {
-  conversations: "Live Inbox", enquiries: "Product Enquiries", "order-sheet": "Order Update", "product-scrapper": "Product Scrapper", "image-editor": "Image Editor", "image-products": "Image Editor", "image-bulk": "Image Editor", seo: "SEO", "quick-replies": "Auto Replies", orders: "Orders", products: "Products", settings: "Bot Settings",
+  conversations: "Live Inbox", "billing-data": "Billing Data", enquiries: "Product Enquiries", "order-sheet": "Order Update", "product-scrapper": "Product Scrapper", "image-editor": "Image Editor", "image-products": "Image Editor", "image-bulk": "Image Editor", seo: "SEO", "quick-replies": "Auto Replies", orders: "Orders", products: "Products", settings: "Bot Settings",
   "whatsapp-web": "WhatsApp Connection", integrations: "Integrations", logs: "Activity Logs",
 };
 

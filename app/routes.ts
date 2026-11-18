@@ -36,6 +36,7 @@ export default [
   // Embedded admin app: routes/app.tsx is the layout (Shopify AppProvider, sidebar shell, stylesheets)
   route("app", "routes/app.tsx", [
     index("routes/app._index.tsx"),
+    route("billing-data", "routes/app.billing-data.tsx"),
     route("conversations", "routes/app.conversations.tsx"),
     route("enquiries", "routes/app.enquiries.tsx"),
     route("image-bulk", "routes/app.image-bulk.tsx"),

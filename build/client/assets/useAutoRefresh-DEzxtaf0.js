@@ -1,1 +1,0 @@
-import{c as r,r as a}from"./jsx-runtime-BwoMWfqJ.js";function o(t=5e3){const{revalidate:i,state:s}=r();a.useEffect(()=>{const e=()=>{document.visibilityState==="visible"&&s==="idle"&&i()},n=setInterval(e,t);return document.addEventListener("visibilitychange",e),()=>{clearInterval(n),document.removeEventListener("visibilitychange",e)}},[t,i,s])}export{o as u};
