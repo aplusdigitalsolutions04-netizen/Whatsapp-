@@ -1,0 +1,87 @@
+/* The JAZZ icon and its panel (shared by the website and the admin). Every class starts with .jw so nothing leaks. */
+.jw { --jw-ivory: #faf8f4; --jw-beige: #ede5d8; --jw-sand: #d8c7b2; --jw-mocha: #80664f; --jw-espresso: #38291f; --jw-gold: #d9b98a; font-family: Inter, -apple-system, "Segoe UI", Roboto, "Noto Sans Devanagari", sans-serif; line-height: 1.45; }
+.jw *, .jw *::before, .jw *::after { box-sizing: border-box; }
+.jw-public { position: fixed; top: 14px; right: 16px; z-index: 2147483000; }
+.jw-admin { position: relative; margin-left: auto; z-index: 40; }
+
+.jw-fab {
+  position: relative; display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border-radius: 50%; cursor: pointer;
+  border: 2px solid #fff; background: linear-gradient(145deg, #ead3ad, #b8935f); box-shadow: 0 10px 24px -8px rgba(56, 41, 31, 0.55);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.jw-admin .jw-fab { width: 36px; height: 36px; border-width: 1.5px; }
+.jw-admin .jw-fab .jw-face { width: 22px; height: 22px; }
+.jw-admin .jw-panel { top: 46px; }
+.jw-fab:hover { transform: translateY(-2px) scale(1.05); box-shadow: 0 16px 30px -10px rgba(56, 41, 31, 0.6); }
+.jw-fab:focus-visible { outline: 3px solid rgba(128, 102, 79, 0.5); outline-offset: 2px; }
+.jw-ring { position: absolute; inset: -4px; border-radius: 50%; border: 2px solid rgba(184, 147, 95, 0.55); animation: jw-ring 2.8s ease-out infinite; pointer-events: none; }
+.jw-fab.on .jw-ring { animation: none; opacity: 0; }
+@keyframes jw-ring { 0% { transform: scale(0.9); opacity: 0.9; } 100% { transform: scale(1.35); opacity: 0; } }
+.jw-eye { animation: jw-blink 5s infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes jw-blink { 0%, 44%, 48%, 100% { transform: scaleY(1); } 46% { transform: scaleY(0.1); } }
+
+.jw-panel {
+  position: absolute; top: 56px; right: 0; width: 340px; max-width: calc(100vw - 24px); overflow: hidden; border-radius: 18px;
+  background: var(--jw-ivory); border: 1px solid var(--jw-sand); box-shadow: 0 30px 60px -20px rgba(56, 41, 31, 0.5);
+  animation: jw-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1.1); transform-origin: top right;
+}
+@keyframes jw-in { from { opacity: 0; transform: translateY(-8px) scale(0.94); } }
+.jw-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 14px; color: #f6ecdd; background: linear-gradient(150deg, #4a382b, var(--jw-espresso)); }
+.jw-avatar { display: grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: 50%; background: linear-gradient(145deg, #ead3ad, #b8935f); }
+.jw-title { display: grid; line-height: 1.15; flex: 1; min-width: 0; }
+.jw-title b { font-size: 15px; }
+.jw-title small { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: #d9c8b1; }
+.jw-dot { width: 7px; height: 7px; border-radius: 50%; background: #8fd08a; box-shadow: 0 0 6px #8fd08a; }
+.jw-icon { width: 28px; height: 28px; flex: none; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.12); color: #fff; font-size: 20px; line-height: 1; cursor: pointer; transition: background 0.2s; }
+.jw-icon:hover { background: rgba(255, 255, 255, 0.25); }
+
+.jw-body { padding: 16px 16px 18px; color: var(--jw-espresso); font-size: 13.5px; }
+.jw-body p { margin: 0 0 10px; }
+.jw-hi { font-size: 15px; }
+.jw-note { padding: 8px 10px; border-radius: 10px; background: var(--jw-beige); color: #66584c; font-size: 12px; }
+.jw-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 8px; padding: 11px 14px; border-radius: 12px; cursor: pointer;
+  font: inherit; font-size: 14px; font-weight: 600; text-decoration: none; transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+}
+.jw-btn:hover { transform: translateY(-2px); }
+.jw-wa { color: #fff; background: linear-gradient(145deg, #3f8a56, #2c6a40); border: 0; box-shadow: 0 10px 22px -12px rgba(44, 106, 64, 0.8); }
+.jw-chat { color: var(--jw-espresso); background: #fff; border: 1px solid var(--jw-sand); }
+.jw-chat:hover { background: var(--jw-beige); }
+
+.jw-chatview { display: grid; grid-template-rows: auto auto auto auto; }
+.jw-log { height: 300px; overflow-y: auto; padding: 14px 12px 6px; display: flex; flex-direction: column; gap: 8px; background: #f6f1e8; scroll-behavior: smooth; }
+.jw-msg { display: flex; flex-direction: column; max-width: 86%; animation: jw-pop 0.25s ease-out; }
+.jw-msg small { margin: 0 0 2px 4px; font-size: 10.5px; font-weight: 600; color: var(--jw-mocha); }
+.jw-msg > div { padding: 8px 11px; border-radius: 14px; font-size: 13px; white-space: pre-wrap; word-break: break-word; box-shadow: 0 1px 2px rgba(56, 41, 31, 0.1); }
+.jw-msg a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.jw-msg.jazz { align-self: flex-start; }
+.jw-msg.jazz > div { background: #fff; color: var(--jw-espresso); border-bottom-left-radius: 4px; }
+.jw-msg.agent { align-self: flex-start; }
+.jw-msg.agent > div { background: #eaf3ec; color: #1f3a27; border: 1px solid #c6dcca; border-bottom-left-radius: 4px; }
+.jw-msg.me { align-self: flex-end; }
+.jw-msg.me > div { background: linear-gradient(145deg, #8c6f55, var(--jw-mocha)); color: #fff; border-bottom-right-radius: 4px; }
+@keyframes jw-pop { from { opacity: 0; transform: translateY(8px) scale(0.96); } }
+.jw-typing { display: inline-flex; gap: 4px; padding: 4px 2px; }
+.jw-typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--jw-mocha); animation: jw-dot 1s infinite; }
+.jw-typing i:nth-child(2) { animation-delay: 0.15s; }
+.jw-typing i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes jw-dot { 40% { transform: translateY(-4px); } 0%, 80%, 100% { opacity: 0.5; } }
+.jw-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0; background: #f6f1e8; }
+.jw-chips button { padding: 6px 11px; border-radius: 999px; border: 1px solid var(--jw-sand); background: #fff; color: var(--jw-espresso); font: inherit; font-size: 12px; cursor: pointer; transition: background 0.2s, transform 0.2s; }
+.jw-chips button:hover { background: var(--jw-beige); transform: translateY(-1px); }
+.jw-error { margin: 0; padding: 6px 12px; font-size: 12px; color: #a3392f; background: #fbeceb; }
+.jw-form { display: flex; gap: 8px; padding: 10px 12px 12px; background: var(--jw-ivory); border-top: 1px solid var(--jw-sand); }
+.jw-form input { flex: 1; min-width: 0; padding: 9px 12px; border: 1px solid var(--jw-sand); border-radius: 999px; background: #fff; color: var(--jw-espresso); font: inherit; font-size: 13px; outline: 0; }
+.jw-form input:focus { border-color: var(--jw-mocha); box-shadow: 0 0 0 3px rgba(128, 102, 79, 0.16); }
+.jw-form button { width: 38px; height: 38px; flex: none; border: 0; border-radius: 50%; background: linear-gradient(145deg, #8c6f55, var(--jw-mocha)); color: #fff; cursor: pointer; font-size: 14px; transition: transform 0.2s, opacity 0.2s; }
+.jw-form button:hover:not(:disabled) { transform: scale(1.08); }
+.jw-form button:disabled { opacity: 0.45; cursor: default; }
+
+@media (max-width: 480px) {
+  .jw-public { top: 10px; right: 10px; }
+  .jw-panel { position: fixed; top: 64px; right: 10px; left: 10px; width: auto; max-width: none; }
+  .jw-log { height: min(300px, 45vh); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jw *, .jw *::before, .jw *::after { animation: none !important; transition: none !important; }
+}

@@ -1122,3 +1122,24 @@ test("website chat: the icon setting gates it, visitors get answers in their own
   await saveSettings(SHOP, new FormData());
   assert.equal((await getSettings(SHOP)).webWidget, false, "an unticked box turns it off");
 });
+
+test("store website chat: wery.in and Shopify stores may use the chat API from the browser, other websites may not", async () => {
+  const { allowedWidgetOrigin } = await import("../app/lib/web-chat-origin.ts");
+  const env = {};
+  assert.equal(allowedWidgetOrigin("https://wery.in", env), "https://wery.in");
+  assert.equal(allowedWidgetOrigin("https://www.wery.in", env), "https://www.wery.in");
+  assert.equal(allowedWidgetOrigin("https://my-shop.myshopify.com", env), "https://my-shop.myshopify.com");
+  assert.equal(allowedWidgetOrigin("https://evil-wery.in", env), null, "a look-alike domain is not wery.in");
+  assert.equal(allowedWidgetOrigin("https://wery.in.evil.com", env), null);
+  assert.equal(allowedWidgetOrigin("http://wery.in", env), null, "plain http is not allowed");
+  assert.equal(allowedWidgetOrigin("https://other.com", env), null);
+  assert.equal(allowedWidgetOrigin(null, env), null);
+  assert.equal(allowedWidgetOrigin("https://shop.example.com", { WIDGET_ALLOWED_ORIGINS: "shop.example.com" }), "https://shop.example.com", "extra sites can be added with an environment variable");
+});
+
+test("store website chat: the jazz.js script is valid JavaScript and reads the app address from its own tag", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../public/jazz.js", import.meta.url), "utf8");
+  assert.doesNotThrow(() => new Function(src), "jazz.js has a syntax error");
+  assert.ok(src.includes("/api/chat") && src.includes("jazz-widget.css"));
+});

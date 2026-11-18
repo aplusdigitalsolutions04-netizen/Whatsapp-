@@ -1,7 +1,11 @@
 // Runs after `react-router build`. A build made on Windows stores the browser-files folder as "build\client",
 // which does not exist on Linux hosts (every script/stylesheet would answer 404 and pages stay blank).
 // This rewrites it to the portable "build/client". scripts/start.mjs does the same check at startup.
-import { readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
+
+// The store website loads /jazz.js (public/jazz.js, copied by the build), which loads this stylesheet from the app.
+// One source: app/styles/jazz-widget.css is also what the link page and the admin use.
+copyFileSync("app/styles/jazz-widget.css", "build/client/jazz-widget.css");
 
 const bs = String.fromCharCode(92);
 const file = "build/server/index.js";

@@ -12,7 +12,8 @@ import { Badge, Card, Page } from "../components/ui";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  return { settings: await getSettings(session.shop), shop: session.shop, ai: await getAiPublicState(session.shop) };
+  const appUrl = (process.env.SHOPIFY_APP_URL ?? "").replace(/\/+$/, "");
+  return { settings: await getSettings(session.shop), shop: session.shop, ai: await getAiPublicState(session.shop), widgetScript: `<script src="${appUrl || "https://YOUR-APP-DOMAIN"}/jazz.js" defer></script>` };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -40,7 +41,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function Settings() {
-  const { settings, shop, ai } = useLoaderData<typeof loader>();
+  const { settings, shop, ai, widgetScript } = useLoaderData<typeof loader>();
   const saved = useActionData<typeof action>();
   const saving = useNavigation().state === "submitting";
   const shopify = useAppBridge();
@@ -104,6 +105,11 @@ export default function Settings() {
             <span>WhatsApp number for the button (with country code, e.g. +91 92118 90093). Empty = the support number.</span>
             <input name="widgetWhatsapp" defaultValue={settings.widgetWhatsapp ? `+${settings.widgetWhatsapp}` : ""} placeholder="+91 92118 90093" inputMode="tel" />
           </label>
+          <p className="o-muted" style={{ marginTop: 14 }}>
+            <b>Show it on your store website (wery.in):</b> in Shopify go to Online Store → Themes → ⋯ → Edit code → <b>theme.liquid</b> and paste this
+            line just above <code>&lt;/body&gt;</code>. Save. The icon then follows the switch above.
+          </p>
+          <input readOnly value={widgetScript} aria-label="Script line for theme.liquid" onFocus={(e) => e.currentTarget.select()} style={{ fontFamily: "monospace", fontSize: 12.5 }} />
         </Card>
 
         <Card title="Personal numbers (bot stays silent)">
