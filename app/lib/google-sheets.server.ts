@@ -3,7 +3,7 @@ import { createHmac, createSign } from "node:crypto";
 import prisma from "../db.server";
 import { logEvent } from "./log.server";
 import {
-  COUNTER_COLORS, COUNTER_LABELS, counterFormulas, dataRange, FIRST_DATA_ROW, HEADER_ROW, REMARKS_COL, rowToValues, SHEET_HEADERS,
+  COUNTER_COLORS, COUNTER_LABELS, counterFormulas, dataRange, FIRST_DATA_ROW, HEADER_ROW, PROFIT_COLOR, PROFIT_TEXT_COLOR, REMARKS_COL, rowToValues, SHEET_HEADERS,
   WEEKLY_COLS_PER_WEEK, WEEKLY_FIRST_COL, WEEKLY_WEEKS, weeklyCounters, weeklyGrid,
 } from "./google-sheet-format";
 import { decryptSecret } from "./secret.server";
@@ -105,7 +105,7 @@ async function ensureTabs(token: string, id: string) {
   if (!data) {
     const r = await api(token, `${id}:batchUpdate`, {
       method: "POST",
-      body: { requests: [{ addSheet: { properties: { title: TAB, gridProperties: { columnCount: 27 } } } }] },
+      body: { requests: [{ addSheet: { properties: { title: TAB, gridProperties: { columnCount: 29 } } } }] },
     });
     data = { ...r.replies[0].addSheet.properties, rules: 0 };
   }
@@ -118,7 +118,21 @@ async function format(token: string, id: string, dataId: number, oldRules: numbe
     ["^Cancelled", "#F7D9D5"], ["^RTO", "#EADCEE"], ["^Delivered", "#DCECF5"], ["^Fulfilled", "#E4F2E1"],
     ["^(Unfulfilled|Partially|On hold|Scheduled)", "#FDEED6"],
   ];
-  const range = { sheetId: dataId, startRowIndex: FIRST_DATA_ROW - 1, startColumnIndex: 0, endColumnIndex: 27 };
+  const range = { sheetId: dataId, startRowIndex: FIRST_DATA_ROW - 1, startColumnIndex: 0, endColumnIndex: 29 };
+  // Profit / Loss (column AC) only: green above zero, red below. Added first, so they win over the row colour.
+  const plRange = { sheetId: dataId, startRowIndex: FIRST_DATA_ROW - 1, startColumnIndex: 28, endColumnIndex: 29 };
+  const plRule = (op: ">" | "<", color: string, text: string, index: number) => ({
+    addConditionalFormatRule: {
+      index,
+      rule: {
+        ranges: [plRange],
+        booleanRule: {
+          condition: { type: "CUSTOM_FORMULA", values: [{ userEnteredValue: `=AND(ISNUMBER($AC${FIRST_DATA_ROW}),$AC${FIRST_DATA_ROW}${op}0)` }] },
+          format: { backgroundColor: rgb(color), textFormat: { bold: true, foregroundColor: rgb(text) } },
+        },
+      },
+    },
+  });
   await api(token, `${id}:batchUpdate`, {
     method: "POST",
     body: {
@@ -130,8 +144,10 @@ async function format(token: string, id: string, dataId: number, oldRules: numbe
         { repeatCell: { range: { sheetId: dataId, startRowIndex: 1, endRowIndex: 2, endColumnIndex: 5 }, cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 18, foregroundColor: rgb("#38291F") }, horizontalAlignment: "LEFT" } }, fields: "userEnteredFormat(textFormat,horizontalAlignment)" } },
         ...COUNTER_COLORS.map((c, i) => ({ repeatCell: { range: { sheetId: dataId, startRowIndex: 0, endRowIndex: 2, startColumnIndex: i, endColumnIndex: i + 1 }, cell: { userEnteredFormat: { backgroundColor: rgb(c) } }, fields: "userEnteredFormat.backgroundColor" } })),
         { repeatCell: { range: { sheetId: dataId, startRowIndex: HEADER_ROW - 1, endRowIndex: HEADER_ROW }, cell: { userEnteredFormat: { backgroundColor: rgb("#EDE5D8"), textFormat: { bold: true, foregroundColor: rgb("#38291F") } } }, fields: "userEnteredFormat(backgroundColor,textFormat)" } },
+        plRule(">", PROFIT_COLOR.profit, PROFIT_TEXT_COLOR.profit, 0),
+        plRule("<", PROFIT_COLOR.loss, PROFIT_TEXT_COLOR.loss, 1),
         ...rules.map(([re, color], index) => ({
-          addConditionalFormatRule: { index, rule: { ranges: [range], booleanRule: { condition: { type: "CUSTOM_FORMULA", values: [{ userEnteredValue: `=REGEXMATCH($${REMARKS_COL}${FIRST_DATA_ROW},"${re}")` }] }, format: { backgroundColor: rgb(color) } } } },
+          addConditionalFormatRule: { index: index + 2, rule: { ranges: [range], booleanRule: { condition: { type: "CUSTOM_FORMULA", values: [{ userEnteredValue: `=REGEXMATCH($${REMARKS_COL}${FIRST_DATA_ROW},"${re}")` }] }, format: { backgroundColor: rgb(color) } } } },
         })),
         // 7-day counters: merged date label, small names, big numbers, same colours as the all-time cards
         ...Array.from({ length: WEEKLY_WEEKS }, (_, w) => {
@@ -151,7 +167,7 @@ async function format(token: string, id: string, dataId: number, oldRules: numbe
             { repeatCell: { range: { sheetId: dataId, startRowIndex: 2, endRowIndex: 3, startColumnIndex: c, endColumnIndex: c + 1 }, cell: { userEnteredFormat: { backgroundColor: color, horizontalAlignment: "CENTER", textFormat: { bold: true, fontSize: 14, foregroundColor: rgb("#38291F") } } }, fields: "userEnteredFormat(backgroundColor,horizontalAlignment,textFormat)" } },
           ];
         }).flat(),
-        { autoResizeDimensions: { dimensions: { sheetId: dataId, dimension: "COLUMNS", startIndex: 0, endIndex: 27 } } },
+        { autoResizeDimensions: { dimensions: { sheetId: dataId, dimension: "COLUMNS", startIndex: 0, endIndex: 29 } } },
       ],
     },
   });
@@ -207,12 +223,12 @@ export async function pushOrders(shop: string): Promise<number | null> {
     const enc = encodeURIComponent;
     // Counters (live formulas) on top, header in row 4, orders from row 5.
     await api(token, `${sid}/values/${enc(`'${TAB}'!A1:E2`)}?valueInputOption=USER_ENTERED`, { method: "PUT", body: { values: [[...COUNTER_LABELS], counterFormulas()] } });
-    await api(token, `${sid}/values/${enc(`'${TAB}'!A3:AA3`)}:clear`, { method: "POST", body: {} });
+    await api(token, `${sid}/values/${enc(`'${TAB}'!A3:AC3`)}:clear`, { method: "POST", body: {} });
     // Last-7-days counters (and the 7-day windows before) to the right of the all-time ones
     await api(token, `${sid}/values/${enc(`'${TAB}'!G1:Z3`)}?valueInputOption=RAW`, { method: "PUT", body: { values: weeklyGrid(weeklyCounters(rows)) } });
     await api(token, `${sid}/values/${enc(dataRange(TAB, HEADER_ROW, HEADER_ROW))}?valueInputOption=RAW`, { method: "PUT", body: { values: [[...SHEET_HEADERS]] } });
-    // Clear only our 27 columns (anything to the right, e.g. the team's own notes, is left alone), then write in chunks.
-    await api(token, `${sid}/values/${enc(`'${TAB}'!A${FIRST_DATA_ROW}:AA`)}:clear`, { method: "POST", body: {} });
+    // Clear only our 29 columns (anything to the right, e.g. the team's own notes, is left alone), then write in chunks.
+    await api(token, `${sid}/values/${enc(`'${TAB}'!A${FIRST_DATA_ROW}:AC`)}:clear`, { method: "POST", body: {} });
     for (let i = 0; i < values.length; i += CHUNK) {
       const slice = values.slice(i, i + CHUNK);
       await api(token, `${sid}/values/${enc(dataRange(TAB, FIRST_DATA_ROW + i, FIRST_DATA_ROW + i + slice.length - 1))}?valueInputOption=RAW`, { method: "PUT", body: { values: slice } });

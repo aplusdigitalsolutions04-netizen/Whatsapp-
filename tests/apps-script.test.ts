@@ -59,8 +59,8 @@ test("sheet layout: counters on top, headers in row 4, data from row 5", () => {
   assert.deepEqual(w.writes.formulas, [f]);
   const hit = (r: number, c: number, h: number, wd: number) => w.writes.ranges.some((x) => x.join() === [r, c, h, wd].join());
   assert.ok(hit(2, 1, 1, 5), "counters in row 2");
-  assert.ok(hit(4, 1, 1, 27), "header in row 4");
-  assert.ok(hit(5, 1, 2, 27), "orders start at row 5");
+  assert.ok(hit(4, 1, 1, 29), "header in row 4");
+  assert.ok(hit(5, 1, 2, 29), "orders start at row 5");
 });
 
 test("7-day counters: the last 7 days first, to the right of the all-time counters", () => {
@@ -93,6 +93,6 @@ test("7-day counters: the last 7 days first, to the right of the all-time counte
   assert.deepEqual(at2(3, 12, 1, 5)?.values, [[2, 0, 0, 1, 1]], "the 7 days before sit in L3:P3");
   assert.deepEqual(at2(2, 7, 1, 5)?.values, [["Total", "Delivered", "Unfulfilled", "Cancelled", "RTO"]]);
   assert.equal(w.writes.merges.length, 4, "one merged label cell per week");
-  assert.ok(w.writes.ranges.some((r) => r.join() === [4, 1, 1, 27].join()), "the header row is still row 4");
-  assert.ok(w.writes.ranges.some((r) => r.join() === [5, 1, 1, 27].join()), "orders still start at row 5");
+  assert.ok(w.writes.ranges.some((r) => r.join() === [4, 1, 1, 29].join()), "the header row is still row 4");
+  assert.ok(w.writes.ranges.some((r) => r.join() === [5, 1, 1, 29].join()), "orders still start at row 5");
 });

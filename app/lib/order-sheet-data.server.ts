@@ -2,6 +2,7 @@ import prisma from "../db.server.ts";
 import { SHEET_STATUSES, type SheetStatus } from "./order-map.ts";
 import { addPeriod, bucketOrders, dayParam, earliestStart, parseDay, PERIOD_COUNT, PERIOD_KINDS, type PeriodKind } from "./order-periods.ts";
 import { statusCounts } from "./order-store.server.ts";
+import { profitLoss } from "./profit.ts";
 
 const PAGE_SIZE = 50;
 
@@ -54,6 +55,9 @@ export async function loadOrderSheet(shop: string, url: URL) {
         addressConfirmed: r.addressConfirmed, codConfirmed: r.codConfirmed, deliveryAvailable: r.deliveryAvailable, customerWants: r.customerWants,
         callStatus: r.callStatus, finalDecision: r.finalDecision, remarks: r.isManual ? r.status : r.remarks, employeeRemark: r.employeeRemark,
         dispatchDate: iso(r.dispatchDate ?? r.dispatchDateShopify), awb: r.awb ?? r.trackingNo, deliveryCharges: r.deliveryCharges ?? r.shippingCharge,
+        landingPrice: r.landingPrice,
+        // filled in by the app: amount - landing price - delivery charges (RTO: minus the delivery charges only; see lib/profit.ts)
+        profitLoss: profitLoss({ status: r.status, amount: r.amount, landingPrice: r.landingPrice, deliveryCharges: r.deliveryCharges ?? r.shippingCharge }),
       } as Record<string, string | number | null>,
     })),
   };

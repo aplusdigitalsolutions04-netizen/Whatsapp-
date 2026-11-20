@@ -1,12 +1,14 @@
 // Pure helpers for the Google Sheet mirror (no network, no database): easy to test.
 import { rollingWindows, type OrderLite } from "./order-periods.ts";
+import { profitLoss } from "./profit.ts";
 
-/** The 27 columns, in the exact order of the calling sheet. */
+/** The 29 columns, in the exact order of the calling sheet (AB = Landing Price, AC = Profit / Loss, filled in by the app). */
 export const SHEET_HEADERS = [
   "Call Date", "Employee Name", "Order ID", "Order Date", "Customer Name", "Product Name", "Qty", "Order Amount",
   "Payment Type", "Primary Mobile", "Alternate Mobile", "Full Address", "Landmark", "City", "State", "PIN Code",
   "Address Confirmed", "COD Amount Confirmed", "Delivery Available", "Customer Wants Order", "Call Status",
   "Final Decision", "Remarks", "Employee Remark", "Dispatch Date", "AWB/Tracking No.", "Delivery Charges",
+  "Landing Price", "Profit / Loss",
 ] as const;
 
 /** Column letter of "Remarks" (23rd), used by the colour rules and the summary formulas. */
@@ -20,7 +22,7 @@ export type SheetRow = {
   deliveryAvailable: string | null; customerWants: string | null; callStatus: string | null; finalDecision: string | null;
   remarks: string | null; status: string; isManual: boolean; employeeRemark: string | null;
   dispatchDate: Date | null; dispatchDateShopify: Date | null; awb: string | null; trackingNo: string | null;
-  deliveryCharges: number | null; shippingCharge: number | null;
+  deliveryCharges: number | null; shippingCharge: number | null; landingPrice?: number | null;
 };
 
 const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "");
@@ -35,6 +37,7 @@ export function rowToValues(r: SheetRow): (string | number)[] {
     text(r.addressConfirmed), text(r.codConfirmed), text(r.deliveryAvailable), text(r.customerWants), text(r.callStatus),
     text(r.finalDecision), r.isManual ? r.status : text(r.remarks), text(r.employeeRemark),
     day(r.dispatchDate ?? r.dispatchDateShopify), text(r.awb ?? r.trackingNo), r.deliveryCharges ?? r.shippingCharge ?? "",
+    r.landingPrice ?? "", profitLoss({ status: r.status, amount: r.amount, landingPrice: r.landingPrice, deliveryCharges: r.deliveryCharges ?? r.shippingCharge }) ?? "",
   ];
 }
 
@@ -58,8 +61,13 @@ export function parseServiceAccount(raw: string): { email: string; privateKey: s
   }
 }
 
-/** A1 range for the data rows, e.g. 'Order Calling Sheet'!A2:AA1001 */
-export const dataRange = (tab: string, from: number, to: number) => `'${tab.replace(/'/g, "''")}'!A${from}:AA${to}`;
+/** A1 range for the data rows, e.g. 'Order Calling Sheet'!A2:AC1001 */
+export const dataRange = (tab: string, from: number, to: number) => `'${tab.replace(/'/g, "''")}'!A${from}:AC${to}`;
+
+/** Where the Profit / Loss column sits (AC, the 29th): green when above zero, red when below. */
+export const PROFIT_COL = "AC";
+export const PROFIT_COLOR = { profit: "#C9EBC5", loss: "#F6C7C1" } as const;
+export const PROFIT_TEXT_COLOR = { profit: "#14602A", loss: "#9A2417" } as const;
 
 /** Sheet layout: counters in rows 1-2, one blank row, headers in row 4, data from row 5. */
 export const HEADER_ROW = 4;
@@ -172,7 +180,7 @@ export function appsScriptCode(token: string): string {
     "      var body = sh.getRange(5, 1, d.rows.length, cols);",
     "      body.setNumberFormat('@'); // keep phone numbers and text exactly as sent",
     "      sh.getRange(5, 7, d.rows.length, 2).setNumberFormat('General'); // Qty, Order Amount",
-    "      sh.getRange(5, 27, d.rows.length, 1).setNumberFormat('General'); // Delivery Charges",
+    "      sh.getRange(5, 27, d.rows.length, 3).setNumberFormat('General'); // Delivery Charges, Landing Price, Profit / Loss",
     "      body.setValues(d.rows);",
     "    }",
     "    addColours(sh, cols);",
@@ -190,7 +198,11 @@ export function appsScriptCode(token: string): string {
     "    return SpreadsheetApp.newConditionalFormatRule()",
     "      .whenFormulaSatisfied('=REGEXMATCH($W5,\"' + x[0] + '\")').setBackground(x[1]).setRanges([range]).build();",
     "  });",
-    "  sh.setConditionalFormatRules(rules);",
+    "  // Profit / Loss cell (column AC) only: green above zero, red below. These come first, so they win over the row colour.",
+    "  var pl = sh.getRange(5, 29, Math.max(sh.getMaxRows() - 4, 1), 1);",
+    `  var profit = SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND(ISNUMBER($AC5),$AC5>0)').setBackground('${PROFIT_COLOR.profit}').setFontColor('${PROFIT_TEXT_COLOR.profit}').setBold(true).setRanges([pl]).build();`,
+    `  var loss = SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND(ISNUMBER($AC5),$AC5<0)').setBackground('${PROFIT_COLOR.loss}').setFontColor('${PROFIT_TEXT_COLOR.loss}').setBold(true).setRanges([pl]).build();`,
+    "  sh.setConditionalFormatRules([profit, loss].concat(rules));",
     "  sh.autoResizeColumns(1, cols);",
     "}",
     "",

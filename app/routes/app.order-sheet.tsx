@@ -5,6 +5,7 @@ import { ExternalLink, Plus, RefreshCw, Sheet, X } from "lucide-react";
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 import { SHEET_STATUSES, type SheetStatus } from "../lib/order-map";
+import { profitTone } from "../lib/profit";
 import { loadOrderSheet } from "../lib/order-sheet-data.server";
 import { encryptSecret } from "../lib/secret.server";
 import { appsScriptCode, isScriptUrl, parseServiceAccount, spreadsheetIdFrom } from "../lib/google-sheet-format";
@@ -49,13 +50,15 @@ const COLS: Col[] = [
   { key: "dispatchDate", label: "Dispatch Date", kind: "date", src: "manual", w: 118 },
   { key: "awb", label: "AWB/Tracking No.", kind: "text", src: "manual", w: 150 },
   { key: "deliveryCharges", label: "Delivery Charges", kind: "number", src: "manual", w: 110 },
+  { key: "landingPrice", label: "Landing Price", kind: "number", src: "manual", w: 110 },
+  { key: "profitLoss", label: "Profit / Loss", kind: "readonly", src: "shopify", w: 110 },
 ];
 
 // Writable fields. Shopify-owned columns are only writable on rows added by hand (a sync would overwrite them otherwise).
 const MANUAL_FIELDS = new Set(COLS.filter((c) => c.src === "manual").map((c) => c.key));
 const ROW_FIELDS = new Set(["orderName", "orderDate", "customerName", "productName", "qty", "amount", "paymentType", "primaryMobile", "fullAddress", "city", "state", "pinCode"]);
 const DATE_FIELDS = new Set(["callDate", "dispatchDate", "orderDate"]);
-const NUM_FIELDS = new Set(["amount", "deliveryCharges", "qty"]);
+const NUM_FIELDS = new Set(["amount", "deliveryCharges", "landingPrice", "qty"]);
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -166,6 +169,9 @@ const day = (iso: string | null) => (iso ? iso.slice(0, 10) : "");
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never");
 const money = (n: number | string | null) => (n == null || n === "" ? "" : Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 }));
 
+/** +1,250 / -80: a profit shows a plus, a loss a minus. Empty when it cannot be worked out. */
+const signed = (n: number | string | null) => (n == null || n === "" ? "" : `${Number(n) > 0 ? "+" : ""}${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`);
+
 function Cell({ row, col }: { row: { id: string; isManual: boolean; v: Record<string, string | number | null> }; col: Col }) {
   const f = useFetcher();
   const raw = row.v[col.key];
@@ -177,7 +183,7 @@ function Cell({ row, col }: { row: { id: string; isManual: boolean; v: Record<st
   };
 
   if (!editable) {
-    const text = col.kind === "date" ? day(raw as string | null) : col.key === "amount" ? money(raw) : String(raw ?? "");
+    const text = col.kind === "date" ? day(raw as string | null) : col.key === "amount" ? money(raw) : col.key === "profitLoss" ? signed(raw) : String(raw ?? "");
     return <span className="os-ro" title={text}>{text}</span>;
   }
   const key = `${row.id}-${col.key}-${raw ?? ""}`;
@@ -410,7 +416,7 @@ export default function OrderSheet() {
             {d.rows.map((r) => (
               <tr key={r.id} className={`os-row st-${r.status}`}>
                 {COLS.map((c) => (
-                  <td key={c.key}><Cell row={r} col={c} /></td>
+                  <td key={c.key} className={c.key === "profitLoss" && profitTone(r.v.profitLoss as number | null) ? `pl-${profitTone(r.v.profitLoss as number | null)}` : undefined}><Cell row={r} col={c} /></td>
                 ))}
                 <td>
                   {r.isManual && (

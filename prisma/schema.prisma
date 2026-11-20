@@ -246,6 +246,8 @@ model OrderSheet {
   dispatchDate      DateTime?
   awb               String?
   deliveryCharges   Float?
+  // what the goods cost the owner for this whole order; profit / loss = amount - landingPrice - delivery charges (see lib/profit.ts)
+  landingPrice      Float?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
