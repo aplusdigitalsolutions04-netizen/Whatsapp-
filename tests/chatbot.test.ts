@@ -1037,6 +1037,14 @@ test("only order numbers get answers (switchable), the others are silent and log
   await handleInbound(SHOP, { id: "oc-3", from: "919999900022", text: "!hi", type: "text" }).catch(() => undefined);
   assert.ok((await outCount("+919999900022")) >= 1, "the wake character always works");
 
+  // the wake word: a number without an order is answered when the message starts with jazz / hey jazz
+  await handleInbound(SHOP, { id: "oc-w1", from: "919999900055", text: "is the jazz printer good", type: "text" }).catch(() => undefined);
+  assert.equal(await outCount("+919999900055"), 0, "the word inside a sentence does not wake JAZZ");
+  await handleInbound(SHOP, { id: "oc-w2", from: "919999900055", text: "hey jazz", type: "text" }).catch(() => undefined);
+  assert.ok((await outCount("+919999900055")) >= 1, "'hey jazz' from a number without an order gets a reply");
+  await handleInbound(SHOP, { id: "oc-w3", from: "919999900066", text: "Jazz help", type: "text" }).catch(() => undefined);
+  assert.ok((await outCount("+919999900066")) >= 1, "'jazz ...' gets a reply too");
+
   // a fixed message for numbers without an order: sent once, exactly as written, then silence
   await prisma.botSettings.update({ where: { shop: SHOP }, data: { nonOrderReply: "Hi! This number is only for our order customers." } });
   await handleInbound(SHOP, { id: "oc-5", from: "919999900044", text: "hi", type: "text" }).catch(() => undefined);
@@ -1169,4 +1177,33 @@ test("store website chat: the icon sits at the bottom right (never over the head
   assert.ok(!/\.jw \{[^}]*\btop:/s.test(css.split("}")[2] ?? ""), "no top offset on the base rule");
   assert.ok(css.includes(".jw.top"), "top position is still available");
   assert.ok(js.includes("data-bottom") && js.includes("data-position"), "the script tag can move it");
+});
+
+test("wake word: a message that STARTS with jazz / hey jazz / hi jazz ... wakes JAZZ for anybody; mentioning the word inside a sentence does not", async () => {
+  const { applyWakeRule, stripWakeWord }: any = await loadApp("/app/lib/saved-contacts.ts");
+  for (const [input, rest] of [
+    ["jazz", ""], ["Jazz", ""], ["JAZZ track my order", "track my order"], ["hey jazz", ""], ["Hey Jazz, price of printer", "price of printer"],
+    ["hi jazz", ""], ["hello jazz!", ""], ["hii jazz help", "help"], ["ok jazz: where is #W1219", "where is #W1219"], ["  okay  jazz  ", ""],
+    ["namaste jazz mera order", "mera order"], ["jazz, hi", "hi"],
+  ] as const) assert.equal(stripWakeWord(input), rest, input);
+  for (const no of ["is the jazz printer good", "I love jazz music", "jazzy printer", "jazz's price", "hey there jazz", "order #W1219", "hello", ""]) assert.equal(stripWakeWord(no), null, no);
+
+  // anybody: the wake word is removed and the message counts as "woken" (text changed), so the order-only rule is skipped
+  assert.deepEqual(applyWakeRule("hey jazz track my order", false), { reply: true, text: "track my order" });
+  assert.deepEqual(applyWakeRule("jazz", false), { reply: true, text: "hi" });
+  assert.deepEqual(applyWakeRule("hello", false), { reply: true, text: "hello" });
+  // saved contacts: the wake word wakes them too, ordinary messages stay unanswered
+  assert.deepEqual(applyWakeRule("hi jazz help", true), { reply: true, text: "help" });
+  assert.deepEqual(applyWakeRule("hello", true), { reply: false, text: "hello" });
+});
+
+test("seen ticks: the bridge no longer marks every message as read; only the bot does, and only for chats it answers", async () => {
+  const { readFileSync } = await import("node:fs");
+  const bridge = readFileSync(new URL("../app/lib/bridge.server.ts", import.meta.url), "utf8");
+  const bot = readFileSync(new URL("../app/lib/bot.server.ts", import.meta.url), "utf8");
+  assert.ok(!/sock\?\.readMessages\(\[m\.key\]\)/.test(bridge), "no automatic read on every incoming message");
+  assert.ok(bridge.includes("export async function markIncomingRead"));
+  const seenAt = bot.indexOf("void showSeen(msg.id)");
+  assert.ok(seenAt > bot.indexOf("this number is not on any order"), "seen comes after the 'no order' decision, so those numbers stay unseen");
+  assert.ok(seenAt < bot.indexOf('conv.mode === "human"'), "and before an agent-mode chat is handled");
 });

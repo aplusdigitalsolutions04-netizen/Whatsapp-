@@ -267,7 +267,8 @@ export async function startBridge() {
         }
         bridge.received++;
         bridge.jids.set(parsed.payload.from, parsed.jid);
-        void bridge.sock?.readMessages([m.key]).catch(() => undefined); // blue ticks for the customer
+        // No blue ticks here: a message from a number that is not a customer must stay unseen. The bot calls markIncomingRead() when it answers.
+        remember(incomingKeys, parsed.payload.id, m.key);
         if (parsed.payload.media && parsed.payload.media.kind !== "sticker") {
           try {
             const buf = (await downloadMediaMessage(m, "buffer", {}, { logger: undefined as any, reuploadRequest: bridge.sock.updateMediaMessage })) as Buffer;
@@ -348,6 +349,21 @@ function remember<T>(map: Map<string, T>, key: string, value: T) {
   if (map.size > 500) map.delete(map.keys().next().value as string);
 }
 export const bridgeAck = (id: string) => acks.get(id) ?? null;
+
+// Keys of messages that came in, so the bot can show the blue ticks (seen) only for the chats it really answers.
+const incomingKeys = new Map<string, any>();
+/** Shows the customer the blue ticks for this incoming message. Does nothing when the message is unknown or WhatsApp is not connected. */
+export async function markIncomingRead(messageId: string): Promise<boolean> {
+  const key = incomingKeys.get(messageId);
+  if (!key || !bridge.sock) return false;
+  try {
+    await bridge.sock.readMessages([key]);
+    incomingKeys.delete(messageId);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** The address WhatsApp wants for this number: the one we already know from a chat, else ask WhatsApp (it also says whether the number has WhatsApp at all). */
 async function resolveJid(sock: any, digits: string): Promise<{ jid: string } | { error: string }> {

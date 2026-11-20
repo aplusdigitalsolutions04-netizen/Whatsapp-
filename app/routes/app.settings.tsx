@@ -67,7 +67,7 @@ export default function Settings() {
           </p>
           <p>
             <label><input type="checkbox" name="onlyOrderNumbers" defaultChecked={settings.onlyOrderNumbers} /> Reply only to numbers that have placed an order</label>{" "}
-            <small>Every other number gets no reply (you still see the chat in Conversations). Turn this off if you also want the bot to answer new people who ask about products.</small>
+            <small>Every other number gets no reply and their message is <b>not marked as seen</b> (you still see the chat in Live Inbox). Anyone can still wake JAZZ by starting the message with <b>jazz</b>, <b>hey jazz</b>, <b>hi jazz</b> or <b>hello jazz</b>. Turn this off if you also want the bot to answer new people who ask about products.</small>
           </p>
           <label className="o-field">
             <span>Message for numbers without an order (English). Leave empty to send nothing.</span>

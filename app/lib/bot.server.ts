@@ -505,6 +505,16 @@ export async function acknowledgeWaiting(shop: string, conv: Conv, s: Settings, 
 /** Writes down why JAZZ did not answer, so "the bot sends nothing" can be explained on the Logs page. */
 const masked = (phone: string) => `***${phone.replace(/\D/g, "").slice(-4)}`;
 
+/** Blue ticks for the customer's message (WhatsApp Web connection only). Never fails the reply. */
+async function showSeen(messageId: string) {
+  try {
+    const { markIncomingRead } = await import("./bridge.server"); // dynamic: bridge.server -> webhook-processor -> this file would be circular
+    await markIncomingRead(messageId);
+  } catch {
+    /* no ticks is harmless */
+  }
+}
+
 async function silent(shop: string, phone: string, reason: string, event = "bot_silent") {
   console.log(`[bot] ${masked(phone)}: no reply - ${reason}`);
   await logEvent({ shop, source: "bot", event, detail: `${phone}: ${reason}` }).catch(() => undefined);
@@ -585,6 +595,10 @@ export async function handleInbound(shop: string, msg: InboundPayload, opts: { c
     await silent(shop, phone, "this number is not on any order (Settings: reply only to numbers that have placed an order)", "bot_silent");
     return;
   }
+
+  // From here on JAZZ answers (or a person has the chat): only now does the customer get the blue ticks.
+  // A number that was ignored above (no order, saved contact, another bot) stays unseen.
+  if (!web) void showSeen(msg.id);
 
   if (conv.mode === "human") {
     // The chat is with a person now. Never leave the customer in silence, though: say once that the team has the request.
