@@ -294,6 +294,13 @@
 .wa-tab.on { background: #fff; color: var(--espresso); border-color: var(--line); }
 .wa-search { display: flex; gap: 6px; padding: 10px; background: var(--ivory); border-bottom: 1px solid var(--line); }
 .wa-search input { flex: 1; min-width: 0; border-radius: 999px !important; }
+.wa-search-box { position: relative; flex: 1; min-width: 0; display: flex; }
+.wa-search-box input[type="search"] { width: 100%; padding-right: 30px; }
+.wa-search-box input[type="search"]::-webkit-search-cancel-button { display: none; }
+.wa-search-x { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: var(--sand); color: #fff; font-size: 10px; text-decoration: none; line-height: 1; }
+.wa-search-x:hover { background: var(--mocha); }
+.wa-search-info { margin: 0; padding: 6px 14px; font-size: 11.5px; color: var(--taupe); background: var(--ivory); border-bottom: 1px solid var(--line); }
+mark.wa-hit { background: #ffe9a8; color: inherit; border-radius: 3px; padding: 0 1px; }
 .wa-list { overflow-y: auto; flex: 1; }
 .wa-item { display: flex; gap: 11px; padding: 10px 14px; text-decoration: none !important; color: var(--ink) !important; border-bottom: 1px solid var(--ivory); transition: background 0.12s; }
 .wa-item:hover { background: var(--ivory); }

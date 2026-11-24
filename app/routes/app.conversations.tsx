@@ -1,7 +1,7 @@
 /* eslint-disable jsx-a11y/media-has-caption -- customer-sent audio/video has no caption tracks */
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { Form, Link, useActionData, useLoaderData, useNavigation } from "react-router";
+import { Form, Link, useActionData, useLoaderData, useNavigation, useSubmit } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
@@ -10,6 +10,8 @@ import { activeProvider } from "../lib/bridge.server";
 import { logEvent } from "../lib/log.server";
 import { ALLOWED_UPLOAD_MIME, kindFromMime, MAX_MEDIA_BYTES, saveMedia, signedAvatarUrl, signedMediaUrl } from "../lib/media.server";
 import { rateLimited } from "../lib/rate-limit.server";
+import { highlightParts } from "../lib/inbox-search";
+import { searchInbox, type InboxMatch } from "../lib/inbox-search.server";
 import { sendAndRecord } from "../lib/whatsapp.server";
 import { useAutoRefresh } from "../components/useAutoRefresh";
 import { EmojiPicker } from "../components/EmojiPicker";
@@ -25,18 +27,22 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const where: Record<string, unknown> = { shop: session.shop };
   if (channel !== "all") where.channel = channel;
-  if (q) where.OR = [{ phone: { contains: q.replace(/[^\d+]/g, "") || q } }, { customerName: { contains: q } }];
   if (filter === "human") where.mode = "human";
   if (filter === "bot") where.mode = "bot";
   if (filter === "closed") where.status = "closed";
   if (filter === "open") where.status = "open";
 
-  const list = await prisma.conversation.findMany({
-    where,
-    orderBy: { lastMessageAt: "desc" },
-    take: 50,
-    include: { messages: { orderBy: { createdAt: "desc" }, take: 1 } },
-  });
+  // With a search text: phone (any way typed), name, ORDER ID and words inside the messages, best match first. Without: newest chats.
+  const list: { c: Awaited<ReturnType<typeof prisma.conversation.findMany<{ include: { messages: true } }>>>[number]; match: InboxMatch | null }[] = q
+    ? await searchInbox(session.shop, q, where)
+    : (
+        await prisma.conversation.findMany({
+          where,
+          orderBy: { lastMessageAt: "desc" },
+          take: 50,
+          include: { messages: { orderBy: { createdAt: "desc" }, take: 1 } },
+        })
+      ).map((c) => ({ c, match: null }));
   const selected = selectedId
     ? await prisma.conversation.findFirst({
         where: { id: selectedId, shop: session.shop },
@@ -61,10 +67,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     channel,
     counts,
     canSendFiles: activeProvider() === "qr",
-    list: list.map((c) => ({
+    list: list.map(({ c, match }) => ({
       id: c.id, phone: c.phone, name: c.customerName, mode: c.mode, status: c.status, channel: c.channel,
       avatar: c.avatarFile ? signedAvatarUrl(c.id) : null,
       last: c.lastMessageAt.toISOString(), preview: preview(c.messages[0]),
+      match: match as InboxMatch | null, // why this chat is in the search result (order id, number, name or a message) and the matching text
     })),
     selected: selected && {
       id: selected.id, phone: selected.phone, name: selected.customerName, mode: selected.mode, channel: selected.channel,
@@ -177,6 +184,11 @@ function RichText({ text }: { text: string }) {
   );
 }
 
+/** `text` with every place `q` appears marked (search result highlight). */
+function Hl({ text, q }: { text: string; q: string }) {
+  return <>{highlightParts(text, q).map((p, i) => (p.hit ? <mark key={i} className="wa-hit">{p.text}</mark> : <Fragment key={i}>{p.text}</Fragment>))}</>;
+}
+
 type Msg = NonNullable<Awaited<ReturnType<typeof loader>>["selected"]>["messages"][number];
 
 function MediaView({ m }: { m: NonNullable<Msg["media"]> }) {
@@ -210,6 +222,14 @@ export default function Conversations() {
   const fileInput = useRef<HTMLInputElement>(null);
   const thread = useRef<HTMLDivElement>(null);
   const [fileName, setFileName] = useState("");
+  const submit = useSubmit();
+  const searchForm = useRef<HTMLFormElement>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const runSearch = () => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (searchForm.current) void submit(searchForm.current, { replace: true, preventScrollReset: true });
+  };
+  useEffect(() => () => { if (searchTimer.current) clearTimeout(searchTimer.current); }, []);
   useAutoRefresh(4000);
 
   useEffect(() => {
@@ -257,20 +277,36 @@ export default function Conversations() {
               </Link>
             ))}
           </div>
-          <Form method="get" className="wa-search">
+          {/* Searches while you type (no button needed): name, phone number in any format, ORDER ID, or any word inside the messages */}
+          <Form method="get" className="wa-search" ref={searchForm} role="search">
             <input type="hidden" name="channel" value={channel} />
-            <input name="q" defaultValue={q} placeholder="Search name or number" aria-label="Search conversations" />
-            <select name="filter" defaultValue={filter} aria-label="Filter">
+            {selected && <input type="hidden" name="c" value={selected.id} />}
+            <span className="wa-search-box">
+              <input
+                name="q" defaultValue={q} type="search" autoComplete="off"
+                placeholder="Search name, number, order ID or message"
+                aria-label="Search conversations"
+                onChange={() => {
+                  if (searchTimer.current) clearTimeout(searchTimer.current);
+                  searchTimer.current = setTimeout(runSearch, 300);
+                }}
+              />
+              {q && (
+                <Link className="wa-search-x" aria-label="Clear search" title="Clear search" to={`?channel=${channel}&filter=${filter}${selected ? `&c=${selected.id}` : ""}`} replace>✕</Link>
+              )}
+            </span>
+            <select name="filter" defaultValue={filter} aria-label="Filter" onChange={runSearch}>
               <option value="all">All</option>
               <option value="open">Open</option>
               <option value="closed">Closed</option>
               <option value="human">Agent</option>
               <option value="bot">JAZZ</option>
             </select>
-            <button type="submit">Go</button>
           </Form>
+          {q && <p className="wa-search-info">{list.length ? `${list.length} chat${list.length > 1 ? "s" : ""} found` : "No chat found"} for “{q}”</p>}
           <div className="wa-list">
-            {list.length === 0 && (
+            {list.length === 0 && q && <p className="o-muted" style={{ padding: 16 }}>Nothing matches “{q}”. Try a name, a phone number, an order ID like #W1219, or a word from a message.</p>}
+            {list.length === 0 && !q && (
               <p className="o-muted" style={{ padding: 16 }}>
                 {channel === "web" ? "No website chats yet. Turn on the JAZZ icon in Bot Settings and chats from your website appear here." : "No conversations yet. Messages appear here when customers write in on WhatsApp."}
               </p>
@@ -280,11 +316,14 @@ export default function Conversations() {
                 <Avatar src={c.avatar} label={c.channel === "web" && !c.name ? "W" : (c.name ?? c.phone)} />
                 <span className="wa-item-main">
                   <span className="wa-item-top">
-                    <b>{who(c)}</b>
+                    <b><Hl text={who(c)} q={q} /></b>
                     <small>{listTime(c.last)}</small>
                   </span>
                   <span className="wa-item-bottom">
-                    <span className="wa-preview">{c.preview}</span>
+                    <span className="wa-preview">
+                      {c.match?.kind === "order" && <span className="o-badge info" title="This customer placed that order">Order {c.match.order}</span>}{" "}
+                      {c.match?.snippet ? <Hl text={c.match.snippet} q={q} /> : c.match?.kind === "phone" ? <Hl text={c.phone} q={q.replace(/\D/g, "").slice(-10)} /> : c.preview}
+                    </span>
                     {channel === "all" && <ChannelBadge channel={c.channel} />}
                     {c.mode === "human" && <span className="o-badge warning">Agent</span>}
                     {c.status === "closed" && <span className="o-badge">Closed</span>}
