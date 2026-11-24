@@ -28,8 +28,9 @@ const COLS: Col[] = [
   { key: "orderName", label: "Order ID", kind: "text", src: "shopify", w: 90 },
   { key: "orderDate", label: "Order Date", kind: "date", src: "shopify", w: 118 },
   { key: "customerName", label: "Customer Name", kind: "text", src: "shopify", w: 150 },
-  { key: "productName", label: "Product Name", kind: "text", src: "shopify", w: 240 },
+  { key: "productName", label: "Item Name", kind: "text", src: "shopify", w: 240 },
   { key: "qty", label: "Qty", kind: "number", src: "shopify", w: 60 },
+  { key: "unitPrice", label: "Unit Price", kind: "readonly", src: "shopify", w: 90 },
   { key: "amount", label: "Order Amount", kind: "number", src: "shopify", w: 110 },
   { key: "paymentType", label: "Payment Type", kind: "text", src: "shopify", w: 110 },
   { key: "primaryMobile", label: "Primary Mobile", kind: "text", src: "shopify", w: 130 },
@@ -58,7 +59,9 @@ const COLS: Col[] = [
 const MANUAL_FIELDS = new Set(COLS.filter((c) => c.src === "manual").map((c) => c.key));
 const ROW_FIELDS = new Set(["orderName", "orderDate", "customerName", "productName", "qty", "amount", "paymentType", "primaryMobile", "fullAddress", "city", "state", "pinCode"]);
 const DATE_FIELDS = new Set(["callDate", "dispatchDate", "orderDate"]);
-const NUM_FIELDS = new Set(["amount", "deliveryCharges", "landingPrice", "qty"]);
+/** The columns that are about one ITEM; every item row shows them. The other columns are about the whole order (first row only). */
+const ITEM_COLS = new Set(["orderName", "productName", "qty", "unitPrice"]);
+const NUM_FIELDS =new Set(["amount", "deliveryCharges", "landingPrice", "qty"]);
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -183,7 +186,7 @@ function Cell({ row, col }: { row: { id: string; isManual: boolean; v: Record<st
   };
 
   if (!editable) {
-    const text = col.kind === "date" ? day(raw as string | null) : col.key === "amount" ? money(raw) : col.key === "profitLoss" ? signed(raw) : String(raw ?? "");
+    const text = col.kind === "date" ? day(raw as string | null) : col.key === "amount" || col.key === "unitPrice" ? money(raw) : col.key === "profitLoss" ? signed(raw) : String(raw ?? "");
     return <span className="os-ro" title={text}>{text}</span>;
   }
   const key = `${row.id}-${col.key}-${raw ?? ""}`;
@@ -228,11 +231,11 @@ export default function OrderSheet() {
   const cards: [string, number, string][] = [
     ["Total Orders", d.counts.total, ""],
     ["Delivered", d.counts.Delivered, "Delivered"],
+    ["Fulfilled", d.counts.Fulfilled, "Fulfilled"],
     ["Unfulfilled", d.counts.Unfulfilled, "Unfulfilled"],
     ["Cancelled", d.counts.Cancelled, "Cancelled"],
     ["RTO (Returns)", d.counts.RTO, "RTO"],
   ];
-  const fulfilledOnly = d.counts.Fulfilled;
 
   return (
     <Page
@@ -345,7 +348,7 @@ export default function OrderSheet() {
       </div>
       <p className="o-muted os-note">
         {d.from || d.to ? <>Counts are for orders placed {d.from ? `from ${d.from} ` : ""}{d.to ? `to ${d.to}` : ""}{d.q ? ` matching “${d.q}”` : ""}.</> : d.q ? <>Counts are for orders matching “{d.q}”.</> : <>Counts cover all {d.counts.total.toLocaleString()} synced orders.</>}{" "}
-        Each order is in one status only. Fulfilled but not yet delivered: {fulfilledOnly}.
+        Each order is in one status only (Fulfilled = sent, not yet delivered).
         {d.sync?.lastSyncAt && <> Last sync {when(d.sync.lastSyncAt)}.</>}
       </p>
 
@@ -360,12 +363,12 @@ export default function OrderSheet() {
         }
       >
         <p className="o-muted os-note" style={{ margin: "0 0 10px" }}>
-          Orders are grouped by the date they were placed. The status is each order&apos;s status right now.{d.kind === "week" ? " Weeks run Monday to Sunday." : ""} Click a row to list just those orders.
+          Orders are grouped by the date they were placed. The status is each order&apos;s status right now, and every order is in exactly one of Delivered, Fulfilled (sent, not yet delivered), Unfulfilled, Cancelled or RTO, so each row adds up to its total.{d.kind === "week" ? " Weeks run Monday to Sunday." : ""} Click a row to list just those orders.
         </p>
         <div className="os-scroll">
           <table className="os-periods">
             <thead>
-              <tr><th>{d.kind === "day" ? "Day" : d.kind === "week" ? "Week" : d.kind === "month" ? "Month" : "Year"}</th><th>Total Orders</th><th>Delivered</th><th>Unfulfilled</th><th>Cancelled</th><th>RTO</th></tr>
+              <tr><th>{d.kind === "day" ? "Day" : d.kind === "week" ? "Week" : d.kind === "month" ? "Month" : "Year"}</th><th>Total Orders</th><th>Delivered</th><th>Fulfilled</th><th>Unfulfilled</th><th>Cancelled</th><th>RTO</th></tr>
             </thead>
             <tbody>
               {d.periods.map((r) => {
@@ -375,6 +378,7 @@ export default function OrderSheet() {
                     <td><Link to={link({ from: on ? "" : r.from, to: on ? "" : r.to, status: "", page: "1" })} preventScrollReset>{r.label}</Link>{r.current && <span className="os-now">now</span>}</td>
                     <td><b>{r.total}</b></td>
                     <td className="c-Delivered">{r.Delivered}</td>
+                    <td className="c-Fulfilled">{r.Fulfilled}</td>
                     <td className="c-Unfulfilled">{r.Unfulfilled}</td>
                     <td className="c-Cancelled">{r.Cancelled}</td>
                     <td className="c-RTO">{r.RTO}</td>
@@ -413,21 +417,34 @@ export default function OrderSheet() {
             {d.rows.length === 0 && (
               <tr><td colSpan={COLS.length + 1} className="d-empty">No orders to show.</td></tr>
             )}
-            {d.rows.map((r) => (
-              <tr key={r.id} className={`os-row st-${r.status}`}>
-                {COLS.map((c) => (
-                  <td key={c.key} className={c.key === "profitLoss" && profitTone(r.v.profitLoss as number | null) ? `pl-${profitTone(r.v.profitLoss as number | null)}` : undefined}><Cell row={r} col={c} /></td>
-                ))}
-                <td>
-                  {r.isManual && (
-                    <Form method="post" onSubmit={(e) => { if (!window.confirm("Delete this row?")) e.preventDefault(); }}>
-                      <input type="hidden" name="id" value={r.id} />
-                      <button name="intent" value="delete" className="o-icon" aria-label="Delete row" title="Delete row"><X size={14} /></button>
-                    </Form>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {/* One row per item. Order Amount, call details, delivery, landing price and profit belong to the whole order, so they are on its FIRST row only. */}
+            {d.rows.flatMap((r) =>
+              (r.items.length ? r.items : [null]).map((it, i) => {
+                const first = i === 0;
+                const row = it ? { ...r, v: { ...r.v, productName: it.name, qty: it.quantity, unitPrice: it.unitPrice } } : r;
+                return (
+                  <tr key={`${r.id}-${i}`} className={`os-row st-${r.status}${first ? "" : " os-sub"}`}>
+                    {COLS.map((c) =>
+                      first || ITEM_COLS.has(c.key) ? (
+                        <td key={c.key} className={c.key === "profitLoss" && profitTone(r.v.profitLoss as number | null) ? `pl-${profitTone(r.v.profitLoss as number | null)}` : undefined}>
+                          {first || c.key !== "orderName" ? <Cell row={row} col={c} /> : <span className="os-ro os-dim" title={String(r.v.orderName ?? "")}>{String(r.v.orderName ?? "")}</span>}
+                        </td>
+                      ) : (
+                        <td key={c.key} />
+                      ),
+                    )}
+                    <td>
+                      {first && r.isManual && (
+                        <Form method="post" onSubmit={(e) => { if (!window.confirm("Delete this row?")) e.preventDefault(); }}>
+                          <input type="hidden" name="id" value={r.id} />
+                          <button name="intent" value="delete" className="o-icon" aria-label="Delete row" title="Delete row"><X size={14} /></button>
+                        </Form>
+                      )}
+                    </td>
+                  </tr>
+                );
+              }),
+            )}
           </tbody>
         </table>
       </div>

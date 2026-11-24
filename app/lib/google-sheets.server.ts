@@ -3,7 +3,7 @@ import { createHmac, createSign } from "node:crypto";
 import prisma from "../db.server";
 import { logEvent } from "./log.server";
 import {
-  COUNTER_COLORS, COUNTER_LABELS, counterFormulas, dataRange, FIRST_DATA_ROW, HEADER_ROW, PROFIT_COLOR, PROFIT_TEXT_COLOR, REMARKS_COL, rowToValues, SHEET_HEADERS,
+  COUNTER_COLORS, COUNTER_LABELS, counterFormulas, dataRange, FIRST_DATA_ROW, HEADER_ROW, PROFIT_COLOR, PROFIT_TEXT_COLOR, REMARKS_COL, sheetRows, SHEET_HEADERS,
   WEEKLY_COLS_PER_WEEK, WEEKLY_FIRST_COL, WEEKLY_WEEKS, weeklyCounters, weeklyGrid,
 } from "./google-sheet-format";
 import { decryptSecret } from "./secret.server";
@@ -105,7 +105,7 @@ async function ensureTabs(token: string, id: string) {
   if (!data) {
     const r = await api(token, `${id}:batchUpdate`, {
       method: "POST",
-      body: { requests: [{ addSheet: { properties: { title: TAB, gridProperties: { columnCount: 29 } } } }] },
+      body: { requests: [{ addSheet: { properties: { title: TAB, gridProperties: { columnCount: 31 } } } }] },
     });
     data = { ...r.replies[0].addSheet.properties, rules: 0 };
   }
@@ -118,7 +118,7 @@ async function format(token: string, id: string, dataId: number, oldRules: numbe
     ["^Cancelled", "#F7D9D5"], ["^RTO", "#EADCEE"], ["^Delivered", "#DCECF5"], ["^Fulfilled", "#E4F2E1"],
     ["^(Unfulfilled|Partially|On hold|Scheduled)", "#FDEED6"],
   ];
-  const range = { sheetId: dataId, startRowIndex: FIRST_DATA_ROW - 1, startColumnIndex: 0, endColumnIndex: 29 };
+  const range = { sheetId: dataId, startRowIndex: FIRST_DATA_ROW - 1, startColumnIndex: 0, endColumnIndex: 31 };
   // Profit / Loss (column AC) only: green above zero, red below. Added first, so they win over the row colour.
   const plRange = { sheetId: dataId, startRowIndex: FIRST_DATA_ROW - 1, startColumnIndex: 28, endColumnIndex: 29 };
   const plRule = (op: ">" | "<", color: string, text: string, index: number) => ({
@@ -167,7 +167,7 @@ async function format(token: string, id: string, dataId: number, oldRules: numbe
             { repeatCell: { range: { sheetId: dataId, startRowIndex: 2, endRowIndex: 3, startColumnIndex: c, endColumnIndex: c + 1 }, cell: { userEnteredFormat: { backgroundColor: color, horizontalAlignment: "CENTER", textFormat: { bold: true, fontSize: 14, foregroundColor: rgb("#38291F") } } }, fields: "userEnteredFormat(backgroundColor,horizontalAlignment,textFormat)" } },
           ];
         }).flat(),
-        { autoResizeDimensions: { dimensions: { sheetId: dataId, dimension: "COLUMNS", startIndex: 0, endIndex: 29 } } },
+        { autoResizeDimensions: { dimensions: { sheetId: dataId, dimension: "COLUMNS", startIndex: 0, endIndex: 31 } } },
       ],
     },
   });
@@ -204,7 +204,7 @@ export async function pushOrders(shop: string): Promise<number | null> {
       const all = await prisma.orderSheet.findMany({ where: { shop }, orderBy: [{ orderDate: "desc" }, { createdAt: "desc" }] });
       updateTask(shop, "sheet", { label: `Sending ${all.length.toLocaleString()} orders to Google Sheet` });
       await callScript(cfg.scriptUrl, scriptToken(shop), {
-        action: "write", tab: TAB, headers: [...SHEET_HEADERS], rows: all.map((r) => rowToValues(r)),
+        action: "write", tab: TAB, headers: [...SHEET_HEADERS], rows: all.flatMap((r) => sheetRows(r)),
         weekly: weeklyCounters(all).map((w) => [w.label, ...w.counts]),
       });
       await prisma.googleSheetConfig.update({ where: { shop }, data: { lastPushAt: new Date(), lastPushRows: all.length, lastError: null, formatted: true } });
@@ -216,19 +216,19 @@ export async function pushOrders(shop: string): Promise<number | null> {
     const token = await accessToken(cfg.saEmail, key);
     const tabs = await ensureTabs(token, cfg.spreadsheetId);
     const rows = await prisma.orderSheet.findMany({ where: { shop }, orderBy: [{ orderDate: "desc" }, { createdAt: "desc" }] });
-    const values = rows.map((r) => rowToValues(r));
+    const values = rows.flatMap((r) => sheetRows(r));
     updateTask(shop, "sheet", { label: `Sending ${values.length.toLocaleString()} orders to Google Sheet` });
 
     const sid = cfg.spreadsheetId;
     const enc = encodeURIComponent;
     // Counters (live formulas) on top, header in row 4, orders from row 5.
     await api(token, `${sid}/values/${enc(`'${TAB}'!A1:E2`)}?valueInputOption=USER_ENTERED`, { method: "PUT", body: { values: [[...COUNTER_LABELS], counterFormulas()] } });
-    await api(token, `${sid}/values/${enc(`'${TAB}'!A3:AC3`)}:clear`, { method: "POST", body: {} });
+    await api(token, `${sid}/values/${enc(`'${TAB}'!A3:AE3`)}:clear`, { method: "POST", body: {} });
     // Last-7-days counters (and the 7-day windows before) to the right of the all-time ones
     await api(token, `${sid}/values/${enc(`'${TAB}'!G1:Z3`)}?valueInputOption=RAW`, { method: "PUT", body: { values: weeklyGrid(weeklyCounters(rows)) } });
     await api(token, `${sid}/values/${enc(dataRange(TAB, HEADER_ROW, HEADER_ROW))}?valueInputOption=RAW`, { method: "PUT", body: { values: [[...SHEET_HEADERS]] } });
-    // Clear only our 29 columns (anything to the right, e.g. the team's own notes, is left alone), then write in chunks.
-    await api(token, `${sid}/values/${enc(`'${TAB}'!A${FIRST_DATA_ROW}:AC`)}:clear`, { method: "POST", body: {} });
+    // Clear only our 31 columns (anything to the right, e.g. the team's own notes, is left alone), then write in chunks.
+    await api(token, `${sid}/values/${enc(`'${TAB}'!A${FIRST_DATA_ROW}:AE`)}:clear`, { method: "POST", body: {} });
     for (let i = 0; i < values.length; i += CHUNK) {
       const slice = values.slice(i, i + CHUNK);
       await api(token, `${sid}/values/${enc(dataRange(TAB, FIRST_DATA_ROW + i, FIRST_DATA_ROW + i + slice.length - 1))}?valueInputOption=RAW`, { method: "PUT", body: { values: slice } });
@@ -237,7 +237,7 @@ export async function pushOrders(shop: string): Promise<number | null> {
     if (!cfg.formatted) await format(token, sid, tabs.dataId, tabs.rules);
     await prisma.googleSheetConfig.update({
       where: { shop },
-      data: { lastPushAt: new Date(), lastPushRows: values.length, lastError: null, formatted: true, spreadsheetTitle: tabs.title || cfg.spreadsheetTitle },
+      data: { lastPushAt: new Date(), lastPushRows: rows.length, lastError: null, formatted: true, spreadsheetTitle: tabs.title || cfg.spreadsheetTitle },
     });
     await logEvent({ shop, source: "shopify", event: "sheet_push", detail: `${values.length} rows` });
     return values.length;

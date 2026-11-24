@@ -1,5 +1,5 @@
 import prisma from "../db.server.ts";
-import { SHEET_STATUSES, type SheetStatus } from "./order-map.ts";
+import { parseItems, SHEET_STATUSES, type SheetStatus } from "./order-map.ts";
 import { addPeriod, bucketOrders, dayParam, earliestStart, parseDay, PERIOD_COUNT, PERIOD_KINDS, type PeriodKind } from "./order-periods.ts";
 import { statusCounts } from "./order-store.server.ts";
 import { profitLoss } from "./profit.ts";
@@ -48,6 +48,8 @@ export async function loadOrderSheet(shop: string, url: URL) {
     sync: sync && { lastSyncAt: iso(sync.lastSyncAt), lastFullSyncAt: iso(sync.lastFullSyncAt), lastError: sync.lastError, lastCount: sync.lastCount },
     rows: rows.map((r) => ({
       id: r.id, isManual: r.isManual, status: r.status,
+      // one table row per item; an order without stored items (hand-added row, or not read yet) is one row
+      items: parseItems(r.items),
       v: {
         callDate: iso(r.callDate), employeeName: r.employeeName, orderName: r.orderName, orderDate: iso(r.orderDate), customerName: r.customerName,
         productName: r.productName, qty: r.qty, amount: r.amount, paymentType: r.paymentType, primaryMobile: r.primaryMobile,

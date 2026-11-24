@@ -89,7 +89,9 @@ export async function runSync(shop: string, mode: "auto" | "full" = "auto"): Pro
   const started = new Date();
   try {
     const st = await prisma.orderSyncState.findUnique({ where: { shop } });
-    const full = mode === "full" || !st?.lastFullSyncAt;
+    // Orders saved before items were stored (items = null) need one full read to get their item rows.
+    const needItems = (await prisma.orderSheet.count({ where: { shop, isManual: false, items: null } })) > 0;
+    const full = mode === "full" || !st?.lastFullSyncAt || needItems;
     const since = full ? null : new Date((st?.lastSyncAt ?? started).getTime() - OVERLAP_MS);
     if (full) updateTask(shop, "sync", { label: "Reading your full order history from Shopify" });
     // How many orders to expect, so the bar can show a real percentage. If Shopify cannot tell, the bar just keeps counting.
@@ -100,6 +102,8 @@ export async function runSync(shop: string, mode: "auto" | "full" = "auto"): Pro
       create: { shop, lastSyncAt: started, lastFullSyncAt: full ? started : null, lastCount: r.fetched, lastError: null },
       update: { lastSyncAt: started, ...(full ? { lastFullSyncAt: started } : {}), lastCount: r.fetched, lastError: null },
     });
+    // Rows Shopify no longer returns would stay "not read" forever and force a full read every 5 minutes: mark them as having no items.
+    if (full) await prisma.orderSheet.updateMany({ where: { shop, isManual: false, items: null }, data: { items: "[]" } });
     if (r.created + r.updated > 0 || full) scheduleSheetPush(shop, 2_000);
     // Orders JAZZ already confirmed with the customer get their sheet row filled (Employee Name JAZZ) if that has not happened yet.
     await backfillSheetFromConfirmations(shop).catch(() => 0);

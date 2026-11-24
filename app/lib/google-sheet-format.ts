@@ -1,15 +1,23 @@
 // Pure helpers for the Google Sheet mirror (no network, no database): easy to test.
 import { rollingWindows, type OrderLite } from "./order-periods.ts";
+import { parseItems } from "./order-map.ts";
 import { profitLoss } from "./profit.ts";
 
-/** The 29 columns, in the exact order of the calling sheet (AB = Landing Price, AC = Profit / Loss, filled in by the app). */
+/**
+ * The 31 columns, in the exact order of the calling sheet (AB = Landing Price, AC = Profit / Loss, filled in by the app).
+ * The sheet has ONE ROW PER ITEM: Order ID, Product Name (= item name), Qty and Unit Price (AD) are the item's; Item No. (AE) is 1 on the
+ * first row of an order and 2, 3... on the next items. Everything else (amount, call details, delivery, landing price, profit) is on the first row only.
+ */
 export const SHEET_HEADERS = [
   "Call Date", "Employee Name", "Order ID", "Order Date", "Customer Name", "Product Name", "Qty", "Order Amount",
   "Payment Type", "Primary Mobile", "Alternate Mobile", "Full Address", "Landmark", "City", "State", "PIN Code",
   "Address Confirmed", "COD Amount Confirmed", "Delivery Available", "Customer Wants Order", "Call Status",
   "Final Decision", "Remarks", "Employee Remark", "Dispatch Date", "AWB/Tracking No.", "Delivery Charges",
-  "Landing Price", "Profit / Loss",
+  "Landing Price", "Profit / Loss", "Unit Price", "Item No.",
 ] as const;
+
+/** Column letter of "Item No." (31st): the counters count only rows where it is 1, so an order with 3 items is still one order. */
+export const ITEM_NO_COL = "AE";
 
 /** Column letter of "Remarks" (23rd), used by the colour rules and the summary formulas. */
 export const REMARKS_COL = "W";
@@ -23,23 +31,54 @@ export type SheetRow = {
   remarks: string | null; status: string; isManual: boolean; employeeRemark: string | null;
   dispatchDate: Date | null; dispatchDateShopify: Date | null; awb: string | null; trackingNo: string | null;
   deliveryCharges: number | null; shippingCharge: number | null; landingPrice?: number | null;
+  /** JSON of the order's items (see order-map.ts); null / empty = one row from productName and qty. */
+  items?: string | null;
 };
 
 const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "");
 const text = (s: string | null | undefined) => s ?? "";
 
-/** One calling-sheet row as cell values. Employee values win over Shopify's where both exist. */
-export function rowToValues(r: SheetRow): (string | number)[] {
+/** The items of an order, one per sheet row. Without stored items (hand-added row, not read yet) it is one row from the joined product name and qty. */
+function itemsOf(r: SheetRow): { name: string; quantity: number; unitPrice: number | null }[] {
+  const items = parseItems(r.items);
+  return items.length ? items : [{ name: text(r.productName), quantity: r.qty ?? 0, unitPrice: null }];
+}
+
+/** How many sheet rows this order takes (one per item). */
+export const sheetRowCount = (r: SheetRow) => itemsOf(r).length;
+
+/**
+ * One calling-sheet row as cell values: item number `index` (0 = the first item) of the order. Employee values win over Shopify's where both exist.
+ * Rows after the first carry only the item's own cells (Order ID, item name, qty, unit price, item no.) plus Remarks, so the colour follows the status.
+ */
+export function rowToValues(r: SheetRow, index = 0): (string | number)[] {
+  const it = itemsOf(r)[index] ?? itemsOf(r)[0];
+  const itemCells = [it.unitPrice ?? "", index + 1] as const; // Unit Price (AD), Item No. (AE)
+  const remarks = r.isManual ? r.status : text(r.remarks);
+  if (index > 0) {
+    const sub: (string | number)[] = Array(SHEET_HEADERS.length).fill("");
+    sub[2] = text(r.orderName);
+    sub[5] = it.name;
+    sub[6] = it.quantity;
+    sub[22] = remarks;
+    sub[29] = itemCells[0];
+    sub[30] = itemCells[1];
+    return sub;
+  }
   return [
-    day(r.callDate), text(r.employeeName), text(r.orderName), day(r.orderDate), text(r.customerName), text(r.productName),
-    r.qty ?? 0, r.amount ?? "", text(r.paymentType), text(r.primaryMobile), text(r.altMobile ?? r.altMobileShopify),
+    day(r.callDate), text(r.employeeName), text(r.orderName), day(r.orderDate), text(r.customerName), it.name,
+    it.quantity, r.amount ?? "", text(r.paymentType), text(r.primaryMobile), text(r.altMobile ?? r.altMobileShopify),
     text(r.fullAddress), text(r.landmark), text(r.city), text(r.state), text(r.pinCode),
     text(r.addressConfirmed), text(r.codConfirmed), text(r.deliveryAvailable), text(r.customerWants), text(r.callStatus),
-    text(r.finalDecision), r.isManual ? r.status : text(r.remarks), text(r.employeeRemark),
+    text(r.finalDecision), remarks, text(r.employeeRemark),
     day(r.dispatchDate ?? r.dispatchDateShopify), text(r.awb ?? r.trackingNo), r.deliveryCharges ?? r.shippingCharge ?? "",
     r.landingPrice ?? "", profitLoss({ status: r.status, amount: r.amount, landingPrice: r.landingPrice, deliveryCharges: r.deliveryCharges ?? r.shippingCharge }) ?? "",
+    itemCells[0], itemCells[1],
   ];
 }
+
+/** All rows of an order for the sheet: one per item. */
+export const sheetRows = (r: SheetRow): (string | number)[][] => Array.from({ length: sheetRowCount(r) }, (_, i) => rowToValues(r, i));
 
 /** Accepts a full Google Sheets URL or a bare spreadsheet id. */
 export function spreadsheetIdFrom(input: string): string | null {
@@ -61,8 +100,8 @@ export function parseServiceAccount(raw: string): { email: string; privateKey: s
   }
 }
 
-/** A1 range for the data rows, e.g. 'Order Calling Sheet'!A2:AC1001 */
-export const dataRange = (tab: string, from: number, to: number) => `'${tab.replace(/'/g, "''")}'!A${from}:AC${to}`;
+/** A1 range for the data rows, e.g. 'Order Calling Sheet'!A2:AE1001 */
+export const dataRange = (tab: string, from: number, to: number) => `'${tab.replace(/'/g, "''")}'!A${from}:AE${to}`;
 
 /** Where the Profit / Loss column sits (AC, the 29th): green when above zero, red when below. */
 export const PROFIT_COL = "AC";
@@ -75,12 +114,16 @@ export const FIRST_DATA_ROW = 5;
 
 export const COUNTER_LABELS = ["Total Orders", "Delivered", "Unfulfilled", "Cancelled", "RTO (Returns)"] as const;
 
-/** Live formulas for the five counters (cells A2:E2). They read the Remarks column of the data rows. */
+/**
+ * Live formulas for the five counters (cells A2:E2). They read the Remarks column, but only on the first row of each order
+ * (Item No. = 1), so an order with three items is counted once.
+ */
 export function counterFormulas(): string[] {
   const w = `${REMARKS_COL}${FIRST_DATA_ROW}:${REMARKS_COL}`;
-  const c = (p: string) => `COUNTIF(${w},"${p}")`;
+  const n = `${ITEM_NO_COL}${FIRST_DATA_ROW}:${ITEM_NO_COL}`;
+  const c = (p: string) => `COUNTIFS(${n},1,${w},"${p}")`;
   return [
-    `=COUNTA(C${FIRST_DATA_ROW}:C)`,
+    `=COUNTIF(${n},1)`,
     `=${c("Delivered*")}`,
     `=${c("Unfulfilled*")}+${c("Partially*")}+${c("On hold*")}+${c("Scheduled*")}`,
     `=${c("Cancelled*")}`,
@@ -180,7 +223,7 @@ export function appsScriptCode(token: string): string {
     "      var body = sh.getRange(5, 1, d.rows.length, cols);",
     "      body.setNumberFormat('@'); // keep phone numbers and text exactly as sent",
     "      sh.getRange(5, 7, d.rows.length, 2).setNumberFormat('General'); // Qty, Order Amount",
-    "      sh.getRange(5, 27, d.rows.length, 3).setNumberFormat('General'); // Delivery Charges, Landing Price, Profit / Loss",
+    "      sh.getRange(5, 27, d.rows.length, 5).setNumberFormat('General'); // Delivery Charges, Landing Price, Profit / Loss, Unit Price, Item No.",
     "      body.setValues(d.rows);",
     "    }",
     "    addColours(sh, cols);",

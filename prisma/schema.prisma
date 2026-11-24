@@ -248,6 +248,8 @@ model OrderSheet {
   deliveryCharges   Float?
   // what the goods cost the owner for this whole order; profit / loss = amount - landingPrice - delivery charges (see lib/profit.ts)
   landingPrice      Float?
+  // The order's items as JSON [{name, quantity, unitPrice, sku}], written by the Shopify sync. null = not read yet (a full sync fills it); "[]" = no items.
+  items             String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

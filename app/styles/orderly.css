@@ -361,7 +361,12 @@
 @media (prefers-reduced-motion: reduce) { .orderly * { transition: none !important; } }
 
 /* ---------- Order Update (calling sheet) ---------- */
-.os-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 6px; }
+.os-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); margin-bottom: 6px; }
+.os-kpi.st-Fulfilled { border-left-color: #4f7a4a; }
+/* the 2nd, 3rd... item of an order: same colour as the order, no line between the items, the order id dimmed */
+.orderly tbody tr.os-row.os-sub td { border-top: 0; }
+.orderly tbody tr.os-row:not(.os-sub) td { border-top: 1px solid rgba(56, 41, 31, 0.14); }
+.os-dim { opacity: 0.55; }
 @media (max-width: 900px) { .os-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .orderly a.os-kpi { display: block; text-decoration: none; color: inherit; border-left: 4px solid var(--sand); }
 .os-kpi.st-Delivered { border-left-color: #3f7fa8; }
@@ -433,6 +438,7 @@
 .orderly table.os-periods td a:hover { color: var(--mocha); text-decoration: underline; }
 .os-now { margin-left: 8px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--mocha); background: var(--beige); border-radius: 6px; padding: 1px 6px; }
 .os-periods .c-Delivered { color: #3f7fa8; }
+.os-periods .c-Fulfilled { color: #4f7a4a; }
 .os-periods .c-Unfulfilled { color: #bd7620; }
 .os-periods .c-Cancelled { color: #a3392f; }
 .os-periods .c-RTO { color: #7a4a8a; }

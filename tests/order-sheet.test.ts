@@ -110,9 +110,9 @@ test("counters count each order once and follow status changes", async () => {
   assert.deepEqual([c.total, c.Unfulfilled, c.Cancelled], [5, 1, 2]);
 });
 
-test("google sheet: 29 columns in order, employee values win, safe parsing", async () => {
+test("google sheet: 31 columns in order, employee values win, safe parsing", async () => {
   const { SHEET_HEADERS, rowToValues, spreadsheetIdFrom, parseServiceAccount, dataRange } = await import("../app/lib/google-sheet-format.ts");
-  assert.equal(SHEET_HEADERS.length, 29);
+  assert.equal(SHEET_HEADERS.length, 31);
   assert.equal(SHEET_HEADERS[22], "Remarks");
   assert.equal(SHEET_HEADERS[23], "Employee Remark");
   const base = {
@@ -124,7 +124,7 @@ test("google sheet: 29 columns in order, employee values win, safe parsing", asy
     awb: null, trackingNo: "AWB123", deliveryCharges: 40, shippingCharge: 60,
   };
   const v = rowToValues(base);
-  assert.equal(v.length, 29);
+  assert.equal(v.length, 31);
   assert.equal(v[10], "+919811111111"); // alternate mobile falls back to Shopify's
   assert.equal(v[22], "Fulfilled · In transit");
   assert.equal(v[24], "2026-11-02");
@@ -136,5 +136,5 @@ test("google sheet: 29 columns in order, employee values win, safe parsing", asy
   assert.equal(parseServiceAccount("not json"), null);
   assert.equal(parseServiceAccount(JSON.stringify({ type: "authorized_user" })), null);
   assert.deepEqual(parseServiceAccount(JSON.stringify({ type: "service_account", client_email: "a@b.iam.gserviceaccount.com", private_key: "-----BEGIN PRIVATE KEY-----\nx" })), { email: "a@b.iam.gserviceaccount.com", privateKey: "-----BEGIN PRIVATE KEY-----\nx" });
-  assert.equal(dataRange("Order Calling Sheet", 2, 5), "'Order Calling Sheet'!A2:AC5");
+  assert.equal(dataRange("Order Calling Sheet", 2, 5), "'Order Calling Sheet'!A2:AE5");
 });

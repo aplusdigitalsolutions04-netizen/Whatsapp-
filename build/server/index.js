@@ -3721,7 +3721,7 @@ const ORDER_SHEET_FIELDS = `
   shippingAddress { name address1 address2 city province zip phone }
   billingAddress { name phone }
   shippingLine { originalPriceSet { shopMoney { amount } } }
-  lineItems(first: 50) { nodes { title variantTitle quantity currentQuantity } }
+  lineItems(first: 50) { nodes { title variantTitle quantity currentQuantity sku discountedUnitPriceSet { shopMoney { amount } } } }
   fulfillments(first: 10) { createdAt updatedAt displayStatus deliveredAt estimatedDeliveryAt trackingInfo(first: 3) { company number url } }
 `;
 const SHEET_STATUSES = ["Unfulfilled", "Fulfilled", "Delivered", "Cancelled", "RTO"];
@@ -3749,6 +3749,25 @@ function computeStatus(o) {
   else if (ful === "SCHEDULED") parts[0] = "Scheduled";
   if (fin === "PENDING" || fin === "AUTHORIZED") parts.push("Payment pending");
   return { status: "Unfulfilled", remarks: parts.join(" · ") };
+}
+const itemName = (i) => i.variantTitle && i.variantTitle !== "Default Title" ? `${i.title} (${i.variantTitle})` : String(i.title ?? "");
+function orderItems(o) {
+  var _a2;
+  const items = ((_a2 = o == null ? void 0 : o.lineItems) == null ? void 0 : _a2.nodes) ?? [];
+  return items.filter((i) => (i.currentQuantity ?? i.quantity) > 0).map((i) => {
+    var _a3, _b;
+    const p = Number((_b = (_a3 = i.discountedUnitPriceSet) == null ? void 0 : _a3.shopMoney) == null ? void 0 : _b.amount);
+    return { name: itemName(i), quantity: Number(i.currentQuantity ?? i.quantity ?? 0), unitPrice: Number.isFinite(p) ? Math.round(p * 100) / 100 : null, sku: i.sku ?? null };
+  });
+}
+function parseItems(json2) {
+  if (!json2) return [];
+  try {
+    const a = JSON.parse(json2);
+    return Array.isArray(a) ? a.map((i) => ({ name: String((i == null ? void 0 : i.name) ?? ""), quantity: Number(i == null ? void 0 : i.quantity) || 0, unitPrice: Number.isFinite(Number(i == null ? void 0 : i.unitPrice)) && (i == null ? void 0 : i.unitPrice) !== null ? Number(i.unitPrice) : null, sku: (i == null ? void 0 : i.sku) ?? null })) : [];
+  } catch {
+    return [];
+  }
 }
 const digits = (s) => String(s ?? "").replace(/\D/g, "");
 const last10 = (s) => digits(s).slice(-10);
@@ -3780,6 +3799,7 @@ function mapShopifyOrder(o) {
     customerName: ship.name || [(_j = o.customer) == null ? void 0 : _j.firstName, (_k = o.customer) == null ? void 0 : _k.lastName].filter(Boolean).join(" ") || ((_l = o.billingAddress) == null ? void 0 : _l.name) || null,
     productName: live.map((i) => i.variantTitle && i.variantTitle !== "Default Title" ? `${i.title} (${i.variantTitle})` : i.title).join(", ") || null,
     qty: live.reduce((n, i) => n + (i.currentQuantity ?? i.quantity ?? 0), 0),
+    items: JSON.stringify(orderItems(o)),
     amount: money2 ? Number(money2.amount) : null,
     currency: (money2 == null ? void 0 : money2.currencyCode) ?? null,
     paymentType: paymentType(o),
@@ -3810,6 +3830,8 @@ const orderMap = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProp
   SHEET_STATUSES,
   computeStatus,
   mapShopifyOrder,
+  orderItems,
+  parseItems,
   paymentType
 }, Symbol.toStringTag, { value: "Module" }));
 async function upsertOrder(shop, m) {
@@ -3980,20 +4002,41 @@ const SHEET_HEADERS = [
   "AWB/Tracking No.",
   "Delivery Charges",
   "Landing Price",
-  "Profit / Loss"
+  "Profit / Loss",
+  "Unit Price",
+  "Item No."
 ];
+const ITEM_NO_COL = "AE";
 const REMARKS_COL = "W";
 const day$1 = (d) => d ? d.toISOString().slice(0, 10) : "";
 const text = (s) => s ?? "";
-function rowToValues(r) {
+function itemsOf(r) {
+  const items = parseItems(r.items);
+  return items.length ? items : [{ name: text(r.productName), quantity: r.qty ?? 0, unitPrice: null }];
+}
+const sheetRowCount = (r) => itemsOf(r).length;
+function rowToValues(r, index = 0) {
+  const it = itemsOf(r)[index] ?? itemsOf(r)[0];
+  const itemCells = [it.unitPrice ?? "", index + 1];
+  const remarks = r.isManual ? r.status : text(r.remarks);
+  if (index > 0) {
+    const sub = Array(SHEET_HEADERS.length).fill("");
+    sub[2] = text(r.orderName);
+    sub[5] = it.name;
+    sub[6] = it.quantity;
+    sub[22] = remarks;
+    sub[29] = itemCells[0];
+    sub[30] = itemCells[1];
+    return sub;
+  }
   return [
     day$1(r.callDate),
     text(r.employeeName),
     text(r.orderName),
     day$1(r.orderDate),
     text(r.customerName),
-    text(r.productName),
-    r.qty ?? 0,
+    it.name,
+    it.quantity,
     r.amount ?? "",
     text(r.paymentType),
     text(r.primaryMobile),
@@ -4009,15 +4052,18 @@ function rowToValues(r) {
     text(r.customerWants),
     text(r.callStatus),
     text(r.finalDecision),
-    r.isManual ? r.status : text(r.remarks),
+    remarks,
     text(r.employeeRemark),
     day$1(r.dispatchDate ?? r.dispatchDateShopify),
     text(r.awb ?? r.trackingNo),
     r.deliveryCharges ?? r.shippingCharge ?? "",
     r.landingPrice ?? "",
-    profitLoss({ status: r.status, amount: r.amount, landingPrice: r.landingPrice, deliveryCharges: r.deliveryCharges ?? r.shippingCharge }) ?? ""
+    profitLoss({ status: r.status, amount: r.amount, landingPrice: r.landingPrice, deliveryCharges: r.deliveryCharges ?? r.shippingCharge }) ?? "",
+    itemCells[0],
+    itemCells[1]
   ];
 }
+const sheetRows = (r) => Array.from({ length: sheetRowCount(r) }, (_, i) => rowToValues(r, i));
 function spreadsheetIdFrom(input) {
   const s = input.trim();
   const m = s.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]{20,})/);
@@ -4034,7 +4080,7 @@ function parseServiceAccount(raw) {
     return null;
   }
 }
-const dataRange = (tab, from, to) => `'${tab.replace(/'/g, "''")}'!A${from}:AC${to}`;
+const dataRange = (tab, from, to) => `'${tab.replace(/'/g, "''")}'!A${from}:AE${to}`;
 const PROFIT_COLOR = { profit: "#C9EBC5", loss: "#F6C7C1" };
 const PROFIT_TEXT_COLOR = { profit: "#14602A", loss: "#9A2417" };
 const HEADER_ROW = 4;
@@ -4042,9 +4088,10 @@ const FIRST_DATA_ROW = 5;
 const COUNTER_LABELS = ["Total Orders", "Delivered", "Unfulfilled", "Cancelled", "RTO (Returns)"];
 function counterFormulas() {
   const w = `${REMARKS_COL}${FIRST_DATA_ROW}:${REMARKS_COL}`;
-  const c = (p) => `COUNTIF(${w},"${p}")`;
+  const n = `${ITEM_NO_COL}${FIRST_DATA_ROW}:${ITEM_NO_COL}`;
+  const c = (p) => `COUNTIFS(${n},1,${w},"${p}")`;
   return [
-    `=COUNTA(C${FIRST_DATA_ROW}:C)`,
+    `=COUNTIF(${n},1)`,
     `=${c("Delivered*")}`,
     `=${c("Unfulfilled*")}+${c("Partially*")}+${c("On hold*")}+${c("Scheduled*")}`,
     `=${c("Cancelled*")}`,
@@ -4127,7 +4174,7 @@ function appsScriptCode(token) {
     "      var body = sh.getRange(5, 1, d.rows.length, cols);",
     "      body.setNumberFormat('@'); // keep phone numbers and text exactly as sent",
     "      sh.getRange(5, 7, d.rows.length, 2).setNumberFormat('General'); // Qty, Order Amount",
-    "      sh.getRange(5, 27, d.rows.length, 3).setNumberFormat('General'); // Delivery Charges, Landing Price, Profit / Loss",
+    "      sh.getRange(5, 27, d.rows.length, 5).setNumberFormat('General'); // Delivery Charges, Landing Price, Profit / Loss, Unit Price, Item No.",
     "      body.setValues(d.rows);",
     "    }",
     "    addColours(sh, cols);",
@@ -4275,7 +4322,7 @@ async function ensureTabs(token, id2) {
   if (!data) {
     const r = await api$2(token, `${id2}:batchUpdate`, {
       method: "POST",
-      body: { requests: [{ addSheet: { properties: { title: TAB, gridProperties: { columnCount: 29 } } } }] }
+      body: { requests: [{ addSheet: { properties: { title: TAB, gridProperties: { columnCount: 31 } } } }] }
     });
     data = { ...r.replies[0].addSheet.properties, rules: 0 };
   }
@@ -4289,7 +4336,7 @@ async function format(token, id2, dataId, oldRules) {
     ["^Fulfilled", "#E4F2E1"],
     ["^(Unfulfilled|Partially|On hold|Scheduled)", "#FDEED6"]
   ];
-  const range = { sheetId: dataId, startRowIndex: FIRST_DATA_ROW - 1, startColumnIndex: 0, endColumnIndex: 29 };
+  const range = { sheetId: dataId, startRowIndex: FIRST_DATA_ROW - 1, startColumnIndex: 0, endColumnIndex: 31 };
   const plRange = { sheetId: dataId, startRowIndex: FIRST_DATA_ROW - 1, startColumnIndex: 28, endColumnIndex: 29 };
   const plRule = (op, color, text2, index) => ({
     addConditionalFormatRule: {
@@ -4337,7 +4384,7 @@ async function format(token, id2, dataId, oldRules) {
             { repeatCell: { range: { sheetId: dataId, startRowIndex: 2, endRowIndex: 3, startColumnIndex: c, endColumnIndex: c + 1 }, cell: { userEnteredFormat: { backgroundColor: color, horizontalAlignment: "CENTER", textFormat: { bold: true, fontSize: 14, foregroundColor: rgb("#38291F") } } }, fields: "userEnteredFormat(backgroundColor,horizontalAlignment,textFormat)" } }
           ];
         }).flat(),
-        { autoResizeDimensions: { dimensions: { sheetId: dataId, dimension: "COLUMNS", startIndex: 0, endIndex: 29 } } }
+        { autoResizeDimensions: { dimensions: { sheetId: dataId, dimension: "COLUMNS", startIndex: 0, endIndex: 31 } } }
       ]
     }
   });
@@ -4373,7 +4420,7 @@ async function pushOrders(shop) {
         action: "write",
         tab: TAB,
         headers: [...SHEET_HEADERS],
-        rows: all.map((r) => rowToValues(r)),
+        rows: all.flatMap((r) => sheetRows(r)),
         weekly: weeklyCounters(all).map((w) => [w.label, ...w.counts])
       });
       await prisma.googleSheetConfig.update({ where: { shop }, data: { lastPushAt: /* @__PURE__ */ new Date(), lastPushRows: all.length, lastError: null, formatted: true } });
@@ -4385,15 +4432,15 @@ async function pushOrders(shop) {
     const token = await accessToken(cfg.saEmail, key2);
     const tabs = await ensureTabs(token, cfg.spreadsheetId);
     const rows = await prisma.orderSheet.findMany({ where: { shop }, orderBy: [{ orderDate: "desc" }, { createdAt: "desc" }] });
-    const values = rows.map((r) => rowToValues(r));
+    const values = rows.flatMap((r) => sheetRows(r));
     updateTask(shop, "sheet", { label: `Sending ${values.length.toLocaleString()} orders to Google Sheet` });
     const sid = cfg.spreadsheetId;
     const enc = encodeURIComponent;
     await api$2(token, `${sid}/values/${enc(`'${TAB}'!A1:E2`)}?valueInputOption=USER_ENTERED`, { method: "PUT", body: { values: [[...COUNTER_LABELS], counterFormulas()] } });
-    await api$2(token, `${sid}/values/${enc(`'${TAB}'!A3:AC3`)}:clear`, { method: "POST", body: {} });
+    await api$2(token, `${sid}/values/${enc(`'${TAB}'!A3:AE3`)}:clear`, { method: "POST", body: {} });
     await api$2(token, `${sid}/values/${enc(`'${TAB}'!G1:Z3`)}?valueInputOption=RAW`, { method: "PUT", body: { values: weeklyGrid(weeklyCounters(rows)) } });
     await api$2(token, `${sid}/values/${enc(dataRange(TAB, HEADER_ROW, HEADER_ROW))}?valueInputOption=RAW`, { method: "PUT", body: { values: [[...SHEET_HEADERS]] } });
-    await api$2(token, `${sid}/values/${enc(`'${TAB}'!A${FIRST_DATA_ROW}:AC`)}:clear`, { method: "POST", body: {} });
+    await api$2(token, `${sid}/values/${enc(`'${TAB}'!A${FIRST_DATA_ROW}:AE`)}:clear`, { method: "POST", body: {} });
     for (let i = 0; i < values.length; i += CHUNK$1) {
       const slice = values.slice(i, i + CHUNK$1);
       await api$2(token, `${sid}/values/${enc(dataRange(TAB, FIRST_DATA_ROW + i, FIRST_DATA_ROW + i + slice.length - 1))}?valueInputOption=RAW`, { method: "PUT", body: { values: slice } });
@@ -4402,7 +4449,7 @@ async function pushOrders(shop) {
     if (!cfg.formatted) await format(token, sid, tabs.dataId, tabs.rules);
     await prisma.googleSheetConfig.update({
       where: { shop },
-      data: { lastPushAt: /* @__PURE__ */ new Date(), lastPushRows: values.length, lastError: null, formatted: true, spreadsheetTitle: tabs.title || cfg.spreadsheetTitle }
+      data: { lastPushAt: /* @__PURE__ */ new Date(), lastPushRows: rows.length, lastError: null, formatted: true, spreadsheetTitle: tabs.title || cfg.spreadsheetTitle }
     });
     await logEvent({ shop, source: "shopify", event: "sheet_push", detail: `${values.length} rows` });
     return values.length;
@@ -4746,7 +4793,8 @@ async function runSync(shop, mode = "auto") {
   const started = /* @__PURE__ */ new Date();
   try {
     const st = await prisma.orderSyncState.findUnique({ where: { shop } });
-    const full = mode === "full" || !(st == null ? void 0 : st.lastFullSyncAt);
+    const needItems = await prisma.orderSheet.count({ where: { shop, isManual: false, items: null } }) > 0;
+    const full = mode === "full" || !(st == null ? void 0 : st.lastFullSyncAt) || needItems;
     const since = full ? null : new Date(((st == null ? void 0 : st.lastSyncAt) ?? started).getTime() - OVERLAP_MS);
     if (full) updateTask(shop, "sync", { label: "Reading your full order history from Shopify" });
     void countOrders(shop, since).then((n) => n != null && updateTask(shop, "sync", { total: n }));
@@ -4756,6 +4804,7 @@ async function runSync(shop, mode = "auto") {
       create: { shop, lastSyncAt: started, lastFullSyncAt: full ? started : null, lastCount: r.fetched, lastError: null },
       update: { lastSyncAt: started, ...full ? { lastFullSyncAt: started } : {}, lastCount: r.fetched, lastError: null }
     });
+    if (full) await prisma.orderSheet.updateMany({ where: { shop, isManual: false, items: null }, data: { items: "[]" } });
     if (r.created + r.updated > 0 || full) scheduleSheetPush(shop, 2e3);
     await backfillSheetFromConfirmations(shop).catch(() => 0);
     await logEvent({
@@ -9227,7 +9276,7 @@ async function getWaiting(shop, take = 5) {
     at: (c.lastInboundAt ?? c.lastMessageAt).toISOString()
   }));
 }
-const orderlyStyles = "/assets/orderly-B3o-RrVd.css";
+const orderlyStyles = "/assets/orderly-Eqp7cYUP.css";
 const dashboardStyles = "/assets/dashboard-j6vCbuOj.css";
 function waitedFor(iso, now = Date.now()) {
   const s = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1e3));
@@ -15030,6 +15079,8 @@ async function loadOrderSheet(shop, url) {
       id: r.id,
       isManual: r.isManual,
       status: r.status,
+      // one table row per item; an order without stored items (hand-added row, or not read yet) is one row
+      items: parseItems(r.items),
       v: {
         callDate: iso(r.callDate),
         employeeName: r.employeeName,
@@ -15100,7 +15151,7 @@ const COLS = [{
   w: 150
 }, {
   key: "productName",
-  label: "Product Name",
+  label: "Item Name",
   kind: "text",
   src: "shopify",
   w: 240
@@ -15110,6 +15161,12 @@ const COLS = [{
   kind: "number",
   src: "shopify",
   w: 60
+}, {
+  key: "unitPrice",
+  label: "Unit Price",
+  kind: "readonly",
+  src: "shopify",
+  w: 90
 }, {
   key: "amount",
   label: "Order Amount",
@@ -15252,6 +15309,7 @@ const COLS = [{
 const MANUAL_FIELDS = new Set(COLS.filter((c) => c.src === "manual").map((c) => c.key));
 const ROW_FIELDS = /* @__PURE__ */ new Set(["orderName", "orderDate", "customerName", "productName", "qty", "amount", "paymentType", "primaryMobile", "fullAddress", "city", "state", "pinCode"]);
 const DATE_FIELDS = /* @__PURE__ */ new Set(["callDate", "dispatchDate", "orderDate"]);
+const ITEM_COLS = /* @__PURE__ */ new Set(["orderName", "productName", "qty", "unitPrice"]);
 const NUM_FIELDS = /* @__PURE__ */ new Set(["amount", "deliveryCharges", "landingPrice", "qty"]);
 const loader$8 = async ({
   request
@@ -15529,7 +15587,7 @@ function Cell({
     });
   };
   if (!editable) {
-    const text2 = col.kind === "date" ? day(raw) : col.key === "amount" ? money(raw) : col.key === "profitLoss" ? signed(raw) : String(raw ?? "");
+    const text2 = col.kind === "date" ? day(raw) : col.key === "amount" || col.key === "unitPrice" ? money(raw) : col.key === "profitLoss" ? signed(raw) : String(raw ?? "");
     return /* @__PURE__ */ jsx("span", {
       className: "os-ro",
       title: text2,
@@ -15589,8 +15647,7 @@ const app_orderSheet = UNSAFE_withComponentProps(function OrderSheet() {
     for (const [k, v] of [...p]) if (!v || k === "page" && v === "1" || k === "period" && v === "week") p.delete(k);
     return `?${p.toString()}`;
   };
-  const cards = [["Total Orders", d.counts.total, ""], ["Delivered", d.counts.Delivered, "Delivered"], ["Unfulfilled", d.counts.Unfulfilled, "Unfulfilled"], ["Cancelled", d.counts.Cancelled, "Cancelled"], ["RTO (Returns)", d.counts.RTO, "RTO"]];
-  const fulfilledOnly = d.counts.Fulfilled;
+  const cards = [["Total Orders", d.counts.total, ""], ["Delivered", d.counts.Delivered, "Delivered"], ["Fulfilled", d.counts.Fulfilled, "Fulfilled"], ["Unfulfilled", d.counts.Unfulfilled, "Unfulfilled"], ["Cancelled", d.counts.Cancelled, "Cancelled"], ["RTO (Returns)", d.counts.RTO, "RTO"]];
   return /* @__PURE__ */ jsxs(Page, {
     title: "Order Update",
     subtitle: "Order calling sheet: Shopify orders sync automatically; call details and employee remarks stay yours.",
@@ -15889,7 +15946,7 @@ const app_orderSheet = UNSAFE_withComponentProps(function OrderSheet() {
         children: ["Counts are for orders matching “", d.q, "”."]
       }) : /* @__PURE__ */ jsxs(Fragment, {
         children: ["Counts cover all ", d.counts.total.toLocaleString(), " synced orders."]
-      }), " ", "Each order is in one status only. Fulfilled but not yet delivered: ", fulfilledOnly, ".", ((_c = d.sync) == null ? void 0 : _c.lastSyncAt) && /* @__PURE__ */ jsxs(Fragment, {
+      }), " ", "Each order is in one status only (Fulfilled = sent, not yet delivered).", ((_c = d.sync) == null ? void 0 : _c.lastSyncAt) && /* @__PURE__ */ jsxs(Fragment, {
         children: [" Last sync ", when$1(d.sync.lastSyncAt), "."]
       })]
     }), /* @__PURE__ */ jsxs(Card, {
@@ -15913,7 +15970,7 @@ const app_orderSheet = UNSAFE_withComponentProps(function OrderSheet() {
         style: {
           margin: "0 0 10px"
         },
-        children: ["Orders are grouped by the date they were placed. The status is each order's status right now.", d.kind === "week" ? " Weeks run Monday to Sunday." : "", " Click a row to list just those orders."]
+        children: ["Orders are grouped by the date they were placed. The status is each order's status right now, and every order is in exactly one of Delivered, Fulfilled (sent, not yet delivered), Unfulfilled, Cancelled or RTO, so each row adds up to its total.", d.kind === "week" ? " Weeks run Monday to Sunday." : "", " Click a row to list just those orders."]
       }), /* @__PURE__ */ jsx("div", {
         className: "os-scroll",
         children: /* @__PURE__ */ jsxs("table", {
@@ -15926,6 +15983,8 @@ const app_orderSheet = UNSAFE_withComponentProps(function OrderSheet() {
                 children: "Total Orders"
               }), /* @__PURE__ */ jsx("th", {
                 children: "Delivered"
+              }), /* @__PURE__ */ jsx("th", {
+                children: "Fulfilled"
               }), /* @__PURE__ */ jsx("th", {
                 children: "Unfulfilled"
               }), /* @__PURE__ */ jsx("th", {
@@ -15960,6 +16019,9 @@ const app_orderSheet = UNSAFE_withComponentProps(function OrderSheet() {
                 }), /* @__PURE__ */ jsx("td", {
                   className: "c-Delivered",
                   children: r.Delivered
+                }), /* @__PURE__ */ jsx("td", {
+                  className: "c-Fulfilled",
+                  children: r.Fulfilled
                 }), /* @__PURE__ */ jsx("td", {
                   className: "c-Unfulfilled",
                   children: r.Unfulfilled
@@ -16052,37 +16114,53 @@ const app_orderSheet = UNSAFE_withComponentProps(function OrderSheet() {
               className: "d-empty",
               children: "No orders to show."
             })
-          }), d.rows.map((r) => /* @__PURE__ */ jsxs("tr", {
-            className: `os-row st-${r.status}`,
-            children: [COLS.map((c) => /* @__PURE__ */ jsx("td", {
-              className: c.key === "profitLoss" && profitTone(r.v.profitLoss) ? `pl-${profitTone(r.v.profitLoss)}` : void 0,
-              children: /* @__PURE__ */ jsx(Cell, {
-                row: r,
-                col: c
-              })
-            }, c.key)), /* @__PURE__ */ jsx("td", {
-              children: r.isManual && /* @__PURE__ */ jsxs(Form, {
-                method: "post",
-                onSubmit: (e) => {
-                  if (!window.confirm("Delete this row?")) e.preventDefault();
-                },
-                children: [/* @__PURE__ */ jsx("input", {
-                  type: "hidden",
-                  name: "id",
-                  value: r.id
-                }), /* @__PURE__ */ jsx("button", {
-                  name: "intent",
-                  value: "delete",
-                  className: "o-icon",
-                  "aria-label": "Delete row",
-                  title: "Delete row",
-                  children: /* @__PURE__ */ jsx(X, {
-                    size: 14
-                  })
-                })]
-              })
-            })]
-          }, r.id))]
+          }), d.rows.flatMap((r) => (r.items.length ? r.items : [null]).map((it, i) => {
+            const first = i === 0;
+            const row = it ? {
+              ...r,
+              v: {
+                ...r.v,
+                productName: it.name,
+                qty: it.quantity,
+                unitPrice: it.unitPrice
+              }
+            } : r;
+            return /* @__PURE__ */ jsxs("tr", {
+              className: `os-row st-${r.status}${first ? "" : " os-sub"}`,
+              children: [COLS.map((c) => first || ITEM_COLS.has(c.key) ? /* @__PURE__ */ jsx("td", {
+                className: c.key === "profitLoss" && profitTone(r.v.profitLoss) ? `pl-${profitTone(r.v.profitLoss)}` : void 0,
+                children: first || c.key !== "orderName" ? /* @__PURE__ */ jsx(Cell, {
+                  row,
+                  col: c
+                }) : /* @__PURE__ */ jsx("span", {
+                  className: "os-ro os-dim",
+                  title: String(r.v.orderName ?? ""),
+                  children: String(r.v.orderName ?? "")
+                })
+              }, c.key) : /* @__PURE__ */ jsx("td", {}, c.key)), /* @__PURE__ */ jsx("td", {
+                children: first && r.isManual && /* @__PURE__ */ jsxs(Form, {
+                  method: "post",
+                  onSubmit: (e) => {
+                    if (!window.confirm("Delete this row?")) e.preventDefault();
+                  },
+                  children: [/* @__PURE__ */ jsx("input", {
+                    type: "hidden",
+                    name: "id",
+                    value: r.id
+                  }), /* @__PURE__ */ jsx("button", {
+                    name: "intent",
+                    value: "delete",
+                    className: "o-icon",
+                    "aria-label": "Delete row",
+                    title: "Delete row",
+                    children: /* @__PURE__ */ jsx(X, {
+                      size: 14
+                    })
+                  })]
+                })
+              })]
+            }, `${r.id}-${i}`);
+          }))]
         })]
       })
     }), d.pages > 1 && /* @__PURE__ */ jsxs("div", {
@@ -19461,7 +19539,7 @@ const route36 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePrope
   headers,
   loader
 }, Symbol.toStringTag, { value: "Module" }));
-const serverManifest = { "entry": { "module": "/assets/entry.client-De-QXFzv.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-Bgn1TnLL.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index/route": { "id": "routes/_index/route", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-DI0UZlaB.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/health": { "id": "routes/health", "parentId": "root", "path": "health", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/health-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.cancelled": { "id": "routes/webhooks.orders.cancelled", "parentId": "root", "path": "webhooks/orders/cancelled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.cancelled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.create": { "id": "routes/webhooks.orders.create", "parentId": "root", "path": "webhooks/orders/create", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.create-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.updated": { "id": "routes/webhooks.orders.updated", "parentId": "root", "path": "webhooks/orders/updated", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.updated-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.products.update": { "id": "routes/webhooks.products.update", "parentId": "root", "path": "webhooks/products/update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.products.update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.avatar.$id": { "id": "routes/api.avatar.$id", "parentId": "root", "path": "api/avatar/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.avatar._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.chat": { "id": "routes/api.chat", "parentId": "root", "path": "api/chat", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.chat-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.finder.$": { "id": "routes/api.finder.$", "parentId": "root", "path": "api/finder/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.finder._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.image-editor.$": { "id": "routes/api.image-editor.$", "parentId": "root", "path": "api/image-editor/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.image-editor._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.media.$id": { "id": "routes/api.media.$id", "parentId": "root", "path": "api/media/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.media._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.send": { "id": "routes/api.send", "parentId": "root", "path": "api/send", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.send-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.seo.$": { "id": "routes/api.seo.$", "parentId": "root", "path": "api/seo/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.seo._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.webhooks.whatsapp": { "id": "routes/api.webhooks.whatsapp", "parentId": "root", "path": "api/webhooks/whatsapp", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.webhooks.whatsapp-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-CdEhpnOP.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/wand-sparkles-BdPk82tl.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/sparkles-xFG9LRwy.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-DxZANANM.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/wand-sparkles-BdPk82tl.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/circle-check-CgxXrolP.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.billing-data": { "id": "routes/app.billing-data", "parentId": "routes/app", "path": "billing-data", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.billing-data-C3AZZT48.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/download-2kZZwBYa.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.conversations": { "id": "routes/app.conversations", "parentId": "routes/app", "path": "conversations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.conversations-DQBsNSar.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.enquiries": { "id": "routes/app.enquiries", "parentId": "routes/app", "path": "enquiries", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.enquiries-COB6tued.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-bulk": { "id": "routes/app.image-bulk", "parentId": "routes/app", "path": "image-bulk", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-bulk-DqWooGbZ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-editor": { "id": "routes/app.image-editor", "parentId": "routes/app", "path": "image-editor", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-editor-BnCa-ubo.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BgNR0BkF.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js", "/assets/x-DIQ7-F4l.js", "/assets/chevron-down-DgceB_EA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-products": { "id": "routes/app.image-products", "parentId": "routes/app", "path": "image-products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-products-Nq2XpDHu.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BgNR0BkF.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js", "/assets/chevron-down-DgceB_EA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.integrations": { "id": "routes/app.integrations", "parentId": "routes/app", "path": "integrations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.integrations-C8fIC8u9.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.logs": { "id": "routes/app.logs", "parentId": "routes/app", "path": "logs", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.logs-lqPVshDm.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.order-sheet": { "id": "routes/app.order-sheet", "parentId": "routes/app", "path": "order-sheet", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.order-sheet-Bvfpd7Xl.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/x-DIQ7-F4l.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.orders": { "id": "routes/app.orders", "parentId": "routes/app", "path": "orders", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.orders-Dn87TNmU.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.product-scrapper": { "id": "routes/app.product-scrapper", "parentId": "routes/app", "path": "product-scrapper", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.product-scrapper-CpJb0ZY2.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/search-Brt88N_W.js", "/assets/trash-B5HXC6TW.js", "/assets/download-2kZZwBYa.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.products": { "id": "routes/app.products", "parentId": "routes/app", "path": "products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.products-bWC2Cbow.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.quick-replies": { "id": "routes/app.quick-replies", "parentId": "routes/app", "path": "quick-replies", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.quick-replies-C0KLsZI0.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.seo": { "id": "routes/app.seo", "parentId": "routes/app", "path": "seo", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.seo-eZqunjrD.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/scan-search-B8PBngg6.js", "/assets/circle-check-CgxXrolP.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/chevron-down-DgceB_EA.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/rotate-ccw-B15igVXZ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.settings": { "id": "routes/app.settings", "parentId": "routes/app", "path": "settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.settings-B_s0MzhJ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.waiting": { "id": "routes/app.waiting", "parentId": "routes/app", "path": "waiting", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/app.waiting-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.whatsapp-web": { "id": "routes/app.whatsapp-web", "parentId": "routes/app", "path": "whatsapp-web", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.whatsapp-web-DVCBcFNB.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-70520c88.js", "version": "70520c88", "sri": void 0 };
+const serverManifest = { "entry": { "module": "/assets/entry.client-De-QXFzv.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-Bgn1TnLL.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index/route": { "id": "routes/_index/route", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-DI0UZlaB.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/health": { "id": "routes/health", "parentId": "root", "path": "health", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/health-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.cancelled": { "id": "routes/webhooks.orders.cancelled", "parentId": "root", "path": "webhooks/orders/cancelled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.cancelled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.create": { "id": "routes/webhooks.orders.create", "parentId": "root", "path": "webhooks/orders/create", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.create-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.updated": { "id": "routes/webhooks.orders.updated", "parentId": "root", "path": "webhooks/orders/updated", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.updated-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.products.update": { "id": "routes/webhooks.products.update", "parentId": "root", "path": "webhooks/products/update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.products.update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.avatar.$id": { "id": "routes/api.avatar.$id", "parentId": "root", "path": "api/avatar/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.avatar._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.chat": { "id": "routes/api.chat", "parentId": "root", "path": "api/chat", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.chat-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.finder.$": { "id": "routes/api.finder.$", "parentId": "root", "path": "api/finder/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.finder._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.image-editor.$": { "id": "routes/api.image-editor.$", "parentId": "root", "path": "api/image-editor/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.image-editor._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.media.$id": { "id": "routes/api.media.$id", "parentId": "root", "path": "api/media/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.media._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.send": { "id": "routes/api.send", "parentId": "root", "path": "api/send", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.send-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.seo.$": { "id": "routes/api.seo.$", "parentId": "root", "path": "api/seo/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.seo._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.webhooks.whatsapp": { "id": "routes/api.webhooks.whatsapp", "parentId": "root", "path": "api/webhooks/whatsapp", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.webhooks.whatsapp-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-BwBzJCQz.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/wand-sparkles-BdPk82tl.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/sparkles-xFG9LRwy.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-DxZANANM.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/wand-sparkles-BdPk82tl.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/scan-search-B8PBngg6.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/circle-check-CgxXrolP.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.billing-data": { "id": "routes/app.billing-data", "parentId": "routes/app", "path": "billing-data", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.billing-data-C3AZZT48.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/download-2kZZwBYa.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.conversations": { "id": "routes/app.conversations", "parentId": "routes/app", "path": "conversations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.conversations-DQBsNSar.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.enquiries": { "id": "routes/app.enquiries", "parentId": "routes/app", "path": "enquiries", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.enquiries-COB6tued.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-bulk": { "id": "routes/app.image-bulk", "parentId": "routes/app", "path": "image-bulk", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-bulk-DqWooGbZ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-editor": { "id": "routes/app.image-editor", "parentId": "routes/app", "path": "image-editor", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-editor-BnCa-ubo.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BgNR0BkF.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js", "/assets/x-DIQ7-F4l.js", "/assets/chevron-down-DgceB_EA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-products": { "id": "routes/app.image-products", "parentId": "routes/app", "path": "image-products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-products-Nq2XpDHu.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ImageOptionsForm-BgNR0BkF.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/image-editor-BuXfqNPu.js", "/assets/ui-D2Ax3-CR.js", "/assets/image-products-BpLzRnjK.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/trash-B5HXC6TW.js", "/assets/rotate-ccw-B15igVXZ.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/shopping-bag-DAA-oeqH.js", "/assets/sparkles-xFG9LRwy.js", "/assets/chevron-down-DgceB_EA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.integrations": { "id": "routes/app.integrations", "parentId": "routes/app", "path": "integrations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.integrations-C8fIC8u9.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.logs": { "id": "routes/app.logs", "parentId": "routes/app", "path": "logs", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.logs-lqPVshDm.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.order-sheet": { "id": "routes/app.order-sheet", "parentId": "routes/app", "path": "order-sheet", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.order-sheet-DnkIQb35.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/x-DIQ7-F4l.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.orders": { "id": "routes/app.orders", "parentId": "routes/app", "path": "orders", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.orders-Dn87TNmU.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.product-scrapper": { "id": "routes/app.product-scrapper", "parentId": "routes/app", "path": "product-scrapper", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.product-scrapper-CpJb0ZY2.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/useAutoRefresh-DEzxtaf0.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/search-Brt88N_W.js", "/assets/trash-B5HXC6TW.js", "/assets/download-2kZZwBYa.js", "/assets/createLucideIcon-Crb3908r.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.products": { "id": "routes/app.products", "parentId": "routes/app", "path": "products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.products-bWC2Cbow.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.quick-replies": { "id": "routes/app.quick-replies", "parentId": "routes/app", "path": "quick-replies", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.quick-replies-C0KLsZI0.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.seo": { "id": "routes/app.seo", "parentId": "routes/app", "path": "seo", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.seo-eZqunjrD.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/ProgressBar-D4wjAJCh.js", "/assets/scan-search-B8PBngg6.js", "/assets/circle-check-CgxXrolP.js", "/assets/search-Brt88N_W.js", "/assets/x-DIQ7-F4l.js", "/assets/createLucideIcon-Crb3908r.js", "/assets/chevron-down-DgceB_EA.js", "/assets/download-2kZZwBYa.js", "/assets/undo-2-oQbbC_mJ.js", "/assets/rotate-ccw-B15igVXZ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.settings": { "id": "routes/app.settings", "parentId": "routes/app", "path": "settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.settings-B_s0MzhJ.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.waiting": { "id": "routes/app.waiting", "parentId": "routes/app", "path": "waiting", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/app.waiting-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.whatsapp-web": { "id": "routes/app.whatsapp-web", "parentId": "routes/app", "path": "whatsapp-web", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.whatsapp-web-DVCBcFNB.js", "imports": ["/assets/jsx-runtime-BwoMWfqJ.js", "/assets/ui-D2Ax3-CR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-5be90578.js", "version": "5be90578", "sri": void 0 };
 const assetsBuildDirectory = "build/client";
 const basename = "/";
 const future = { "unstable_optimizeDeps": false, "v8_passThroughRequests": false, "v8_trailingSlashAwareDataRequests": false, "unstable_previewServerPrerendering": false, "v8_middleware": false, "v8_splitRouteModules": false, "v8_viteEnvironmentApi": false };

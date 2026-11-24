@@ -9,7 +9,7 @@ export const ORDER_SHEET_FIELDS = `
   shippingAddress { name address1 address2 city province zip phone }
   billingAddress { name phone }
   shippingLine { originalPriceSet { shopMoney { amount } } }
-  lineItems(first: 50) { nodes { title variantTitle quantity currentQuantity } }
+  lineItems(first: 50) { nodes { title variantTitle quantity currentQuantity sku discountedUnitPriceSet { shopMoney { amount } } } }
   fulfillments(first: 10) { createdAt updatedAt displayStatus deliveredAt estimatedDeliveryAt trackingInfo(first: 3) { company number url } }
 `;
 
@@ -53,6 +53,35 @@ export function computeStatus(o: any): { status: SheetStatus; remarks: string } 
   return { status: "Unfulfilled", remarks: parts.join(" · ") };
 }
 
+/** One item of an order as the sheet shows it (one row each). `unitPrice` is what the customer pays per piece, after discounts. */
+export type SheetItem = { name: string; quantity: number; unitPrice: number | null; sku: string | null };
+
+const itemName = (i: any) => (i.variantTitle && i.variantTitle !== "Default Title" ? `${i.title} (${i.variantTitle})` : String(i.title ?? ""));
+
+/** The items still in the order (a fully removed / refunded item has quantity 0 and is left out). */
+export function orderItems(o: any): SheetItem[] {
+  const items: any[] = o?.lineItems?.nodes ?? [];
+  return items
+    .filter((i) => (i.currentQuantity ?? i.quantity) > 0)
+    .map((i) => {
+      const p = Number(i.discountedUnitPriceSet?.shopMoney?.amount);
+      return { name: itemName(i), quantity: Number(i.currentQuantity ?? i.quantity ?? 0), unitPrice: Number.isFinite(p) ? Math.round(p * 100) / 100 : null, sku: i.sku ?? null };
+    });
+}
+
+/** Reads the stored JSON back; anything unreadable gives an empty list (the sheet then falls back to the joined product name). */
+export function parseItems(json: string | null | undefined): SheetItem[] {
+  if (!json) return [];
+  try {
+    const a = JSON.parse(json);
+    return Array.isArray(a)
+      ? a.map((i) => ({ name: String(i?.name ?? ""), quantity: Number(i?.quantity) || 0, unitPrice: Number.isFinite(Number(i?.unitPrice)) && i?.unitPrice !== null ? Number(i.unitPrice) : null, sku: i?.sku ?? null }))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 const digits = (s: string | null | undefined) => String(s ?? "").replace(/\D/g, "");
 const last10 = (s: string | null | undefined) => digits(s).slice(-10);
 
@@ -63,6 +92,8 @@ export type MappedOrder = {
   customerName: string | null;
   productName: string | null;
   qty: number;
+  /** JSON of orderItems(): one sheet row per item. */
+  items: string;
   amount: number | null;
   currency: string | null;
   paymentType: string | null;
@@ -116,6 +147,7 @@ export function mapShopifyOrder(o: any): MappedOrder {
     customerName: ship.name || [o.customer?.firstName, o.customer?.lastName].filter(Boolean).join(" ") || o.billingAddress?.name || null,
     productName: live.map((i) => (i.variantTitle && i.variantTitle !== "Default Title" ? `${i.title} (${i.variantTitle})` : i.title)).join(", ") || null,
     qty: live.reduce((n, i) => n + (i.currentQuantity ?? i.quantity ?? 0), 0),
+    items: JSON.stringify(orderItems(o)),
     amount: money ? Number(money.amount) : null,
     currency: money?.currencyCode ?? null,
     paymentType: paymentType(o),
