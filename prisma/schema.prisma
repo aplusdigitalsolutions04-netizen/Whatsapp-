@@ -558,6 +558,8 @@ model ImsConfig {
   keyHint     String    @default("")
   lastOkAt    DateTime?
   lastError   String?
+  // when the switch was turned on: orders the app first sees after this are sent by themselves, even if their webhook was missed
+  autoFrom    DateTime?
   updatedAt   DateTime  @updatedAt
 }
 

@@ -38,10 +38,12 @@ export async function saveImsConfig(shop: string, input: { url: string; key?: st
   if (input.enabled && !key && !old?.keyEnc) return { ok: false, error: "Paste the API key the IMS team gave you." };
   if (key && key.length < 8) return { ok: false, error: "That API key looks too short." };
   const keyData = key ? { keyEnc: encryptSecret(key), keyHint: key.slice(-4) } : {};
+  // the moment the switch goes from off to on: orders the app sees from now on are sent by themselves (see enqueueMissedOrders)
+  const autoFrom = input.enabled && (!old?.enabled || !old.autoFrom) ? { autoFrom: new Date() } : {};
   await prisma.imsConfig.upsert({
     where: { shop },
-    create: { shop, enabled: input.enabled, url, ...keyData },
-    update: { enabled: input.enabled, url, ...keyData, ...(input.enabled ? { lastError: null } : {}) },
+    create: { shop, enabled: input.enabled, url, ...keyData, ...autoFrom },
+    update: { enabled: input.enabled, url, ...keyData, ...autoFrom, ...(input.enabled ? { lastError: null } : {}) },
   });
   return { ok: true };
 }
@@ -66,21 +68,57 @@ export async function enqueueImsPush(shop: string, gid: string, event: ImsEvent,
   return true;
 }
 
-/** "Send old orders": every order the app has read from Shopify goes to the outbox; the worker sends them 10 at a time. Returns how many. */
+/**
+ * "Send old orders": every order the app has read from Shopify goes to the outbox; the worker sends them 10 at a time. Returns how many.
+ * They are sent OLDEST FIRST, one after the other. The IMS lists orders by the time it received them (newest on top), so this way the
+ * newest Shopify order is received last and sits on top, the same sequence as Shopify. Each row gets a time 1 ms after the one before it,
+ * and the worker takes the rows in that time order.
+ */
 export async function enqueueAllOrders(shop: string): Promise<number> {
-  const rows = await prisma.orderSheet.findMany({ where: { shop, isManual: false }, select: { shopifyOrderId: true, orderName: true }, orderBy: { orderDate: "asc" } });
-  const now = new Date();
+  const rows = await prisma.orderSheet.findMany({ where: { shop, isManual: false }, select: { shopifyOrderId: true, orderName: true }, orderBy: [{ orderDate: "asc" }, { createdAt: "asc" }] });
+  const base = Date.now();
   // upsert (SQLite cannot skip duplicates in createMany): an order already in the outbox is simply queued again, never duplicated
   for (let i = 0; i < rows.length; i += 200) {
     await prisma.$transaction(
-      rows.slice(i, i + 200).map((r) => {
+      rows.slice(i, i + 200).map((r, j) => {
         const orderGid = orderGidFor(r.shopifyOrderId);
-        const data = { event: "order.created", status: "pending", attempts: 0, lastError: null, nextAttemptAt: now, orderName: r.orderName };
+        const data = { event: "order.created", status: "pending", attempts: 0, lastError: null, nextAttemptAt: new Date(base + i + j), orderName: r.orderName };
         return prisma.imsPush.upsert({ where: { shop_orderGid: { shop, orderGid } }, create: { shop, orderGid, ...data }, update: data });
       }),
     );
   }
   return rows.length;
+}
+
+/**
+ * Safety net, so nobody has to press anything for a new order: every order the app first saw AFTER the IMS was switched on, that is
+ * not in the outbox at all (its webhook was missed, or queuing it failed), is queued now, oldest first. Orders seen before the switch
+ * was turned on are not touched; those go with "Send old orders". Returns how many were queued.
+ */
+export async function enqueueMissedOrders(shop: string): Promise<number> {
+  const cfg = await prisma.imsConfig.findUnique({ where: { shop }, select: { enabled: true, url: true, keyEnc: true, autoFrom: true } });
+  if (!cfg?.enabled || !cfg.url || !cfg.keyEnc || !cfg.autoFrom) return 0;
+  const rows = await prisma.orderSheet.findMany({
+    where: { shop, isManual: false, createdAt: { gte: cfg.autoFrom } },
+    select: { shopifyOrderId: true, orderName: true },
+    orderBy: [{ orderDate: "asc" }, { createdAt: "asc" }],
+    take: 300,
+  });
+  if (!rows.length) return 0;
+  const have = new Set((await prisma.imsPush.findMany({ where: { shop, orderGid: { in: rows.map((r) => orderGidFor(r.shopifyOrderId)) } }, select: { orderGid: true } })).map((x) => x.orderGid));
+  const base = Date.now();
+  let n = 0;
+  for (const r of rows) {
+    const orderGid = orderGidFor(r.shopifyOrderId);
+    if (have.has(orderGid)) continue;
+    try {
+      await prisma.imsPush.create({ data: { shop, orderGid, orderName: r.orderName, event: "order.created", status: "pending", nextAttemptAt: new Date(base + n) } });
+      n++;
+    } catch {
+      /* queued by the webhook a moment ago (unique key): nothing to do */
+    }
+  }
+  return n;
 }
 
 /** Sends one order the person names ("#W1219" / "1219"): to test the connection with a real order. */
@@ -206,6 +244,13 @@ export async function processImsQueue(deps: Deps = {}): Promise<{ sent: number; 
 /** Starts the background sender (one per process). */
 export function startImsWorker() {
   if (worker.timer) return;
-  worker.timer = setInterval(() => void processImsQueue().catch(() => undefined), TICK_MS);
+  let tick = 0;
+  worker.timer = setInterval(() => {
+    // every minute: queue any new order whose webhook was missed, then send what is waiting
+    const catchUp = tick++ % 6 === 0
+      ? prisma.imsConfig.findMany({ where: { enabled: true }, select: { shop: true } }).then((all) => Promise.all(all.map((c) => enqueueMissedOrders(c.shop))))
+      : Promise.resolve();
+    void catchUp.catch(() => undefined).then(() => processImsQueue()).catch(() => undefined);
+  }, TICK_MS);
   worker.timer.unref?.();
 }

@@ -104,7 +104,8 @@ export default function Integrations() {
 
       <Card title="IMS portal (send orders to your IMS)">
         <p className="o-muted">
-          Every new WERY order goes to your IMS at once, and every change (status, tracking, cancel) follows after a few seconds. If the IMS is down or the key is wrong,
+          Every new WERY order goes to your IMS by itself, at once (you never have to send it), and every change (status, tracking, cancel) follows after a few seconds.
+          Orders are sent oldest first, so the newest order is received last and sits on top in the IMS, the same as in Shopify. If the IMS is down or the key is wrong,
           nothing is lost: each order is tried again later, and the ones that cannot be sent are listed below with the reason.
         </p>
         <Form method="post">

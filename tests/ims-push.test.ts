@@ -286,3 +286,59 @@ test("IMS outbox: the real HTTP request (headers, JSON body, status codes) again
     await new Promise((r) => server.close(r));
   }
 });
+
+test("IMS sequence: old orders go OLDEST first, so the newest order is received last and shows on top in the IMS (same as Shopify)", async () => {
+  const s: any = await loadApp("/app/lib/ims-push.server.ts");
+  await prisma.imsPush.deleteMany({ where: { shop: SHOP } });
+  await prisma.orderSheet.deleteMany({ where: { shop: SHOP } });
+  // created in a jumbled order on purpose: the date decides, not the creation order
+  for (const i of [5, 1, 9, 3, 7, 2, 8, 4, 6, 10, 15, 12, 11, 14, 13, 20, 17, 19, 16, 18, 25, 22, 24, 21, 23]) {
+    await prisma.orderSheet.create({ data: { shop: SHOP, shopifyOrderId: String(7000 + i), orderName: `#W${7000 + i}`, orderDate: new Date(2026, 10, i), status: "Delivered" } });
+  }
+  assert.equal(await s.enqueueAllOrders(SHOP), 25);
+  const ims = fakeIms([200]);
+  const run = (async (_s: string, _q: string, v: any) => ({ order: node({ legacyResourceId: v.id.split("/").pop(), name: `#W${v.id.split("/").pop()}` }) })) as any;
+  for (let round = 0; round < 3; round++) await s.processImsQueue({ fetchFn: ims.fetchFn, run });
+  assert.deepEqual(ims.calls.map((c) => c.body.shopifyOrderId), Array.from({ length: 25 }, (_, k) => String(7001 + k)), "received in date order, oldest first, across all rounds");
+  // pressing it again keeps the same sequence
+  await s.enqueueAllOrders(SHOP);
+  const again = fakeIms([200]);
+  for (let round = 0; round < 3; round++) await s.processImsQueue({ fetchFn: again.fetchFn, run });
+  assert.deepEqual(again.calls.map((c) => c.body.shopifyOrderId), ims.calls.map((c) => c.body.shopifyOrderId));
+});
+
+test("IMS automatic: orders first seen after the switch was turned on are queued by themselves, once, oldest first; older ones are left for 'Send old orders'", async () => {
+  const s: any = await loadApp("/app/lib/ims-push.server.ts");
+  await prisma.imsPush.deleteMany({ where: { shop: SHOP } });
+  await prisma.orderSheet.deleteMany({ where: { shop: SHOP } });
+  const before = new Date(Date.now() - 3_600_000);
+  await prisma.orderSheet.create({ data: { shop: SHOP, shopifyOrderId: "9101", orderName: "#W9101", orderDate: before, createdAt: before, status: "Delivered" } }); // known before the switch
+  await prisma.imsConfig.update({ where: { shop: SHOP }, data: { enabled: true, autoFrom: new Date(Date.now() - 60_000) } });
+  await prisma.orderSheet.create({ data: { shop: SHOP, shopifyOrderId: "9103", orderName: "#W9103", orderDate: new Date(2026, 10, 3), status: "Unfulfilled" } });
+  await prisma.orderSheet.create({ data: { shop: SHOP, shopifyOrderId: "9102", orderName: "#W9102", orderDate: new Date(2026, 10, 2), status: "Unfulfilled" } });
+  await prisma.orderSheet.create({ data: { shop: SHOP, shopifyOrderId: "manual-x", isManual: true, orderName: "hand", status: "Unfulfilled" } });
+  await s.enqueueImsPush(SHOP, "gid://shopify/Order/9103", "order.updated", { delayMs: 0 }); // the webhook already queued this one
+
+  assert.equal(await s.enqueueMissedOrders(SHOP), 1, "only #W9102 was missing: #W9101 is older than the switch, #W9103 is already queued, a hand-added row is not an order");
+  assert.equal(await s.enqueueMissedOrders(SHOP), 0, "a second look finds nothing new");
+  assert.deepEqual((await prisma.imsPush.findMany({ where: { shop: SHOP }, select: { orderGid: true }, orderBy: { orderGid: "asc" } })).map((x) => x.orderGid), ["gid://shopify/Order/9102", "gid://shopify/Order/9103"]);
+
+  await prisma.imsConfig.update({ where: { shop: SHOP }, data: { enabled: false } });
+  await prisma.imsPush.deleteMany({ where: { shop: SHOP } });
+  assert.equal(await s.enqueueMissedOrders(SHOP), 0, "switched off: nothing is queued");
+});
+
+test("IMS automatic: the time the switch was turned on is remembered, and kept when only the address or key changes", async () => {
+  const s: any = await loadApp("/app/lib/ims-push.server.ts");
+  await prisma.imsConfig.update({ where: { shop: SHOP }, data: { enabled: false, autoFrom: null } });
+  assert.equal((await s.saveImsConfig(SHOP, { url: URL_OK, key: "", enabled: true })).ok, true);
+  const first = (await prisma.imsConfig.findUnique({ where: { shop: SHOP } }))!.autoFrom;
+  assert.ok(first && Date.now() - first.getTime() < 10_000, "set when switched on");
+  await new Promise((r) => setTimeout(r, 20));
+  await s.saveImsConfig(SHOP, { url: URL_OK, key: "another-key-5555", enabled: true });
+  assert.equal((await prisma.imsConfig.findUnique({ where: { shop: SHOP } }))!.autoFrom!.getTime(), first.getTime(), "changing the key does not move it");
+  await s.saveImsConfig(SHOP, { url: URL_OK, key: "", enabled: false });
+  await new Promise((r) => setTimeout(r, 20));
+  await s.saveImsConfig(SHOP, { url: URL_OK, key: "", enabled: true });
+  assert.ok((await prisma.imsConfig.findUnique({ where: { shop: SHOP } }))!.autoFrom!.getTime() > first.getTime(), "off and on again: a new start time");
+});
