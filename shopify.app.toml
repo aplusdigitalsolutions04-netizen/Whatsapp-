@@ -9,6 +9,13 @@ embedded = true
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "read_orders,read_customers,read_products,write_products,write_files"
 
+# Declares "Direct API access" for the embedded app. Without it the Shopify admin prints "ShopifyQL plugin is not available because this
+# embedded app does not declare Direct API Access" in the browser console on every page. It adds no new permission (no scope change):
+# the app keeps reading data through its own server as before. Applies to the live store after `shopify app deploy`.
+[access.admin]
+direct_api_mode = "online"
+embedded_app_direct_api_access = true
+
 [webhooks]
 api_version = "2027-01"
 
