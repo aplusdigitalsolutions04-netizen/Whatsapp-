@@ -87,17 +87,38 @@ if (missing.length) {
   Promise.resolve(main()).catch((e) => serveProblem("The app could not start", [String(e?.message ?? e)]));
 }
 
-function run(label, script, args) {
-  const r = spawnSync(process.execPath, [script, ...args], { stdio: "inherit", env });
-  if (r.status !== 0) console.error(`[start] ${label} failed (exit ${r.status})`);
+// Prisma's command line tool on a hosting plan with a low process / thread limit can wait forever (the log stops right after
+// "Prisma schema loaded" and the server never opens its port, so the page stays blank). So it runs with few threads, with its
+// network checks (update check, engine checksum download) switched off, and with a time limit after which it is stopped.
+function leanEnv() {
+  // a function declaration, so it can be used by main() which starts before this line is reached
+  return {
+    ...env,
+    TOKIO_WORKER_THREADS: env.TOKIO_WORKER_THREADS || "1",
+    RAYON_NUM_THREADS: env.RAYON_NUM_THREADS || "1",
+    CHECKPOINT_DISABLE: "1",
+    PRISMA_HIDE_UPDATE_MESSAGE: "1",
+    PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING: "1",
+  };
+}
+
+function run(label, script, args, opts = {}) {
+  const r = spawnSync(process.execPath, [script, ...args], {
+    stdio: "inherit",
+    env: opts.lean ? leanEnv() : env,
+    ...(opts.timeoutMs ? { timeout: opts.timeoutMs, killSignal: "SIGKILL" } : {}),
+  });
+  if (r.status !== 0) {
+    const why = r.error?.code === "ETIMEDOUT" ? `no answer after ${Math.round(opts.timeoutMs / 1000)} s, it was stopped` : `exit ${r.status}`;
+    console.error(`[start] ${label} failed (${why})`);
+  }
   return r.status === 0;
 }
 
 /** Runs a node script and keeps its output, so the real reason of a failure can be shown on the status page. */
 function runCapture(script, args) {
-  // Few threads for Prisma's schema engine: on hosting with a low process limit it is otherwise killed ("exit null").
-  const lean = { ...env, TOKIO_WORKER_THREADS: env.TOKIO_WORKER_THREADS || "1", RAYON_NUM_THREADS: env.RAYON_NUM_THREADS || "1" };
-  const r = spawnSync(process.execPath, [script, ...args], { env: lean, encoding: "utf8" });
+  // Few threads for Prisma's schema engine: on hosting with a low process limit it is otherwise killed ("exit null"). Also time-limited.
+  const r = spawnSync(process.execPath, [script, ...args], { env: leanEnv(), encoding: "utf8", timeout: 120_000, killSignal: "SIGKILL" });
   if (r.stdout) process.stdout.write(r.stdout);
   if (r.stderr) process.stderr.write(r.stderr);
   const killed = r.status === null ? `\nThe program was stopped by the server (${r.signal ?? "no exit code"}): \`killed\`, probably a memory or thread limit.` : "";
@@ -129,7 +150,7 @@ function main() {
   const clientCurrent = existsSync(path.join(clientDir, "index.js")) && existsSync(markerFile) && readFileSync(markerFile, "utf8").trim() === schemaHash;
   if (!clientCurrent) {
     console.log("[start] database client is missing or out of date, generating it");
-    if (run("prisma generate", prismaCli, ["generate"])) {
+    if (run("prisma generate", prismaCli, ["generate"], { lean: true, timeoutMs: 150_000 })) {
       try {
         writeFileSync(markerFile, schemaHash);
       } catch {
