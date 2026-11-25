@@ -163,7 +163,10 @@ export async function processImsQueue(deps: Deps = {}): Promise<{ sent: number; 
   worker.running = true;
   try {
     const now = deps.now ?? new Date();
-    const due = await prisma.imsPush.findMany({ where: { status: "pending", nextAttemptAt: { lte: now } }, orderBy: { nextAttemptAt: "asc" }, take: BATCH });
+    // only shops that have the IMS switched on: the waiting orders of a switched-off shop must not take the places in the batch
+    const on = (await prisma.imsConfig.findMany({ where: { enabled: true }, select: { shop: true } })).map((c) => c.shop);
+    if (!on.length) return out;
+    const due = await prisma.imsPush.findMany({ where: { shop: { in: on }, status: "pending", nextAttemptAt: { lte: now } }, orderBy: { nextAttemptAt: "asc" }, take: BATCH });
     const cfgs = new Map<string, { url: string; key: string } | null>();
     for (const row of due) {
       if (!cfgs.has(row.shop)) {
@@ -175,17 +178,20 @@ export async function processImsQueue(deps: Deps = {}): Promise<{ sent: number; 
       const cfg = cfgs.get(row.shop);
       if (!cfg) continue; // switched off (or no key): the orders wait in the outbox
       const r = await sendRow(row, cfg, deps);
+      // `updatedAt` must still be what we read: if the order changed again while it was being sent, the row was put back to "pending"
+      // with the newer event, and that newer change must not be marked as sent by this (older) send.
+      const same = { id: row.id, updatedAt: row.updatedAt };
       if (r.result === "sent") {
         out.sent++;
-        await prisma.imsPush.update({ where: { id: row.id }, data: { status: "sent", sentAt: new Date(), lastError: null, attempts: row.attempts + 1, ...(r.name ? { orderName: r.name } : {}) } });
-        await prisma.imsConfig.update({ where: { shop: row.shop }, data: { lastOkAt: new Date(), lastError: null } });
+        await prisma.imsPush.updateMany({ where: same, data: { status: "sent", sentAt: new Date(), lastError: null, attempts: row.attempts + 1, ...(r.name ? { orderName: r.name } : {}) } });
+        await prisma.imsConfig.update({ where: { shop: row.shop }, data: { lastOkAt: new Date(), lastError: null } }).catch(() => undefined);
         continue;
       }
       const attempts = row.attempts + 1;
       const giveUp = r.result === "failed" || attempts >= MAX_ATTEMPTS;
       out[giveUp ? "failed" : "retry"]++;
-      await prisma.imsPush.update({
-        where: { id: row.id },
+      await prisma.imsPush.updateMany({
+        where: same,
         data: { status: giveUp ? "failed" : "pending", attempts, lastError: r.error ?? null, nextAttemptAt: new Date(Date.now() + retryDelayMs(attempts)), ...(r.name ? { orderName: r.name } : {}) },
       });
       await prisma.imsConfig.update({ where: { shop: row.shop }, data: { lastError: (r.error ?? "").slice(0, 300) } }).catch(() => undefined);

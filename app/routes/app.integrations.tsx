@@ -75,7 +75,7 @@ export default function Integrations() {
   const { config, creds, webhookPath, lastWebhookAt, appUrl, ims } = useLoaderData<typeof loader>();
   const result = useActionData<typeof action>() as any;
   const busy = useNavigation().state !== "idle";
-  useAutoRefresh(ims.pending > 0 ? 3000 : 30000); // the numbers move while orders are being sent
+  useAutoRefresh(ims.pending > 0 && ims.cfg.enabled ? 3000 : 30000); // the numbers move while orders are being sent
 
   return (
     <Page title="Integrations">

@@ -217,3 +217,72 @@ test("IMS outbox: old orders go in batches of 10; one order can be sent by numbe
   assert.equal((await s.enqueueOneOrder(SHOP, "#W9999")).ok, false);
   assert.equal((await s.enqueueOneOrder(SHOP, "hello")).ok, false);
 });
+
+test("IMS outbox: a change that arrives while the order is being sent is not lost", async () => {
+  const s: any = await loadApp("/app/lib/ims-push.server.ts");
+  const gid = "gid://shopify/Order/5555";
+  await prisma.imsPush.deleteMany({ where: { shop: SHOP } });
+  await s.enqueueImsPush(SHOP, gid, "order.created");
+  const fetchFn = (async () => {
+    await s.enqueueImsPush(SHOP, gid, "order.updated", { delayMs: 60_000 }); // Shopify reports a newer change during the send
+    return new Response("{}", { status: 200 });
+  }) as any;
+  assert.equal((await s.processImsQueue({ fetchFn, run: gqlWith(node({ legacyResourceId: "5555" })) })).sent, 1);
+  const r = await rowOf(gid);
+  assert.equal(r.status, "pending", "the newer change is still waiting; the old send did not mark it as sent");
+  assert.ok(r.nextAttemptAt.getTime() > Date.now() + 30_000);
+});
+
+test("IMS outbox: orders of a shop that switched the IMS off wait quietly and never block others", async () => {
+  const s: any = await loadApp("/app/lib/ims-push.server.ts");
+  const off = "ims-push-off.invalid";
+  try {
+    await prisma.imsPush.deleteMany({ where: { shop: SHOP } });
+    await prisma.imsConfig.create({ data: { shop: off, enabled: false, url: URL_OK, keyEnc: "x" } });
+    for (let i = 0; i < 12; i++) await prisma.imsPush.create({ data: { shop: off, orderGid: `gid://shopify/Order/${i}`, event: "order.created", nextAttemptAt: new Date(Date.now() - 60_000) } });
+    await s.enqueueImsPush(SHOP, "gid://shopify/Order/8001", "order.created");
+    const ims = fakeIms([200]);
+    const out = await s.processImsQueue({ fetchFn: ims.fetchFn, run: gqlWith(node({ legacyResourceId: "8001" })) });
+    assert.equal(out.sent, 1, "our order is sent even though 12 older orders of another (switched off) shop are waiting");
+    assert.equal(await prisma.imsPush.count({ where: { shop: off, status: "pending" } }), 12, "and those stay untouched");
+  } finally {
+    await prisma.imsPush.deleteMany({ where: { shop: off } });
+    await prisma.imsConfig.deleteMany({ where: { shop: off } });
+  }
+});
+
+test("IMS outbox: the real HTTP request (headers, JSON body, status codes) against a local IMS stand-in", async () => {
+  const { createServer } = await import("node:http");
+  const s: any = await loadApp("/app/lib/ims-push.server.ts");
+  const seen: { key: string | undefined; type: string | undefined; body: any; path: string | undefined }[] = [];
+  let status = 201;
+  const server = createServer((req, res) => {
+    let data = "";
+    req.on("data", (c) => (data += c));
+    req.on("end", () => {
+      seen.push({ key: req.headers["x-api-key"] as string, type: req.headers["content-type"], body: JSON.parse(data), path: req.url });
+      res.statusCode = status;
+      res.end(status === 201 ? '{"ok":true}' : "boom");
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  const port = (server.address() as any).port;
+  try {
+    await prisma.imsPush.deleteMany({ where: { shop: SHOP } });
+    assert.equal((await s.saveImsConfig(SHOP, { url: `http://127.0.0.1:${port}/api/external/v1/shopify/orders`, key: "real-http-key-1234", enabled: true })).ok, true);
+    await s.enqueueImsPush(SHOP, "gid://shopify/Order/6001", "order.created");
+    assert.equal((await s.processImsQueue({ run: gqlWith(node({ legacyResourceId: "6001" })) })).sent, 1);
+    assert.equal(seen[0].path, "/api/external/v1/shopify/orders");
+    assert.equal(seen[0].key, "real-http-key-1234");
+    assert.match(String(seen[0].type), /application\/json/);
+    assert.equal(seen[0].body.shopifyOrderId, "6001");
+    assert.equal(seen[0].body.items[0].sku, "HP-1008W");
+
+    status = 503;
+    await s.enqueueImsPush(SHOP, "gid://shopify/Order/6002", "order.created");
+    assert.equal((await s.processImsQueue({ run: gqlWith(node({ legacyResourceId: "6002" })) })).retry, 1);
+    assert.match(String((await rowOf("gid://shopify/Order/6002")).lastError), /HTTP 503: boom/);
+  } finally {
+    await new Promise((r) => server.close(r));
+  }
+});
