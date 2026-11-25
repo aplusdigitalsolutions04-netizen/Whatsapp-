@@ -546,3 +546,41 @@ model IntegrationSecret {
 
   @@unique([shop, name])
 }
+
+// Sending Shopify orders to the shop's IMS portal (see lib/ims-push.server.ts). One row per shop.
+model ImsConfig {
+  shop        String    @id
+  enabled     Boolean   @default(false)
+  // the full address the IMS gave, e.g. https://ims.example.com/api/external/v1/shopify/orders
+  url         String    @default("")
+  // the IMS API key, encrypted (never shown again, only the last 4 characters)
+  keyEnc      String    @default("")
+  keyHint     String    @default("")
+  lastOkAt    DateTime?
+  lastError   String?
+  updatedAt   DateTime  @updatedAt
+}
+
+// The outbox: one row per order that has to reach the IMS. A row is "pending" until the IMS answers 200/201, then "sent";
+// it is retried with growing waits, and "failed" after too many tries (or when the order can never be sent, e.g. an item has no SKU).
+// A newer change of the same order flips the row back to pending, so the IMS always ends with the latest data.
+model ImsPush {
+  id            String    @id @default(cuid())
+  shop          String
+  // Shopify order GID, gid://shopify/Order/123
+  orderGid      String
+  orderName     String?
+  // order.created | order.updated | order.cancelled
+  event         String    @default("order.created")
+  // pending | sent | failed
+  status        String    @default("pending")
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  lastError     String?
+  sentAt        DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([shop, orderGid])
+  @@index([shop, status, nextAttemptAt])
+}

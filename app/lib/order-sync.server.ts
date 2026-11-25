@@ -10,6 +10,8 @@ import { explainShopifyError } from "./shopify-errors";
 import { notifyOrder } from "./order-notify.server";
 import { backfillSheetFromConfirmations } from "./order-confirm.server";
 import { endTask, startTask, updateTask } from "./progress.server";
+import { enqueueImsPush, startImsWorker } from "./ims-push.server";
+import { imsEventFor } from "./ims-push";
 
 const PAGE = 50;
 const OVERLAP_MS = 10 * 60_000; // re-read the last 10 minutes each run so nothing slips between runs
@@ -21,11 +23,12 @@ const state = (g.__orderSync ??= { running: new Set(), timer: null });
 export const orderGid = (id: string | number) => `gid://shopify/Order/${id}`;
 
 /** Syncs one order by its Shopify GID (used by webhooks). Safe to call repeatedly and concurrently. */
-export async function syncOrderById(shop: string, gid: string) {
+export async function syncOrderById(shop: string, gid: string, topic?: string) {
   const data = await gql(shop, `query($id: ID!) { order(id: $id) { ${ORDER_SHEET_FIELDS} } }`, { id: gid });
   if (!data.order) return "missing" as const;
   const r = await upsertOrder(shop, mapShopifyOrder(data.order));
   if (r !== "skipped") scheduleSheetPush(shop); // keep the Google Sheet in step with the webhook
+  await enqueueImsPush(shop, gid, imsEventFor(topic, data.order), { orderName: data.order.name }).catch(() => false); // the IMS portal gets the order too (when switched on)
   await notifyOrder(shop, data.order); // JAZZ tells the customer: confirmed / dispatched / delivered (once each)
   return r;
 }
@@ -66,7 +69,10 @@ export async function syncOrders(shop: string, opts: { since?: Date | null; onPr
     for (const node of data.orders?.nodes ?? []) {
       out.fetched++;
       try {
-        out[await upsertOrder(shop, mapShopifyOrder(node))]++;
+        const res = await upsertOrder(shop, mapShopifyOrder(node));
+        out[res]++;
+        // an order the webhook missed: tell the IMS (changes of old orders are not pushed from here, a full re-read would resend everything)
+        if (res === "created") await enqueueImsPush(shop, node.id, imsEventFor("orders/create", node), { orderName: node.name }).catch(() => false);
         await notifyOrder(shop, node);
       } catch (e) {
         out.failed++;
@@ -133,6 +139,7 @@ export async function runSync(shop: string, mode: "auto" | "full" = "auto"): Pro
 /** Starts the periodic reconciliation (covers missed webhooks and old orders). One timer per process. */
 export function startOrderSync() {
   if (state.timer) return;
+  startImsWorker(); // sends the outbox to the IMS portal in the background
   const tick = async () => {
     try {
       const shop = await resolveShop();

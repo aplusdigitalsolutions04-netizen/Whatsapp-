@@ -9,6 +9,8 @@ import { randomBytes } from "node:crypto";
 import { whatsappConfig, whatsappDiagnostics } from "../lib/whatsapp.server";
 import { CRED_NAMES, CRED_RULES, type CredName } from "../lib/cloud-cred-rules";
 import { credStatus, removeCreds, saveCreds } from "../lib/cloud-creds.server";
+import { enqueueAllOrders, enqueueOneOrder, imsStatus, retryFailedImsPushes, saveImsConfig } from "../lib/ims-push.server";
+import { useAutoRefresh } from "../components/useAutoRefresh";
 import { Badge, Banner, Card, Page } from "../components/ui";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -20,6 +22,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     webhookPath: "/api/webhooks/whatsapp",
     lastWebhookAt: lastWebhook?.createdAt.toISOString() ?? null,
     appUrl: process.env.SHOPIFY_APP_URL ?? "",
+    ims: await imsStatus(session.shop), // IMS portal: address, whether a key is saved (never the key), and what was sent / is waiting / failed
   };
 };
 
@@ -43,6 +46,22 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     await removeCreds(session.shop);
     return { target, removed: true };
   }
+  if (target === "ims-save") {
+    const r = await saveImsConfig(session.shop, { url: String(form.get("imsUrl") ?? ""), key: String(form.get("imsKey") ?? ""), enabled: form.get("imsEnabled") === "on" });
+    return { target, ims: r.ok ? { ok: true as const, message: "IMS settings saved." } : { ok: false as const, message: r.error } };
+  }
+  if (target === "ims-one") {
+    const r = await enqueueOneOrder(session.shop, String(form.get("orderNo") ?? ""));
+    return { target, ims: r.ok ? { ok: true as const, message: `Order ${r.name} is on its way to the IMS (a few seconds).` } : { ok: false as const, message: r.error } };
+  }
+  if (target === "ims-all") {
+    const n = await enqueueAllOrders(session.shop);
+    return { target, ims: { ok: true as const, message: `${n.toLocaleString()} orders are queued. They go to the IMS 10 at a time; you can watch the numbers below.` } };
+  }
+  if (target === "ims-retry") {
+    const n = await retryFailedImsPushes(session.shop);
+    return { target, ims: { ok: true as const, message: `${n} failed order${n === 1 ? "" : "s"} queued again.` } };
+  }
   if (target === "shopify") return { target, shopify: await testShopifyConnection(session.shop, true) };
   if (target === "whatsapp") return { target, whatsapp: await whatsappDiagnostics() };
   return {};
@@ -53,9 +72,10 @@ const Row = ({ label, ok }: { label: string; ok: boolean }) => (
 );
 
 export default function Integrations() {
-  const { config, creds, webhookPath, lastWebhookAt, appUrl } = useLoaderData<typeof loader>();
+  const { config, creds, webhookPath, lastWebhookAt, appUrl, ims } = useLoaderData<typeof loader>();
   const result = useActionData<typeof action>() as any;
   const busy = useNavigation().state !== "idle";
+  useAutoRefresh(ims.pending > 0 ? 3000 : 30000); // the numbers move while orders are being sent
 
   return (
     <Page title="Integrations">
@@ -80,6 +100,67 @@ export default function Integrations() {
           ) : (
             <Banner tone="critical">Failed: {result.shopify.error}</Banner>
           ))}
+      </Card>
+
+      <Card title="IMS portal (send orders to your IMS)">
+        <p className="o-muted">
+          Every new WERY order goes to your IMS at once, and every change (status, tracking, cancel) follows after a few seconds. If the IMS is down or the key is wrong,
+          nothing is lost: each order is tried again later, and the ones that cannot be sent are listed below with the reason.
+        </p>
+        <Form method="post">
+          <input type="hidden" name="target" value="ims-save" />
+          <p><label><input type="checkbox" name="imsEnabled" defaultChecked={ims.cfg.enabled} /> Send orders to the IMS</label></p>
+          <label className="o-field">
+            <span>IMS address (the full link the IMS team gave you)</span>
+            <input name="imsUrl" defaultValue={ims.cfg.url} placeholder="https://your-ims.com/api/external/v1/shopify/orders" style={{ width: "100%" }} autoComplete="off" />
+          </label>
+          <label className="o-field">
+            <span>IMS API key {ims.cfg.hasKey ? <Badge tone="success">Saved (ends …{ims.cfg.keyHint})</Badge> : <Badge tone="warning">Not saved</Badge>}</span>
+            <input name="imsKey" type="password" placeholder={ims.cfg.hasKey ? "Leave empty to keep the saved key" : "Paste the key from the IMS team"} style={{ width: "100%" }} autoComplete="off" />
+          </label>
+          <button disabled={busy}>Save</button>
+        </Form>
+        {result?.ims && String(result.target ?? "").startsWith("ims") && <Banner tone={result.ims.ok ? "success" : "critical"}>{result.ims.message}</Banner>}
+        {ims.cfg.lastError && <Banner tone="critical">Last problem: {ims.cfg.lastError}</Banner>}
+
+        <div className="o-row" style={{ gap: 18, margin: "14px 0 6px", flexWrap: "wrap" }}>
+          <span><b>{ims.sent.toLocaleString()}</b> sent</span>
+          <span><b>{ims.pending.toLocaleString()}</b> waiting</span>
+          <span style={ims.failed ? { color: "#a3261b" } : undefined}><b>{ims.failed.toLocaleString()}</b> failed</span>
+          <span className="o-muted">{ims.lastSentAt ? `Last sent ${new Date(ims.lastSentAt).toLocaleString()}` : "Nothing sent yet"}</span>
+        </div>
+
+        <div className="o-row" style={{ gap: 10, flexWrap: "wrap" }}>
+          <Form method="post" className="o-row">
+            <input type="hidden" name="target" value="ims-one" />
+            <input name="orderNo" placeholder="Order, e.g. #W1219" aria-label="Order to send" style={{ width: 160 }} />
+            <button className="ghost" disabled={busy || !ims.cfg.enabled}>Send this order now</button>
+          </Form>
+          <Form method="post" onSubmit={(e) => { if (!window.confirm("Send ALL old orders to the IMS? They go 10 at a time. An order the IMS already has is updated, not duplicated.")) e.preventDefault(); }}>
+            <input type="hidden" name="target" value="ims-all" />
+            <button className="ghost" disabled={busy || !ims.cfg.enabled}>Send old orders</button>
+          </Form>
+          {ims.failed > 0 && (
+            <Form method="post">
+              <input type="hidden" name="target" value="ims-retry" />
+              <button disabled={busy}>Retry failed</button>
+            </Form>
+          )}
+        </div>
+        {!ims.cfg.enabled && <p className="o-muted" style={{ marginTop: 8 }}>Switch it on and save to start sending. Tip: first press <b>Send this order now</b> with one real order and ask the IMS team to confirm they got it, then press <b>Send old orders</b>.</p>}
+
+        {ims.failedList.length > 0 && (
+          <div className="o-scroll" style={{ marginTop: 12 }}>
+            <table>
+              <thead><tr><th>Order</th><th>Why it was not sent</th><th>Tries</th></tr></thead>
+              <tbody>
+                {ims.failedList.map((f) => (
+                  <tr key={f.name}><td>{f.name}</td><td>{f.error}</td><td>{f.attempts}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
 
       <Card title="WhatsApp Business Cloud API">

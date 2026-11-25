@@ -89,10 +89,10 @@ const ENV = {
   appSecret: "WHATSAPP_APP_SECRET",
   verifyToken: "WHATSAPP_VERIFY_TOKEN"
 };
-const g$c = globalThis;
-const cache = g$c.__cloudCreds ?? (g$c.__cloudCreds = { values: /* @__PURE__ */ new Map(), timer: null });
-function cred(name) {
-  return cache.values.get(name) || process.env[ENV[name]] || void 0;
+const g$d = globalThis;
+const cache = g$d.__cloudCreds ?? (g$d.__cloudCreds = { values: /* @__PURE__ */ new Map(), timer: null });
+function cred(name2) {
+  return cache.values.get(name2) || process.env[ENV[name2]] || void 0;
 }
 function secretValues() {
   return CRED_NAMES.map((n) => cred(n)).filter((v) => !!v && v.length >= 8);
@@ -126,11 +126,11 @@ async function saveCreds(shop, input) {
     toSave.push([n, v]);
   }
   if (!toSave.length) return { ok: false, error: "Nothing to save: fill in at least one field." };
-  for (const [name, v] of toSave) {
+  for (const [name2, v] of toSave) {
     const value = encryptSecret(v);
     await prisma.integrationSecret.upsert({
-      where: { shop_name: { shop, name } },
-      create: { shop, name, value, hint: hintOf(v) },
+      where: { shop_name: { shop, name: name2 } },
+      create: { shop, name: name2, value, hint: hintOf(v) },
       update: { value, hint: hintOf(v) }
     });
   }
@@ -303,15 +303,15 @@ function parseNumberList(raw) {
 }
 const inList = (phone, list2) => list2.some((n) => samePhone(n, phone));
 const FILE = path.join(path.resolve(process.env.WHATSAPP_AUTH_DIR || ".wa-auth"), "saved-contacts.json");
-const g$b = globalThis;
+const g$c = globalThis;
 function load$1() {
-  if (g$b.__savedContacts) return g$b.__savedContacts;
+  if (g$c.__savedContacts) return g$c.__savedContacts;
   const set = /* @__PURE__ */ new Set();
   try {
     if (existsSync(FILE)) for (const n of JSON.parse(readFileSync(FILE, "utf8"))) set.add(n);
   } catch {
   }
-  g$b.__savedContacts = set;
+  g$c.__savedContacts = set;
   return set;
 }
 let timer = null;
@@ -1993,8 +1993,8 @@ const digits10 = (v) => {
   const d = String(v ?? "").replace(/\D/g, "");
   return d.length >= 10 ? d.slice(-10) : "";
 };
-const g$a = globalThis;
-const caches = g$a.__orderNumbers ?? (g$a.__orderNumbers = /* @__PURE__ */ new Map());
+const g$b = globalThis;
+const caches = g$b.__orderNumbers ?? (g$b.__orderNumbers = /* @__PURE__ */ new Map());
 const FULL_MS = 5 * 6e4;
 const MISS_MS = 2e4;
 async function load(shop) {
@@ -2059,16 +2059,16 @@ function parseImsOrders(json2, assumePhone) {
   const out = [];
   for (const raw of arr(rec(json2).orders).slice(0, 10)) {
     const o = rec(raw);
-    const name = str(o.name) || str(o.orderNumber) || str(o.id);
-    if (!name) continue;
+    const name2 = str(o.name) || str(o.orderNumber) || str(o.id);
+    if (!name2) continue;
     const phones = arr(o.phones).map(str).filter(Boolean);
     const single = str(o.phone);
     if (single) phones.push(single);
     if (phones.length === 0 && assumePhone) phones.push(assumePhone);
     const created = new Date(str(o.createdAt) || Date.now());
     out.push({
-      id: `ims:${name}`,
-      name: name.startsWith("#") ? name : `#${name}`,
+      id: `ims:${name2}`,
+      name: name2.startsWith("#") ? name2 : `#${name2}`,
       createdAt: Number.isNaN(created.getTime()) ? (/* @__PURE__ */ new Date()).toISOString() : created.toISOString(),
       cancelled: o.cancelled === true || /^cancel/i.test(str(o.status)),
       financialStatus: str(o.paymentStatus) || null,
@@ -2098,7 +2098,7 @@ async function imsLookup(cfg, by, fetchFn = fetch) {
   if (!json2 || rec(json2).ok === false) throw new Error("IMS answer was not valid");
   return parseImsOrders(json2, "phone" in by ? by.phone : void 0);
 }
-const digits$1 = (name) => name.replace(/\D/g, "");
+const digits$1 = (name2) => name2.replace(/\D/g, "");
 function mergeOrders(shopify2, ims) {
   const have = new Set(shopify2.map((o) => digits$1(o.name)));
   const extra = ims.filter((o) => !have.has(digits$1(o.name)));
@@ -2200,7 +2200,7 @@ function mapOrder(o) {
       });
     }
   }
-  const money2 = (_a2 = o.currentTotalPriceSet) == null ? void 0 : _a2.shopMoney;
+  const money22 = (_a2 = o.currentTotalPriceSet) == null ? void 0 : _a2.shopMoney;
   return {
     id: o.id,
     name: o.name,
@@ -2209,7 +2209,7 @@ function mapOrder(o) {
     closed: !!o.closedAt,
     financialStatus: o.displayFinancialStatus ?? null,
     fulfillmentStatus: o.displayFulfillmentStatus ?? null,
-    total: money2 ? formatMoney(money2.amount, money2.currencyCode) || null : null,
+    total: money22 ? formatMoney(money22.amount, money22.currencyCode) || null : null,
     statusUrl: o.statusPageUrl ?? null,
     customerName: [(_b = o.customer) == null ? void 0 : _b.firstName, (_c = o.customer) == null ? void 0 : _c.lastName].filter(Boolean).join(" ") || null,
     phones: [o.phone, (_d = o.customer) == null ? void 0 : _d.phone, (_f = (_e = o.customer) == null ? void 0 : _e.defaultPhoneNumber) == null ? void 0 : _f.phoneNumber, (_g = o.shippingAddress) == null ? void 0 : _g.phone, (_h = o.billingAddress) == null ? void 0 : _h.phone].filter(Boolean),
@@ -3311,8 +3311,8 @@ async function processEvent(eventId) {
     await logEvent({ source: "whatsapp", level: "error", event: "event_failed", detail: e.message });
   }
 }
-const g$9 = globalThis;
-const bridge = g$9.__waBridge ?? (g$9.__waBridge = {
+const g$a = globalThis;
+const bridge = g$a.__waBridge ?? (g$a.__waBridge = {
   state: "stopped",
   qr: null,
   error: null,
@@ -3789,7 +3789,7 @@ function mapShopifyOrder(o) {
   const primary = phones[0] ?? null;
   const alt = phones.find((p) => last10$1(p) && last10$1(p) !== last10$1(primary)) ?? null;
   const dispatched = fulfillments.map((f) => f.createdAt).filter(Boolean).sort()[0];
-  const money2 = (_e = o.currentTotalPriceSet) == null ? void 0 : _e.shopMoney;
+  const money3 = (_e = o.currentTotalPriceSet) == null ? void 0 : _e.shopMoney;
   const shipCharge = (_h = (_g = (_f = o.shippingLine) == null ? void 0 : _f.originalPriceSet) == null ? void 0 : _g.shopMoney) == null ? void 0 : _h.amount;
   const deliveryStatus = ((_i = fulfillments[fulfillments.length - 1]) == null ? void 0 : _i.displayStatus) ?? null;
   return {
@@ -3800,8 +3800,8 @@ function mapShopifyOrder(o) {
     productName: live.map((i) => i.variantTitle && i.variantTitle !== "Default Title" ? `${i.title} (${i.variantTitle})` : i.title).join(", ") || null,
     qty: live.reduce((n, i) => n + (i.currentQuantity ?? i.quantity ?? 0), 0),
     items: JSON.stringify(orderItems(o)),
-    amount: money2 ? Number(money2.amount) : null,
-    currency: (money2 == null ? void 0 : money2.currencyCode) ?? null,
+    amount: money3 ? Number(money3.amount) : null,
+    currency: (money3 == null ? void 0 : money3.currencyCode) ?? null,
     paymentType: paymentType(o),
     primaryMobile: primary,
     altMobileShopify: alt,
@@ -3957,20 +3957,20 @@ function rollingWindows(orders, n, now = /* @__PURE__ */ new Date()) {
   }
   return rows;
 }
-const num$1 = (n) => typeof n === "number" && Number.isFinite(n) ? n : null;
+const num$2 = (n) => typeof n === "number" && Number.isFinite(n) ? n : null;
 const round2 = (n) => Math.round(n * 100) / 100 + 0;
 function profitLoss(i) {
   const status = String(i.status ?? "");
   if (status === "Cancelled") return null;
-  const delivery = num$1(i.deliveryCharges);
+  const delivery = num$2(i.deliveryCharges);
   if (status === "RTO") return delivery === null ? null : round2(-delivery);
-  const amount = num$1(i.amount);
-  const landing = num$1(i.landingPrice);
+  const amount = num$2(i.amount);
+  const landing = num$2(i.landingPrice);
   if (amount === null || landing === null) return null;
   return round2(amount - landing - (delivery ?? 0));
 }
 const profitTone = (v) => {
-  const n = num$1(v);
+  const n = num$2(v);
   return n === null || n === 0 ? "" : n > 0 ? "profit" : "loss";
 };
 const SHEET_HEADERS = [
@@ -4009,19 +4009,19 @@ const SHEET_HEADERS = [
 const ITEM_NO_COL = "AE";
 const REMARKS_COL = "W";
 const day$1 = (d) => d ? d.toISOString().slice(0, 10) : "";
-const text = (s) => s ?? "";
+const text$1 = (s) => s ?? "";
 function itemsOf(r) {
   const items = parseItems(r.items);
-  return items.length ? items : [{ name: text(r.productName), quantity: r.qty ?? 0, unitPrice: null }];
+  return items.length ? items : [{ name: text$1(r.productName), quantity: r.qty ?? 0, unitPrice: null }];
 }
 const sheetRowCount = (r) => itemsOf(r).length;
 function rowToValues(r, index = 0) {
   const it = itemsOf(r)[index] ?? itemsOf(r)[0];
   const itemCells = [it.unitPrice ?? "", index + 1];
-  const remarks = r.isManual ? r.status : text(r.remarks);
+  const remarks = r.isManual ? r.status : text$1(r.remarks);
   if (index > 0) {
     const sub = Array(SHEET_HEADERS.length).fill("");
-    sub[2] = text(r.orderName);
+    sub[2] = text$1(r.orderName);
     sub[5] = it.name;
     sub[6] = it.quantity;
     sub[22] = remarks;
@@ -4031,31 +4031,31 @@ function rowToValues(r, index = 0) {
   }
   return [
     day$1(r.callDate),
-    text(r.employeeName),
-    text(r.orderName),
+    text$1(r.employeeName),
+    text$1(r.orderName),
     day$1(r.orderDate),
-    text(r.customerName),
+    text$1(r.customerName),
     it.name,
     it.quantity,
     r.amount ?? "",
-    text(r.paymentType),
-    text(r.primaryMobile),
-    text(r.altMobile ?? r.altMobileShopify),
-    text(r.fullAddress),
-    text(r.landmark),
-    text(r.city),
-    text(r.state),
-    text(r.pinCode),
-    text(r.addressConfirmed),
-    text(r.codConfirmed),
-    text(r.deliveryAvailable),
-    text(r.customerWants),
-    text(r.callStatus),
-    text(r.finalDecision),
+    text$1(r.paymentType),
+    text$1(r.primaryMobile),
+    text$1(r.altMobile ?? r.altMobileShopify),
+    text$1(r.fullAddress),
+    text$1(r.landmark),
+    text$1(r.city),
+    text$1(r.state),
+    text$1(r.pinCode),
+    text$1(r.addressConfirmed),
+    text$1(r.codConfirmed),
+    text$1(r.deliveryAvailable),
+    text$1(r.customerWants),
+    text$1(r.callStatus),
+    text$1(r.finalDecision),
     remarks,
-    text(r.employeeRemark),
+    text$1(r.employeeRemark),
     day$1(r.dispatchDate ?? r.dispatchDateShopify),
-    text(r.awb ?? r.trackingNo),
+    text$1(r.awb ?? r.trackingNo),
     r.deliveryCharges ?? r.shippingCharge ?? "",
     r.landingPrice ?? "",
     profitLoss({ status: r.status, amount: r.amount, landingPrice: r.landingPrice, deliveryCharges: r.deliveryCharges ?? r.shippingCharge }) ?? "",
@@ -4206,8 +4206,8 @@ function appsScriptCode(token) {
     ""
   ].join("\n");
 }
-const g$8 = globalThis;
-const tasks = g$8.__tasks ?? (g$8.__tasks = /* @__PURE__ */ new Map());
+const g$9 = globalThis;
+const tasks = g$9.__tasks ?? (g$9.__tasks = /* @__PURE__ */ new Map());
 const key = (shop, id2) => `${shop}:${id2}`;
 const STALE_MS = 30 * 6e4;
 const SHOW_DONE_MS = 6e3;
@@ -4239,8 +4239,8 @@ const CHUNK$1 = 1e3;
 const DEBOUNCE_MS = 15e3;
 const b64url = (b) => Buffer.from(b).toString("base64url");
 const sleep$1 = (ms) => new Promise((r) => setTimeout(r, ms));
-const g$7 = globalThis;
-const mem = g$7.__gsheet ?? (g$7.__gsheet = { tokens: /* @__PURE__ */ new Map(), timers: /* @__PURE__ */ new Map(), running: /* @__PURE__ */ new Set(), again: /* @__PURE__ */ new Set() });
+const g$8 = globalThis;
+const mem = g$8.__gsheet ?? (g$8.__gsheet = { tokens: /* @__PURE__ */ new Map(), timers: /* @__PURE__ */ new Map(), running: /* @__PURE__ */ new Set(), again: /* @__PURE__ */ new Set() });
 async function accessToken(email, privateKey) {
   const hit = mem.tokens.get(email);
   if (hit && hit.exp > Date.now() + 6e4) return hit.token;
@@ -4502,8 +4502,8 @@ function itemsText(o) {
 function fullName$1(o) {
   var _a2, _b, _c, _d;
   const full = ((_a2 = o.shippingAddress) == null ? void 0 : _a2.name) || [(_b = o.customer) == null ? void 0 : _b.firstName, (_c = o.customer) == null ? void 0 : _c.lastName].filter(Boolean).join(" ") || ((_d = o.billingAddress) == null ? void 0 : _d.name) || "";
-  const name = String(full).trim().replace(/\s+/g, " ");
-  return name && name.length <= 60 ? name : null;
+  const name2 = String(full).trim().replace(/\s+/g, " ");
+  return name2 && name2.length <= 60 ? name2 : null;
 }
 function orderPhone(o) {
   var _a2, _b, _c, _d;
@@ -4528,12 +4528,12 @@ function buildOrderNotices(o, now = Date.now(), opts = {}) {
   const phone = orderPhone(o);
   const notices = [];
   if (!o) return { phone, notices };
-  const name = fullName$1(o);
-  const hello = name ? `, ${name}` : "";
+  const name2 = fullName$1(o);
+  const hello = name2 ? `, ${name2}` : "";
   const orderName = String(o.name ?? "");
   const items = itemsText(o);
-  const money2 = (_a2 = o.currentTotalPriceSet) == null ? void 0 : _a2.shopMoney;
-  const total = money2 ? formatMoney(money2.amount, money2.currencyCode) : "";
+  const money3 = (_a2 = o.currentTotalPriceSet) == null ? void 0 : _a2.shopMoney;
+  const total = money3 ? formatMoney(money3.amount, money3.currencyCode) : "";
   const pay = paymentType(o);
   const payment = pay === "COD" ? "Pay on delivery (COD)" : pay === "Prepaid" ? "Paid" : "Payment pending";
   const brand = "WERY";
@@ -4629,16 +4629,16 @@ async function notifyOrder(shop, node, opts = {}) {
       return;
     }
     const gid = String(node.id);
-    const name = String(((_a2 = node.shippingAddress) == null ? void 0 : _a2.name) || ((_b = node.customer) == null ? void 0 : _b.firstName) || "").trim() || null;
+    const name2 = String(((_a2 = node.shippingAddress) == null ? void 0 : _a2.name) || ((_b = node.customer) == null ? void 0 : _b.firstName) || "").trim() || null;
     const conv = await prisma.conversation.upsert({
       where: { shop_phone: { shop, phone } },
-      create: { shop, phone, customerName: name, lastMessageAt: /* @__PURE__ */ new Date() },
+      create: { shop, phone, customerName: name2, lastMessageAt: /* @__PURE__ */ new Date() },
       update: {}
     });
     const confirmation = await prisma.orderConfirmation.findUnique({ where: { shop_orderGid: { shop, orderGid: gid } } });
     if ((confirmation == null ? void 0 : confirmation.state) === "declined") notices = notices.filter((n) => n.kind === "confirmed" || n.kind === "cancelled");
     if (notices.some((n) => n.kind === "confirm_ask") && !confirmation) {
-      await prisma.orderConfirmation.create({ data: { shop, orderGid: gid, orderName: String(node.name ?? ""), conversationId: conv.id, phone, customerName: name, address: orderAddress(node) } }).catch(() => void 0);
+      await prisma.orderConfirmation.create({ data: { shop, orderGid: gid, orderName: String(node.name ?? ""), conversationId: conv.id, phone, customerName: name2, address: orderAddress(node) } }).catch(() => void 0);
     }
     for (const n of notices) {
       const r = await sendAndRecord({ shop, conversationId: conv.id, to: phone, body: n.text, sender: "bot", inReplyTo: `${PREFIX}${gid}:${n.key}` });
@@ -4649,8 +4649,8 @@ async function notifyOrder(shop, node, opts = {}) {
     await logEvent({ shop, source: "bot", level: "error", event: "order_notice_error", detail: e.message }).catch(() => void 0);
   }
 }
-const g$6 = globalThis;
-const retry = g$6.__noticeRetry ?? (g$6.__noticeRetry = { timer: null, tries: /* @__PURE__ */ new Map() });
+const g$7 = globalThis;
+const retry = g$7.__noticeRetry ?? (g$7.__noticeRetry = { timer: null, tries: /* @__PURE__ */ new Map() });
 const CATCH_UP_MS = 18 * 36e5;
 async function retryFailedNotices(windowMs = CATCH_UP_MS) {
   const since = new Date(Date.now() - windowMs);
@@ -4730,17 +4730,282 @@ const orderNotify_server = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.
   retryFailedNotices,
   startNoticeRetry
 }, Symbol.toStringTag, { value: "Module" }));
+const IMS_ORDER_FIELDS = `
+  id legacyResourceId name createdAt updatedAt cancelledAt cancelReason email phone note tags
+  displayFinancialStatus displayFulfillmentStatus paymentGatewayNames
+  currentTotalPriceSet { shopMoney { amount currencyCode } }
+  customer { firstName lastName phone defaultPhoneNumber { phoneNumber } }
+  shippingAddress { name firstName lastName address1 address2 city province zip phone }
+  billingAddress { name firstName lastName address1 address2 city province zip phone }
+  lineItems(first: 100) { nodes {
+    title variantTitle quantity currentQuantity sku variant { id legacyResourceId sku }
+    discountedUnitPriceSet { shopMoney { amount } }
+    taxLines { rate ratePercentage }
+  } }
+  fulfillments(first: 10) { displayStatus trackingInfo(first: 5) { company number url } }
+`;
+function imsEventFor(topic, node) {
+  const t = String(topic ?? "").toLowerCase().replace(/[_]/g, "/");
+  if ((node == null ? void 0 : node.cancelledAt) || t.startsWith("orders/cancel")) return "order.cancelled";
+  return t.startsWith("orders/create") ? "order.created" : "order.updated";
+}
+const num$1 = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+const money2 = (v) => Math.round((num$1(v) ?? 0) * 100) / 100;
+const text = (v) => String(v ?? "").trim();
+const name = (a) => text(a == null ? void 0 : a.name) || [a == null ? void 0 : a.firstName, a == null ? void 0 : a.lastName].map(text).filter(Boolean).join(" ");
+function address(a) {
+  if (!a) return {};
+  return { name: name(a), address1: text(a.address1), address2: text(a.address2), city: text(a.city), state: text(a.province), pincode: text(a.zip), phone: text(a.phone) };
+}
+function paymentMethod(node) {
+  const gateways = (node == null ? void 0 : node.paymentGatewayNames) ?? [];
+  if (gateways.some((g2) => /cod|cash on delivery/i.test(g2))) return "cod";
+  return ["PAID", "PARTIALLY_PAID", "PARTIALLY_REFUNDED", "REFUNDED"].includes(node == null ? void 0 : node.displayFinancialStatus) ? "prepaid" : "pending";
+}
+function imsItems(node) {
+  var _a2;
+  const items = ((_a2 = node == null ? void 0 : node.lineItems) == null ? void 0 : _a2.nodes) ?? [];
+  return items.filter((i) => (i.currentQuantity ?? i.quantity) > 0).map((i) => {
+    var _a3, _b, _c, _d, _e;
+    return {
+      sku: text(i.sku) || text((_a3 = i.variant) == null ? void 0 : _a3.sku),
+      title: [text(i.title), i.variantTitle && i.variantTitle !== "Default Title" ? `(${text(i.variantTitle)})` : ""].filter(Boolean).join(" "),
+      quantity: Number(i.currentQuantity ?? i.quantity ?? 0),
+      price: money2((_c = (_b = i.discountedUnitPriceSet) == null ? void 0 : _b.shopMoney) == null ? void 0 : _c.amount),
+      variantId: text(((_d = i.variant) == null ? void 0 : _d.legacyResourceId) ?? String(((_e = i.variant) == null ? void 0 : _e.id) ?? "").split("/").pop()),
+      gstRate: (i.taxLines ?? []).reduce((n, t) => n + (num$1(t == null ? void 0 : t.ratePercentage) ?? (num$1(t == null ? void 0 : t.rate) ?? 0) * 100), 0)
+    };
+  });
+}
+function buildImsPayload(node, event, shopDomain) {
+  var _a2, _b, _c, _d, _e, _f, _g;
+  const money3 = (_a2 = node == null ? void 0 : node.currentTotalPriceSet) == null ? void 0 : _a2.shopMoney;
+  const ship = node == null ? void 0 : node.shippingAddress;
+  const customerName = name(ship) || [(_b = node == null ? void 0 : node.customer) == null ? void 0 : _b.firstName, (_c = node == null ? void 0 : node.customer) == null ? void 0 : _c.lastName].map(text).filter(Boolean).join(" ") || name(node == null ? void 0 : node.billingAddress);
+  const tracking = ((node == null ? void 0 : node.fulfillments) ?? []).filter((f) => (f == null ? void 0 : f.displayStatus) !== "CANCELED").flatMap((f) => (f == null ? void 0 : f.trackingInfo) ?? []).filter((t) => (t == null ? void 0 : t.number) || (t == null ? void 0 : t.url)).map((t) => ({ company: text(t.company), number: text(t.number), url: text(t.url) }));
+  return {
+    event,
+    shopDomain,
+    shopifyOrderId: text((node == null ? void 0 : node.legacyResourceId) ?? String((node == null ? void 0 : node.id) ?? "").split("/").pop()),
+    orderNumber: text(node == null ? void 0 : node.name),
+    createdAt: text(node == null ? void 0 : node.createdAt),
+    financialStatus: text(node == null ? void 0 : node.displayFinancialStatus).toLowerCase(),
+    paymentMethod: paymentMethod(node),
+    totalPrice: money2(money3 == null ? void 0 : money3.amount),
+    currency: text(money3 == null ? void 0 : money3.currencyCode) || "INR",
+    customer: {
+      name: customerName,
+      phone: text(node == null ? void 0 : node.phone) || text((_d = node == null ? void 0 : node.customer) == null ? void 0 : _d.phone) || text((_f = (_e = node == null ? void 0 : node.customer) == null ? void 0 : _e.defaultPhoneNumber) == null ? void 0 : _f.phoneNumber) || text(ship == null ? void 0 : ship.phone) || text((_g = node == null ? void 0 : node.billingAddress) == null ? void 0 : _g.phone),
+      email: text(node == null ? void 0 : node.email)
+    },
+    shippingAddress: address(ship),
+    billingAddress: address(node == null ? void 0 : node.billingAddress),
+    items: imsItems(node),
+    note: text(node == null ? void 0 : node.note),
+    tags: ((node == null ? void 0 : node.tags) ?? []).map(text).filter(Boolean),
+    fulfillmentStatus: text(node == null ? void 0 : node.displayFulfillmentStatus).toLowerCase(),
+    tracking,
+    cancelledAt: (node == null ? void 0 : node.cancelledAt) ? text(node.cancelledAt) : null
+  };
+}
+function imsPayloadProblem(p) {
+  if (!p.shopifyOrderId) return "the order has no Shopify id";
+  if (!p.shopDomain) return "the shop domain is missing";
+  const noSku = p.items.filter((i) => !i.sku);
+  if (noSku.length) return `the IMS needs a SKU for every item; no SKU on: ${noSku.map((i) => i.title || "item").join(", ").slice(0, 160)}. Add the SKU in Shopify (Products → the variant), then press Retry.`;
+  return null;
+}
+function imsUrlProblem(url) {
+  let u;
+  try {
+    u = new URL(url.trim());
+  } catch {
+    return "That is not a web address. Paste the full IMS address, e.g. https://ims.example.com/api/external/v1/shopify/orders";
+  }
+  const local = u.hostname === "localhost" || u.hostname === "127.0.0.1";
+  if (u.protocol !== "https:" && !(local && u.protocol === "http:")) return "The IMS address must start with https://";
+  if (!u.pathname || u.pathname === "/") return "The address is missing the path (it ends with /api/external/v1/shopify/orders).";
+  return null;
+}
+const retryDelayMs = (attempts) => Math.min(36e5, 3e4 * 2 ** Math.max(0, attempts - 1));
+const MAX_ATTEMPTS = 10;
+const BATCH = 10;
+const TICK_MS = 1e4;
+const CHANGE_DELAY_MS = 2e4;
+const TIMEOUT_MS = 15e3;
+const g$6 = globalThis;
+const worker = g$6.__imsWorker ?? (g$6.__imsWorker = { timer: null, running: false });
+async function getImsConfig(shop) {
+  const c = await prisma.imsConfig.findUnique({ where: { shop } });
+  return { enabled: !!(c == null ? void 0 : c.enabled), url: (c == null ? void 0 : c.url) ?? "", hasKey: !!(c == null ? void 0 : c.keyEnc), keyHint: (c == null ? void 0 : c.keyHint) ?? "", lastOkAt: (c == null ? void 0 : c.lastOkAt) ?? null, lastError: (c == null ? void 0 : c.lastError) ?? null };
+}
+async function saveImsConfig(shop, input) {
+  const url = input.url.trim();
+  const key2 = (input.key ?? "").trim();
+  const old = await prisma.imsConfig.findUnique({ where: { shop } });
+  if (input.enabled || url) {
+    const bad = imsUrlProblem(url);
+    if (bad) return { ok: false, error: bad };
+  }
+  if (input.enabled && !key2 && !(old == null ? void 0 : old.keyEnc)) return { ok: false, error: "Paste the API key the IMS team gave you." };
+  if (key2 && key2.length < 8) return { ok: false, error: "That API key looks too short." };
+  const keyData = key2 ? { keyEnc: encryptSecret(key2), keyHint: key2.slice(-4) } : {};
+  await prisma.imsConfig.upsert({
+    where: { shop },
+    create: { shop, enabled: input.enabled, url, ...keyData },
+    update: { enabled: input.enabled, url, ...keyData, ...input.enabled ? { lastError: null } : {} }
+  });
+  return { ok: true };
+}
+const idOf = (gid) => gid.split("/").pop() ?? gid;
+const orderGidFor = (id2) => `gid://shopify/Order/${id2}`;
+async function enqueueImsPush(shop, gid, event, opts = {}) {
+  const cfg = await prisma.imsConfig.findUnique({ where: { shop }, select: { enabled: true, url: true, keyEnc: true } });
+  if (!(cfg == null ? void 0 : cfg.enabled) || !cfg.url || !cfg.keyEnc) return false;
+  const next = new Date(Date.now() + (opts.delayMs ?? (event === "order.created" ? 0 : CHANGE_DELAY_MS)));
+  const row = await prisma.imsPush.findUnique({ where: { shop_orderGid: { shop, orderGid: gid } } });
+  const keepCreated = (row == null ? void 0 : row.status) === "pending" && row.event === "order.created" && event === "order.updated";
+  const data = { event: keepCreated ? "order.created" : event, status: "pending", attempts: 0, lastError: null, nextAttemptAt: next, ...opts.orderName ? { orderName: opts.orderName } : {} };
+  await prisma.imsPush.upsert({ where: { shop_orderGid: { shop, orderGid: gid } }, create: { shop, orderGid: gid, ...data }, update: data });
+  return true;
+}
+async function enqueueAllOrders(shop) {
+  const rows = await prisma.orderSheet.findMany({ where: { shop, isManual: false }, select: { shopifyOrderId: true, orderName: true }, orderBy: { orderDate: "asc" } });
+  const now = /* @__PURE__ */ new Date();
+  for (let i = 0; i < rows.length; i += 200) {
+    await prisma.$transaction(
+      rows.slice(i, i + 200).map((r) => {
+        const orderGid2 = orderGidFor(r.shopifyOrderId);
+        const data = { event: "order.created", status: "pending", attempts: 0, lastError: null, nextAttemptAt: now, orderName: r.orderName };
+        return prisma.imsPush.upsert({ where: { shop_orderGid: { shop, orderGid: orderGid2 } }, create: { shop, orderGid: orderGid2, ...data }, update: data });
+      })
+    );
+  }
+  return rows.length;
+}
+async function enqueueOneOrder(shop, typed) {
+  const ref = parseOrderRef(typed);
+  if (!ref) return { ok: false, error: "Type an order number like #W1219." };
+  const rows = await prisma.orderSheet.findMany({ where: { shop, isManual: false, orderName: { contains: ref.digits } }, select: { shopifyOrderId: true, orderName: true }, take: 20 });
+  const hit = rows.find((r) => r.orderName && orderNameMatches(r.orderName, ref));
+  if (!hit) return { ok: false, error: `Order ${typed} is not in the Order Update sheet yet.` };
+  const ok = await enqueueImsPush(shop, orderGidFor(hit.shopifyOrderId), "order.created", { delayMs: 0, orderName: hit.orderName });
+  return ok ? { ok: true, name: hit.orderName } : { ok: false, error: "Switch the IMS connection on and save the address and key first." };
+}
+async function retryFailedImsPushes(shop) {
+  const r = await prisma.imsPush.updateMany({ where: { shop, status: "failed" }, data: { status: "pending", attempts: 0, lastError: null, nextAttemptAt: /* @__PURE__ */ new Date() } });
+  return r.count;
+}
+async function imsStatus(shop) {
+  const [cfg, groups2, failed, last] = await Promise.all([
+    getImsConfig(shop),
+    prisma.imsPush.groupBy({ by: ["status"], where: { shop }, _count: { _all: true } }),
+    prisma.imsPush.findMany({ where: { shop, status: "failed" }, orderBy: { updatedAt: "desc" }, take: 10 }),
+    prisma.imsPush.findFirst({ where: { shop, status: "sent" }, orderBy: { sentAt: "desc" }, select: { sentAt: true } })
+  ]);
+  const n = (s) => {
+    var _a2;
+    return ((_a2 = groups2.find((x) => x.status === s)) == null ? void 0 : _a2._count._all) ?? 0;
+  };
+  return {
+    cfg,
+    pending: n("pending"),
+    sent: n("sent"),
+    failed: n("failed"),
+    lastSentAt: (last == null ? void 0 : last.sentAt) ?? null,
+    failedList: failed.map((f) => ({ name: f.orderName ?? idOf(f.orderGid), event: f.event, error: f.lastError ?? "", attempts: f.attempts }))
+  };
+}
+async function sendRow(row, cfg, deps) {
+  const run = deps.run ?? gql;
+  const doFetch = deps.fetchFn ?? fetch;
+  let node;
+  try {
+    const data = await run(row.shop, `query($id: ID!) { order(id: $id) { ${IMS_ORDER_FIELDS} } }`, { id: row.orderGid });
+    node = data.order;
+  } catch (e) {
+    return { result: "retry", error: `Could not read the order from Shopify: ${e.message}`.slice(0, 300) };
+  }
+  if (!node) return { result: "failed", error: "The order no longer exists in Shopify." };
+  const payload = buildImsPayload(node, node.cancelledAt ? "order.cancelled" : row.event, row.shop);
+  const problem = imsPayloadProblem(payload);
+  if (problem) return { result: "failed", error: problem, name: payload.orderNumber };
+  try {
+    const res = await doFetch(cfg.url, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": cfg.key },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(TIMEOUT_MS)
+    });
+    if (res.status === 200 || res.status === 201) return { result: "sent", name: payload.orderNumber };
+    const body = (await res.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 200);
+    const hint = res.status === 401 || res.status === 403 ? " (the API key was not accepted)" : "";
+    return { result: "retry", error: `The IMS answered HTTP ${res.status}${hint}${body ? `: ${body}` : ""}`, name: payload.orderNumber };
+  } catch (e) {
+    const m = e.name === "TimeoutError" ? "The IMS did not answer in 15 seconds" : `Could not reach the IMS: ${e.message}`;
+    return { result: "retry", error: m.slice(0, 300), name: payload.orderNumber };
+  }
+}
+async function processImsQueue(deps = {}) {
+  const out = { sent: 0, retry: 0, failed: 0 };
+  if (worker.running) return out;
+  worker.running = true;
+  try {
+    const now = deps.now ?? /* @__PURE__ */ new Date();
+    const due = await prisma.imsPush.findMany({ where: { status: "pending", nextAttemptAt: { lte: now } }, orderBy: { nextAttemptAt: "asc" }, take: BATCH });
+    const cfgs = /* @__PURE__ */ new Map();
+    for (const row of due) {
+      if (!cfgs.has(row.shop)) {
+        const c = await prisma.imsConfig.findUnique({ where: { shop: row.shop } });
+        const key2 = (c == null ? void 0 : c.enabled) && c.url && c.keyEnc ? decryptSecret(c.keyEnc) : null;
+        cfgs.set(row.shop, key2 && c ? { url: c.url, key: key2 } : null);
+        if ((c == null ? void 0 : c.enabled) && c.keyEnc && !key2) await prisma.imsConfig.update({ where: { shop: row.shop }, data: { lastError: "The saved IMS key cannot be read. Paste the key again and save." } });
+      }
+      const cfg = cfgs.get(row.shop);
+      if (!cfg) continue;
+      const r = await sendRow(row, cfg, deps);
+      if (r.result === "sent") {
+        out.sent++;
+        await prisma.imsPush.update({ where: { id: row.id }, data: { status: "sent", sentAt: /* @__PURE__ */ new Date(), lastError: null, attempts: row.attempts + 1, ...r.name ? { orderName: r.name } : {} } });
+        await prisma.imsConfig.update({ where: { shop: row.shop }, data: { lastOkAt: /* @__PURE__ */ new Date(), lastError: null } });
+        continue;
+      }
+      const attempts = row.attempts + 1;
+      const giveUp = r.result === "failed" || attempts >= MAX_ATTEMPTS;
+      out[giveUp ? "failed" : "retry"]++;
+      await prisma.imsPush.update({
+        where: { id: row.id },
+        data: { status: giveUp ? "failed" : "pending", attempts, lastError: r.error ?? null, nextAttemptAt: new Date(Date.now() + retryDelayMs(attempts)), ...r.name ? { orderName: r.name } : {} }
+      });
+      await prisma.imsConfig.update({ where: { shop: row.shop }, data: { lastError: (r.error ?? "").slice(0, 300) } }).catch(() => void 0);
+      if (giveUp || attempts === 1) await logEvent({ shop: row.shop, source: "shopify", level: giveUp ? "error" : "info", event: giveUp ? "ims_push_failed" : "ims_push_retry", detail: `${r.name ?? idOf(row.orderGid)}: ${r.error}` });
+    }
+  } finally {
+    worker.running = false;
+  }
+  return out;
+}
+function startImsWorker() {
+  var _a2, _b;
+  if (worker.timer) return;
+  worker.timer = setInterval(() => void processImsQueue().catch(() => void 0), TICK_MS);
+  (_b = (_a2 = worker.timer).unref) == null ? void 0 : _b.call(_a2);
+}
 const PAGE$1 = 50;
 const OVERLAP_MS = 10 * 6e4;
 const INTERVAL_MS = 5 * 6e4;
 const g$5 = globalThis;
 const state$1 = g$5.__orderSync ?? (g$5.__orderSync = { running: /* @__PURE__ */ new Set(), timer: null });
 const orderGid = (id2) => `gid://shopify/Order/${id2}`;
-async function syncOrderById(shop, gid) {
+async function syncOrderById(shop, gid, topic) {
   const data = await gql(shop, `query($id: ID!) { order(id: $id) { ${ORDER_SHEET_FIELDS} } }`, { id: gid });
   if (!data.order) return "missing";
   const r = await upsertOrder(shop, mapShopifyOrder(data.order));
   if (r !== "skipped") scheduleSheetPush(shop);
+  await enqueueImsPush(shop, gid, imsEventFor(topic, data.order), { orderName: data.order.name }).catch(() => false);
   await notifyOrder(shop, data.order);
   return r;
 }
@@ -4772,7 +5037,9 @@ async function syncOrders(shop, opts = {}) {
     for (const node of ((_a2 = data.orders) == null ? void 0 : _a2.nodes) ?? []) {
       out.fetched++;
       try {
-        out[await upsertOrder(shop, mapShopifyOrder(node))]++;
+        const res = await upsertOrder(shop, mapShopifyOrder(node));
+        out[res]++;
+        if (res === "created") await enqueueImsPush(shop, node.id, imsEventFor("orders/create", node), { orderName: node.name }).catch(() => false);
         await notifyOrder(shop, node);
       } catch (e) {
         out.failed++;
@@ -4833,6 +5100,7 @@ async function runSync(shop, mode = "auto") {
 function startOrderSync() {
   var _a2, _b;
   if (state$1.timer) return;
+  startImsWorker();
   const tick = async () => {
     try {
       const shop = await resolveShop();
@@ -5654,7 +5922,7 @@ const route = UNSAFE_withComponentProps(function App2() {
           })]
         }), /* @__PURE__ */ jsx("div", {
           className: "sgrid",
-          children: SKILLS.map(([i, name, note, pct2]) => /* @__PURE__ */ jsxs("div", {
+          children: SKILLS.map(([i, name2, note, pct2]) => /* @__PURE__ */ jsxs("div", {
             className: "skill reveal",
             children: [/* @__PURE__ */ jsxs("div", {
               className: "row",
@@ -5665,7 +5933,7 @@ const route = UNSAFE_withComponentProps(function App2() {
                   w: 1.9
                 })
               }), /* @__PURE__ */ jsx("b", {
-                children: name
+                children: name2
               }), /* @__PURE__ */ jsx("span", {
                 className: "note",
                 children: note
@@ -5679,7 +5947,7 @@ const route = UNSAFE_withComponentProps(function App2() {
                 "data-w": pct2
               })
             })]
-          }, name))
+          }, name2))
         })]
       })
     }), /* @__PURE__ */ jsx("section", {
@@ -6166,7 +6434,7 @@ async function handleOrderWebhook(shop, topic, payload) {
     const gid = payload == null ? void 0 : payload.admin_graphql_api_id;
     const id2 = (gid == null ? void 0 : gid.startsWith("gid://shopify/Order/")) ? gid : (payload == null ? void 0 : payload.order_id) ? orderGid(payload.order_id) : (payload == null ? void 0 : payload.id) ? orderGid(payload.id) : null;
     if (!id2) return;
-    await syncOrderById(shop, id2);
+    await syncOrderById(shop, id2, topic);
   } catch (e) {
     await logEvent({ shop, source: "shopify", level: "error", event: "order_webhook_failed", detail: `${topic}: ${e.message}` });
   }
@@ -6314,11 +6582,11 @@ async function sendWebMessage(args) {
   }
   const settings = await getSettings(shop);
   if (!settings.webWidget) return { ok: false, error: "Chat is not available right now.", status: 403 };
-  const name = (args.name ?? "").trim().slice(0, 40) || "";
+  const name2 = (args.name ?? "").trim().slice(0, 40) || "";
   try {
     await handleInbound(
       shop,
-      { from: sid, id: `web-${sid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type: "text", text: text2, name: name || void 0 },
+      { from: sid, id: `web-${sid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type: "text", text: text2, name: name2 || void 0 },
       { channel: "web", phone: `web:${sid}` }
     );
   } catch (e) {
@@ -6935,9 +7203,9 @@ async function downloadImages(urls, dir, referer) {
     const h = createHash("sha1").update(item.buf).digest("hex");
     if (seen.has(h)) continue;
     seen.add(h);
-    const name = `${saved.length + 1}${item.ext}`;
-    writeFileSync(path.join(dir, name), item.buf);
-    saved.push(name);
+    const name2 = `${saved.length + 1}${item.ext}`;
+    writeFileSync(path.join(dir, name2), item.buf);
+    saved.push(name2);
   }
   return saved;
 }
@@ -7109,10 +7377,10 @@ const loader$n = async ({
       status: 403
     });
   }
-  const [kind, runId, folder, name] = parts;
-  if (kind === "file" && runId && folder && name) {
-    const file = path.join(FINDER_DIR, runId, folder, name);
-    const type = MIME$2[path.extname(name).toLowerCase()];
+  const [kind, runId, folder, name2] = parts;
+  if (kind === "file" && runId && folder && name2) {
+    const file = path.join(FINDER_DIR, runId, folder, name2);
+    const type = MIME$2[path.extname(name2).toLowerCase()];
     if (!inside(file) || !type || !existsSync(file)) return new Response("Not found", {
       status: 404
     });
@@ -7474,11 +7742,11 @@ async function setWorkers(_shop, _n) {
   pool.setWorkers(FIXED_WORKERS);
   return FIXED_WORKERS;
 }
-async function createJob(shop, name, options, kind = "upload") {
+async function createJob(shop, name2, options, kind = "upload") {
   const id2 = `${(/* @__PURE__ */ new Date()).toISOString().replace(/[-:T]/g, "").slice(0, 14)}-${randomBytes(3).toString("hex")}`;
   const opts = normalizeOptions(options);
   mkdirSync(jobDir(id2), { recursive: true });
-  await prisma.imageJob.create({ data: { id: id2, shop, kind, name: (name.trim() || "Image batch").slice(0, 80), settings: JSON.stringify(opts) } });
+  await prisma.imageJob.create({ data: { id: id2, shop, kind, name: (name2.trim() || "Image batch").slice(0, 80), settings: JSON.stringify(opts) } });
   return { id: id2, options: opts };
 }
 async function ownJob(shop, jobId) {
@@ -7743,13 +8011,13 @@ const g = globalThis;
 const applying = g.__imageApplying ?? (g.__imageApplying = /* @__PURE__ */ new Set());
 const log = (shop, event, detail, level2 = "info") => prisma.activityLog.create({ data: { shop, source: "shopify", event, level: level2, detail: detail.slice(0, 400) } }).catch(() => void 0);
 const GID = /^gid:\/\/shopify\/(Product|MediaImage)\/\d+$/;
-async function createStoreJob(ctx, name, options, images) {
+async function createStoreJob(ctx, name2, options, images) {
   var _a2;
   const refs = images.slice(0, LIMITS$1.maxFiles).filter((i) => GID.test(i.productId) && GID.test(i.mediaId));
   const seen = /* @__PURE__ */ new Set();
   const unique = refs.filter((r) => seen.has(r.mediaId) ? false : (seen.add(r.mediaId), true));
   if (unique.length === 0) throw new Error("Choose at least one product image.");
-  const { id: id2 } = await createJob(ctx.shop, name, options, "store");
+  const { id: id2 } = await createJob(ctx.shop, name2, options, "store");
   const failed = [];
   let next = 0;
   await Promise.all(
@@ -7964,7 +8232,7 @@ const MIME = {
   png: "image/png",
   webp: "image/webp"
 };
-const disposition = (name) => `attachment; filename="${name.replace(/[^\w.\- ]+/g, "_")}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+const disposition = (name2) => `attachment; filename="${name2.replace(/[^\w.\- ]+/g, "_")}"; filename*=UTF-8''${encodeURIComponent(name2)}`;
 const loader$m = async ({
   request,
   params
@@ -8031,11 +8299,11 @@ const loader$m = async ({
       const ext = path.extname(it.outName ?? "").slice(1).toLowerCase();
       if (!it.outName || !ext) return null;
       const dir = JSON.parse(job.settings || "{}").keepFolders !== false && it.folder ? `${it.folder}/` : "";
-      let name = `${dir}${it.outName}`;
-      for (let n = 2; used.has(name.toLowerCase()); n++) name = `${dir}${it.outName.replace(/(\.[^.]+)$/, ` (${n})$1`)}`;
-      used.add(name.toLowerCase());
+      let name2 = `${dir}${it.outName}`;
+      for (let n = 2; used.has(name2.toLowerCase()); n++) name2 = `${dir}${it.outName.replace(/(\.[^.]+)$/, ` (${n})$1`)}`;
+      used.add(name2.toLowerCase());
       return {
-        name,
+        name: name2,
         file: `${itemPaths(jobId, it.id, it.ext).outBase}.${ext}`
       };
     }).filter((f) => Boolean(f && existsSync(f.file)));
@@ -8226,12 +8494,12 @@ const loader$l = async ({
   });
   const mime = (msg2.mediaMime ?? "").toLowerCase();
   const inline = INLINE_MIME.has(mime);
-  const name = (msg2.mediaName ?? msg2.mediaFile).replace(/[^\w.\- ]+/g, "_").slice(0, 100);
+  const name2 = (msg2.mediaName ?? msg2.mediaFile).replace(/[^\w.\- ]+/g, "_").slice(0, 100);
   return new Response(new Uint8Array(await readFile(file)), {
     headers: {
       // Never let user-supplied content render as HTML/SVG: unknown types are forced to download.
       "Content-Type": inline ? mime : "application/octet-stream",
-      "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${name}"`,
+      "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${name2}"`,
       "X-Content-Type-Options": "nosniff",
       ...inline ? {} : {
         "Content-Security-Policy": "default-src 'none'; sandbox"
@@ -8405,11 +8673,11 @@ class CsvError extends Error {
 function planChanges(table, live) {
   if (table.length < 2) throw new CsvError("The file has no rows.");
   const head = table[0].map((h) => h.trim().toLowerCase());
-  const col = (name) => head.indexOf(name);
+  const col = (name2) => head.indexOf(name2);
   if (col("type") < 0 || col("id") < 0) throw new CsvError('This is not a file exported from this page (the columns "type" and "id" are missing). Download the CSV again and fill only the new_* columns.');
-  const has = (name) => col(name) >= 0;
+  const has = (name2) => col(name2) >= 0;
   if (!has("new_seo_title") && !has("new_seo_description") && !has("new_alt")) throw new CsvError("The columns new_seo_title, new_seo_description and new_alt are missing.");
-  const get = (r, name) => has(name) ? r[col(name)] ?? "" : "";
+  const get = (r, name2) => has(name2) ? r[col(name2)] ?? "" : "";
   const plan = { changes: [], skipped: [], unchanged: 0, rows: table.length - 1 };
   const seen = /* @__PURE__ */ new Set();
   for (let i = 1; i < table.length; i++) {
@@ -8800,7 +9068,7 @@ async function exportCsv(shop, opts = {}) {
   }
   return { csv: toCsv(out), products, images };
 }
-async function previewCsv(shop, text2, name) {
+async function previewCsv(shop, text2, name2) {
   if (text2.length > MAX_CSV_CHARS) throw new CsvError("The file is larger than 8 MB. Split it into smaller files.");
   const table = parseCsv(text2);
   if (table.length > MAX_ROWS + 1) throw new CsvError(`The file has more than ${MAX_ROWS} rows. Split it into smaller files.`);
@@ -8819,7 +9087,7 @@ async function previewCsv(shop, text2, name) {
   let batchId = null;
   if (plan.changes.length) {
     batchId = randomUUID();
-    await prisma.seoBatch.create({ data: { id: batchId, shop, name: name.slice(0, 120) || "CSV upload" } });
+    await prisma.seoBatch.create({ data: { id: batchId, shop, name: name2.slice(0, 120) || "CSV upload" } });
     for (let i = 0; i < plan.changes.length; i += 500) {
       await prisma.seoChange.createMany({
         data: plan.changes.slice(i, i + 500).map((c) => ({ batchId, shop, kind: c.kind, productId: c.productId, productTitle: c.productTitle, mediaId: c.mediaId, before: c.before, after: c.after, warn: c.warn }))
@@ -9068,13 +9336,13 @@ const action$a = async ({
       if (!csv.trim()) return json({
         error: "The file is empty."
       }, 400);
-      const name = typeof body.name === "string" ? body.name : "CSV upload";
-      const r = await previewCsv(shop, csv, name);
+      const name2 = typeof body.name === "string" ? body.name : "CSV upload";
+      const r = await previewCsv(shop, csv, name2);
       await logEvent({
         shop,
         source: "admin",
         event: "seo_csv_checked",
-        detail: `${name}: ${r.total} changes, ${r.skippedTotal} skipped`
+        detail: `${name2}: ${r.total} changes, ${r.skippedTotal} skipped`
       });
       return json({
         ok: true,
@@ -9449,7 +9717,7 @@ function Shell({ data, children }) {
     });
   };
   const page = CRUMBS[pathname.split("/")[2] ?? ""];
-  const name = data.shop.replace(/\.myshopify\.com$/, "");
+  const name2 = data.shop.replace(/\.myshopify\.com$/, "");
   return /* @__PURE__ */ jsxs("div", { className: `orderly shell${collapsed ? " is-collapsed" : ""}${mobileOpen ? " is-open" : ""}`, children: [
     /* @__PURE__ */ jsxs("aside", { className: "sb", "aria-label": "Main navigation", children: [
       /* @__PURE__ */ jsxs("div", { className: "sb-brand", children: [
@@ -9471,7 +9739,7 @@ function Shell({ data, children }) {
       /* @__PURE__ */ jsxs("div", { className: "sb-user", children: [
         /* @__PURE__ */ jsx("span", { className: "sb-avatar", children: initials$1(data.shop) }),
         /* @__PURE__ */ jsxs("span", { className: "sb-user-text", children: [
-          /* @__PURE__ */ jsx("b", { children: name }),
+          /* @__PURE__ */ jsx("b", { children: name2 }),
           /* @__PURE__ */ jsx("small", { children: "Store admin" })
         ] })
       ] })
@@ -13711,7 +13979,7 @@ const app_imageEditor = UNSAFE_withComponentProps(function ImageEditor() {
     ...PRESETS[0].options
   });
   const [preset, setPreset] = useState(PRESETS[0].id);
-  const [name, setName] = useState("");
+  const [name2, setName] = useState("");
   const [picked, setPicked] = useState([]);
   const [drag, setDrag] = useState(false);
   const [phase, setPhase] = useState({
@@ -13738,7 +14006,7 @@ const app_imageEditor = UNSAFE_withComponentProps(function ImageEditor() {
       const {
         id: id2
       } = await api$1("create", {
-        name: name || `Batch ${(/* @__PURE__ */ new Date()).toLocaleDateString()}`,
+        name: name2 || `Batch ${(/* @__PURE__ */ new Date()).toLocaleDateString()}`,
         options: opts
       });
       let next = 0;
@@ -13914,7 +14182,7 @@ const app_imageEditor = UNSAFE_withComponentProps(function ImageEditor() {
         },
         children: [/* @__PURE__ */ jsx("input", {
           placeholder: "Batch name (optional)",
-          value: name,
+          value: name2,
           onChange: (e) => setName(e.target.value),
           style: {
             width: 260
@@ -14275,7 +14543,7 @@ const app_imageProducts = UNSAFE_withComponentProps(function StoreProducts() {
     ...PRESETS[0].options
   });
   const [preset, setPreset] = useState(PRESETS[0].id);
-  const [name, setName] = useState("");
+  const [name2, setName] = useState("");
   const [busy2, setBusy] = useState(null);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -14295,7 +14563,7 @@ const app_imageProducts = UNSAFE_withComponentProps(function StoreProducts() {
   };
   const startEdit = () => guard("Downloading originals…", async () => {
     const r = await api("store-create", {
-      name: name || `Store photos ${(/* @__PURE__ */ new Date()).toLocaleDateString()}`,
+      name: name2 || `Store photos ${(/* @__PURE__ */ new Date()).toLocaleDateString()}`,
       options: opts,
       images: pickedList
     });
@@ -14510,7 +14778,7 @@ The original of each image is saved first, so you can restore it with one click.
           },
           children: [/* @__PURE__ */ jsx("input", {
             placeholder: "Batch name (optional)",
-            value: name,
+            value: name2,
             onChange: (e) => setName(e.target.value),
             style: {
               width: 260
@@ -14768,7 +15036,9 @@ const loader$a = async ({
     // only "saved" and the last 4 characters, never a key
     webhookPath: "/api/webhooks/whatsapp",
     lastWebhookAt: (lastWebhook == null ? void 0 : lastWebhook.createdAt.toISOString()) ?? null,
-    appUrl: process.env.SHOPIFY_APP_URL ?? ""
+    appUrl: process.env.SHOPIFY_APP_URL ?? "",
+    ims: await imsStatus(session.shop)
+    // IMS portal: address, whether a key is saved (never the key), and what was sent / is waiting / failed
   };
 };
 const action$6 = async ({
@@ -14811,6 +15081,56 @@ const action$6 = async ({
       removed: true
     };
   }
+  if (target2 === "ims-save") {
+    const r = await saveImsConfig(session.shop, {
+      url: String(form.get("imsUrl") ?? ""),
+      key: String(form.get("imsKey") ?? ""),
+      enabled: form.get("imsEnabled") === "on"
+    });
+    return {
+      target: target2,
+      ims: r.ok ? {
+        ok: true,
+        message: "IMS settings saved."
+      } : {
+        ok: false,
+        message: r.error
+      }
+    };
+  }
+  if (target2 === "ims-one") {
+    const r = await enqueueOneOrder(session.shop, String(form.get("orderNo") ?? ""));
+    return {
+      target: target2,
+      ims: r.ok ? {
+        ok: true,
+        message: `Order ${r.name} is on its way to the IMS (a few seconds).`
+      } : {
+        ok: false,
+        message: r.error
+      }
+    };
+  }
+  if (target2 === "ims-all") {
+    const n = await enqueueAllOrders(session.shop);
+    return {
+      target: target2,
+      ims: {
+        ok: true,
+        message: `${n.toLocaleString()} orders are queued. They go to the IMS 10 at a time; you can watch the numbers below.`
+      }
+    };
+  }
+  if (target2 === "ims-retry") {
+    const n = await retryFailedImsPushes(session.shop);
+    return {
+      target: target2,
+      ims: {
+        ok: true,
+        message: `${n} failed order${n === 1 ? "" : "s"} queued again.`
+      }
+    };
+  }
   if (target2 === "shopify") return {
     target: target2,
     shopify: await testShopifyConnection(session.shop, true)
@@ -14837,10 +15157,12 @@ const app_integrations = UNSAFE_withComponentProps(function Integrations() {
     creds,
     webhookPath,
     lastWebhookAt,
-    appUrl
+    appUrl,
+    ims
   } = useLoaderData();
   const result = useActionData();
   const busy2 = useNavigation().state !== "idle";
+  useAutoRefresh(ims.pending > 0 ? 3e3 : 3e4);
   return /* @__PURE__ */ jsxs(Page, {
     title: "Integrations",
     children: [/* @__PURE__ */ jsxs(Card, {
@@ -14874,6 +15196,182 @@ const app_integrations = UNSAFE_withComponentProps(function Integrations() {
         tone: "critical",
         children: ["Failed: ", result.shopify.error]
       }))]
+    }), /* @__PURE__ */ jsxs(Card, {
+      title: "IMS portal (send orders to your IMS)",
+      children: [/* @__PURE__ */ jsx("p", {
+        className: "o-muted",
+        children: "Every new WERY order goes to your IMS at once, and every change (status, tracking, cancel) follows after a few seconds. If the IMS is down or the key is wrong, nothing is lost: each order is tried again later, and the ones that cannot be sent are listed below with the reason."
+      }), /* @__PURE__ */ jsxs(Form, {
+        method: "post",
+        children: [/* @__PURE__ */ jsx("input", {
+          type: "hidden",
+          name: "target",
+          value: "ims-save"
+        }), /* @__PURE__ */ jsx("p", {
+          children: /* @__PURE__ */ jsxs("label", {
+            children: [/* @__PURE__ */ jsx("input", {
+              type: "checkbox",
+              name: "imsEnabled",
+              defaultChecked: ims.cfg.enabled
+            }), " Send orders to the IMS"]
+          })
+        }), /* @__PURE__ */ jsxs("label", {
+          className: "o-field",
+          children: [/* @__PURE__ */ jsx("span", {
+            children: "IMS address (the full link the IMS team gave you)"
+          }), /* @__PURE__ */ jsx("input", {
+            name: "imsUrl",
+            defaultValue: ims.cfg.url,
+            placeholder: "https://your-ims.com/api/external/v1/shopify/orders",
+            style: {
+              width: "100%"
+            },
+            autoComplete: "off"
+          })]
+        }), /* @__PURE__ */ jsxs("label", {
+          className: "o-field",
+          children: [/* @__PURE__ */ jsxs("span", {
+            children: ["IMS API key ", ims.cfg.hasKey ? /* @__PURE__ */ jsxs(Badge, {
+              tone: "success",
+              children: ["Saved (ends …", ims.cfg.keyHint, ")"]
+            }) : /* @__PURE__ */ jsx(Badge, {
+              tone: "warning",
+              children: "Not saved"
+            })]
+          }), /* @__PURE__ */ jsx("input", {
+            name: "imsKey",
+            type: "password",
+            placeholder: ims.cfg.hasKey ? "Leave empty to keep the saved key" : "Paste the key from the IMS team",
+            style: {
+              width: "100%"
+            },
+            autoComplete: "off"
+          })]
+        }), /* @__PURE__ */ jsx("button", {
+          disabled: busy2,
+          children: "Save"
+        })]
+      }), (result == null ? void 0 : result.ims) && String(result.target ?? "").startsWith("ims") && /* @__PURE__ */ jsx(Banner, {
+        tone: result.ims.ok ? "success" : "critical",
+        children: result.ims.message
+      }), ims.cfg.lastError && /* @__PURE__ */ jsxs(Banner, {
+        tone: "critical",
+        children: ["Last problem: ", ims.cfg.lastError]
+      }), /* @__PURE__ */ jsxs("div", {
+        className: "o-row",
+        style: {
+          gap: 18,
+          margin: "14px 0 6px",
+          flexWrap: "wrap"
+        },
+        children: [/* @__PURE__ */ jsxs("span", {
+          children: [/* @__PURE__ */ jsx("b", {
+            children: ims.sent.toLocaleString()
+          }), " sent"]
+        }), /* @__PURE__ */ jsxs("span", {
+          children: [/* @__PURE__ */ jsx("b", {
+            children: ims.pending.toLocaleString()
+          }), " waiting"]
+        }), /* @__PURE__ */ jsxs("span", {
+          style: ims.failed ? {
+            color: "#a3261b"
+          } : void 0,
+          children: [/* @__PURE__ */ jsx("b", {
+            children: ims.failed.toLocaleString()
+          }), " failed"]
+        }), /* @__PURE__ */ jsx("span", {
+          className: "o-muted",
+          children: ims.lastSentAt ? `Last sent ${new Date(ims.lastSentAt).toLocaleString()}` : "Nothing sent yet"
+        })]
+      }), /* @__PURE__ */ jsxs("div", {
+        className: "o-row",
+        style: {
+          gap: 10,
+          flexWrap: "wrap"
+        },
+        children: [/* @__PURE__ */ jsxs(Form, {
+          method: "post",
+          className: "o-row",
+          children: [/* @__PURE__ */ jsx("input", {
+            type: "hidden",
+            name: "target",
+            value: "ims-one"
+          }), /* @__PURE__ */ jsx("input", {
+            name: "orderNo",
+            placeholder: "Order, e.g. #W1219",
+            "aria-label": "Order to send",
+            style: {
+              width: 160
+            }
+          }), /* @__PURE__ */ jsx("button", {
+            className: "ghost",
+            disabled: busy2 || !ims.cfg.enabled,
+            children: "Send this order now"
+          })]
+        }), /* @__PURE__ */ jsxs(Form, {
+          method: "post",
+          onSubmit: (e) => {
+            if (!window.confirm("Send ALL old orders to the IMS? They go 10 at a time. An order the IMS already has is updated, not duplicated.")) e.preventDefault();
+          },
+          children: [/* @__PURE__ */ jsx("input", {
+            type: "hidden",
+            name: "target",
+            value: "ims-all"
+          }), /* @__PURE__ */ jsx("button", {
+            className: "ghost",
+            disabled: busy2 || !ims.cfg.enabled,
+            children: "Send old orders"
+          })]
+        }), ims.failed > 0 && /* @__PURE__ */ jsxs(Form, {
+          method: "post",
+          children: [/* @__PURE__ */ jsx("input", {
+            type: "hidden",
+            name: "target",
+            value: "ims-retry"
+          }), /* @__PURE__ */ jsx("button", {
+            disabled: busy2,
+            children: "Retry failed"
+          })]
+        })]
+      }), !ims.cfg.enabled && /* @__PURE__ */ jsxs("p", {
+        className: "o-muted",
+        style: {
+          marginTop: 8
+        },
+        children: ["Switch it on and save to start sending. Tip: first press ", /* @__PURE__ */ jsx("b", {
+          children: "Send this order now"
+        }), " with one real order and ask the IMS team to confirm they got it, then press ", /* @__PURE__ */ jsx("b", {
+          children: "Send old orders"
+        }), "."]
+      }), ims.failedList.length > 0 && /* @__PURE__ */ jsx("div", {
+        className: "o-scroll",
+        style: {
+          marginTop: 12
+        },
+        children: /* @__PURE__ */ jsxs("table", {
+          children: [/* @__PURE__ */ jsx("thead", {
+            children: /* @__PURE__ */ jsxs("tr", {
+              children: [/* @__PURE__ */ jsx("th", {
+                children: "Order"
+              }), /* @__PURE__ */ jsx("th", {
+                children: "Why it was not sent"
+              }), /* @__PURE__ */ jsx("th", {
+                children: "Tries"
+              })]
+            })
+          }), /* @__PURE__ */ jsx("tbody", {
+            children: ims.failedList.map((f) => /* @__PURE__ */ jsxs("tr", {
+              children: [/* @__PURE__ */ jsx("td", {
+                children: f.name
+              }), /* @__PURE__ */ jsx("td", {
+                children: f.error
+              }), /* @__PURE__ */ jsx("td", {
+                children: f.attempts
+              })]
+            }, f.name))
+          })]
+        })
+      })]
     }), /* @__PURE__ */ jsxs(Card, {
       title: "WhatsApp Business Cloud API",
       children: [/* @__PURE__ */ jsxs("ul", {
@@ -18000,7 +18498,7 @@ function Importer({
 }) {
   const rv = useRevalidator();
   const input = useRef(null);
-  const [name, setName] = useState("");
+  const [name2, setName] = useState("");
   const [pv, setPv] = useState(null);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState(null);
@@ -18037,7 +18535,7 @@ function Importer({
       children: [/* @__PURE__ */ jsx(FileUp, {
         size: 22
       }), /* @__PURE__ */ jsx("b", {
-        children: checking ? `Checking ${name}…` : "Choose the filled CSV file"
+        children: checking ? `Checking ${name2}…` : "Choose the filled CSV file"
       }), /* @__PURE__ */ jsx("span", {
         children: "Only the new_* columns are read. Nothing changes in Shopify yet: you see a preview first."
       }), /* @__PURE__ */ jsx("input", {
@@ -18051,7 +18549,7 @@ function Importer({
         }
       })]
     }), checking && /* @__PURE__ */ jsx(ProgressBar, {
-      label: `Checking ${name} against your products`,
+      label: `Checking ${name2} against your products`,
       detail: "Nothing is changed in Shopify yet."
     }), pv && /* @__PURE__ */ jsxs("div", {
       className: "seo-preview",
@@ -19681,7 +20179,7 @@ const route36 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePrope
   headers,
   loader
 }, Symbol.toStringTag, { value: "Module" }));
-const serverManifest = { "entry": { "module": "/assets/entry.client-B2DhYD8P.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-Bbx3Gsj_.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index/route": { "id": "routes/_index/route", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-CoDyHqU4.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/health": { "id": "routes/health", "parentId": "root", "path": "health", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/health-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.cancelled": { "id": "routes/webhooks.orders.cancelled", "parentId": "root", "path": "webhooks/orders/cancelled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.cancelled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.create": { "id": "routes/webhooks.orders.create", "parentId": "root", "path": "webhooks/orders/create", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.create-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.updated": { "id": "routes/webhooks.orders.updated", "parentId": "root", "path": "webhooks/orders/updated", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.updated-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.products.update": { "id": "routes/webhooks.products.update", "parentId": "root", "path": "webhooks/products/update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.products.update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.avatar.$id": { "id": "routes/api.avatar.$id", "parentId": "root", "path": "api/avatar/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.avatar._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.chat": { "id": "routes/api.chat", "parentId": "root", "path": "api/chat", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.chat-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.finder.$": { "id": "routes/api.finder.$", "parentId": "root", "path": "api/finder/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.finder._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.image-editor.$": { "id": "routes/api.image-editor.$", "parentId": "root", "path": "api/image-editor/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.image-editor._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.media.$id": { "id": "routes/api.media.$id", "parentId": "root", "path": "api/media/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.media._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.send": { "id": "routes/api.send", "parentId": "root", "path": "api/send", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.send-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.seo.$": { "id": "routes/api.seo.$", "parentId": "root", "path": "api/seo/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.seo._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.webhooks.whatsapp": { "id": "routes/api.webhooks.whatsapp", "parentId": "root", "path": "api/webhooks/whatsapp", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.webhooks.whatsapp-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-BIK5KG_Y.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/wand-sparkles-Z3WonEnQ.js", "/assets/x-CUdg-5nA.js", "/assets/createLucideIcon-DsmJuneY.js", "/assets/scan-search-BdiaXDva.js", "/assets/sparkles-DEkIhHE9.js", "/assets/ui-CCPWwTiq.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-hPCaU389.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/useAutoRefresh-Bwi9F4c1.js", "/assets/ui-CCPWwTiq.js", "/assets/wand-sparkles-Z3WonEnQ.js", "/assets/createLucideIcon-DsmJuneY.js", "/assets/scan-search-BdiaXDva.js", "/assets/shopping-bag-COoHNGPk.js", "/assets/circle-check-CdACTwfw.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.billing-data": { "id": "routes/app.billing-data", "parentId": "routes/app", "path": "billing-data", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.billing-data-BEtpZT9w.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ui-CCPWwTiq.js", "/assets/download-B5lLFQ81.js", "/assets/createLucideIcon-DsmJuneY.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.conversations": { "id": "routes/app.conversations", "parentId": "routes/app", "path": "conversations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.conversations-DFKp-DzS.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/useAutoRefresh-Bwi9F4c1.js", "/assets/ui-CCPWwTiq.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.enquiries": { "id": "routes/app.enquiries", "parentId": "routes/app", "path": "enquiries", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.enquiries-D5k6QdFp.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/useAutoRefresh-Bwi9F4c1.js", "/assets/ui-CCPWwTiq.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-bulk": { "id": "routes/app.image-bulk", "parentId": "routes/app", "path": "image-bulk", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-bulk-Biz3GsgO.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/image-editor-Dkh2175b.js", "/assets/ProgressBar-D6JY6vUU.js", "/assets/ui-CCPWwTiq.js", "/assets/image-products-BpLzRnjK.js", "/assets/rotate-ccw-BprJTMCp.js", "/assets/createLucideIcon-DsmJuneY.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-editor": { "id": "routes/app.image-editor", "parentId": "routes/app", "path": "image-editor", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-editor-CjF825C8.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ImageOptionsForm-CsZ56ZpF.js", "/assets/useAutoRefresh-Bwi9F4c1.js", "/assets/image-editor-Dkh2175b.js", "/assets/ui-CCPWwTiq.js", "/assets/createLucideIcon-DsmJuneY.js", "/assets/trash-K8o4AfSx.js", "/assets/rotate-ccw-BprJTMCp.js", "/assets/download-B5lLFQ81.js", "/assets/shopping-bag-COoHNGPk.js", "/assets/sparkles-DEkIhHE9.js", "/assets/x-CUdg-5nA.js", "/assets/chevron-down-DXhzW4VA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-products": { "id": "routes/app.image-products", "parentId": "routes/app", "path": "image-products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-products-_2IXCMrd.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ImageOptionsForm-CsZ56ZpF.js", "/assets/useAutoRefresh-Bwi9F4c1.js", "/assets/image-editor-Dkh2175b.js", "/assets/ui-CCPWwTiq.js", "/assets/image-products-BpLzRnjK.js", "/assets/search-DVQHDemA.js", "/assets/x-CUdg-5nA.js", "/assets/trash-K8o4AfSx.js", "/assets/rotate-ccw-BprJTMCp.js", "/assets/download-B5lLFQ81.js", "/assets/undo-2-oelYNy1y.js", "/assets/createLucideIcon-DsmJuneY.js", "/assets/shopping-bag-COoHNGPk.js", "/assets/sparkles-DEkIhHE9.js", "/assets/chevron-down-DXhzW4VA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.integrations": { "id": "routes/app.integrations", "parentId": "routes/app", "path": "integrations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.integrations-DFKXgM48.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ui-CCPWwTiq.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.logs": { "id": "routes/app.logs", "parentId": "routes/app", "path": "logs", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.logs-Bda31WVv.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/useAutoRefresh-Bwi9F4c1.js", "/assets/ui-CCPWwTiq.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.order-sheet": { "id": "routes/app.order-sheet", "parentId": "routes/app", "path": "order-sheet", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.order-sheet-BNqi1UMe.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/useAutoRefresh-Bwi9F4c1.js", "/assets/ui-CCPWwTiq.js", "/assets/ProgressBar-D6JY6vUU.js", "/assets/createLucideIcon-DsmJuneY.js", "/assets/x-CUdg-5nA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.orders": { "id": "routes/app.orders", "parentId": "routes/app", "path": "orders", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.orders-0hVLtLmc.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ui-CCPWwTiq.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.product-scrapper": { "id": "routes/app.product-scrapper", "parentId": "routes/app", "path": "product-scrapper", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.product-scrapper-BD7D6zZZ.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/useAutoRefresh-Bwi9F4c1.js", "/assets/ui-CCPWwTiq.js", "/assets/ProgressBar-D6JY6vUU.js", "/assets/search-DVQHDemA.js", "/assets/trash-K8o4AfSx.js", "/assets/download-B5lLFQ81.js", "/assets/createLucideIcon-DsmJuneY.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.products": { "id": "routes/app.products", "parentId": "routes/app", "path": "products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.products-vrOF8-7e.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ui-CCPWwTiq.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.quick-replies": { "id": "routes/app.quick-replies", "parentId": "routes/app", "path": "quick-replies", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.quick-replies-DKKEx323.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ui-CCPWwTiq.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.seo": { "id": "routes/app.seo", "parentId": "routes/app", "path": "seo", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.seo-Ca1Df0JO.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ui-CCPWwTiq.js", "/assets/ProgressBar-D6JY6vUU.js", "/assets/scan-search-BdiaXDva.js", "/assets/circle-check-CdACTwfw.js", "/assets/search-DVQHDemA.js", "/assets/x-CUdg-5nA.js", "/assets/createLucideIcon-DsmJuneY.js", "/assets/chevron-down-DXhzW4VA.js", "/assets/download-B5lLFQ81.js", "/assets/undo-2-oelYNy1y.js", "/assets/rotate-ccw-BprJTMCp.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.settings": { "id": "routes/app.settings", "parentId": "routes/app", "path": "settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.settings-D6bag5FY.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ui-CCPWwTiq.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.waiting": { "id": "routes/app.waiting", "parentId": "routes/app", "path": "waiting", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/app.waiting-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.whatsapp-web": { "id": "routes/app.whatsapp-web", "parentId": "routes/app", "path": "whatsapp-web", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.whatsapp-web-6X5SYdWT.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ui-CCPWwTiq.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-91b13159.js", "version": "91b13159", "sri": void 0 };
+const serverManifest = { "entry": { "module": "/assets/entry.client-B2DhYD8P.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/root-Bbx3Gsj_.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/_index/route": { "id": "routes/_index/route", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/route-CoDyHqU4.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/health": { "id": "routes/health", "parentId": "root", "path": "health", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/health-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.scopes_update": { "id": "routes/webhooks.app.scopes_update", "parentId": "root", "path": "webhooks/app/scopes_update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.scopes_update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.app.uninstalled": { "id": "routes/webhooks.app.uninstalled", "parentId": "root", "path": "webhooks/app/uninstalled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.app.uninstalled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.cancelled": { "id": "routes/webhooks.orders.cancelled", "parentId": "root", "path": "webhooks/orders/cancelled", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.cancelled-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.create": { "id": "routes/webhooks.orders.create", "parentId": "root", "path": "webhooks/orders/create", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.create-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.orders.updated": { "id": "routes/webhooks.orders.updated", "parentId": "root", "path": "webhooks/orders/updated", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.orders.updated-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/webhooks.products.update": { "id": "routes/webhooks.products.update", "parentId": "root", "path": "webhooks/products/update", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/webhooks.products.update-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.avatar.$id": { "id": "routes/api.avatar.$id", "parentId": "root", "path": "api/avatar/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.avatar._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.chat": { "id": "routes/api.chat", "parentId": "root", "path": "api/chat", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.chat-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.finder.$": { "id": "routes/api.finder.$", "parentId": "root", "path": "api/finder/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.finder._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.image-editor.$": { "id": "routes/api.image-editor.$", "parentId": "root", "path": "api/image-editor/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.image-editor._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.media.$id": { "id": "routes/api.media.$id", "parentId": "root", "path": "api/media/:id", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.media._id-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.send": { "id": "routes/api.send", "parentId": "root", "path": "api/send", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.send-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.seo.$": { "id": "routes/api.seo.$", "parentId": "root", "path": "api/seo/*", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.seo._-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api.webhooks.whatsapp": { "id": "routes/api.webhooks.whatsapp", "parentId": "root", "path": "api/webhooks/whatsapp", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/api.webhooks.whatsapp-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": true, "module": "/assets/app-BIK5KG_Y.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/wand-sparkles-Z3WonEnQ.js", "/assets/x-CUdg-5nA.js", "/assets/createLucideIcon-DsmJuneY.js", "/assets/scan-search-BdiaXDva.js", "/assets/sparkles-DEkIhHE9.js", "/assets/ui-CCPWwTiq.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app._index-hPCaU389.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/useAutoRefresh-Bwi9F4c1.js", "/assets/ui-CCPWwTiq.js", "/assets/wand-sparkles-Z3WonEnQ.js", "/assets/createLucideIcon-DsmJuneY.js", "/assets/scan-search-BdiaXDva.js", "/assets/shopping-bag-COoHNGPk.js", "/assets/circle-check-CdACTwfw.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.billing-data": { "id": "routes/app.billing-data", "parentId": "routes/app", "path": "billing-data", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.billing-data-BEtpZT9w.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ui-CCPWwTiq.js", "/assets/download-B5lLFQ81.js", "/assets/createLucideIcon-DsmJuneY.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.conversations": { "id": "routes/app.conversations", "parentId": "routes/app", "path": "conversations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.conversations-DFKp-DzS.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/useAutoRefresh-Bwi9F4c1.js", "/assets/ui-CCPWwTiq.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.enquiries": { "id": "routes/app.enquiries", "parentId": "routes/app", "path": "enquiries", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.enquiries-D5k6QdFp.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/useAutoRefresh-Bwi9F4c1.js", "/assets/ui-CCPWwTiq.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-bulk": { "id": "routes/app.image-bulk", "parentId": "routes/app", "path": "image-bulk", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-bulk-Biz3GsgO.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/image-editor-Dkh2175b.js", "/assets/ProgressBar-D6JY6vUU.js", "/assets/ui-CCPWwTiq.js", "/assets/image-products-BpLzRnjK.js", "/assets/rotate-ccw-BprJTMCp.js", "/assets/createLucideIcon-DsmJuneY.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-editor": { "id": "routes/app.image-editor", "parentId": "routes/app", "path": "image-editor", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-editor-CjF825C8.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ImageOptionsForm-CsZ56ZpF.js", "/assets/useAutoRefresh-Bwi9F4c1.js", "/assets/image-editor-Dkh2175b.js", "/assets/ui-CCPWwTiq.js", "/assets/createLucideIcon-DsmJuneY.js", "/assets/trash-K8o4AfSx.js", "/assets/rotate-ccw-BprJTMCp.js", "/assets/download-B5lLFQ81.js", "/assets/shopping-bag-COoHNGPk.js", "/assets/sparkles-DEkIhHE9.js", "/assets/x-CUdg-5nA.js", "/assets/chevron-down-DXhzW4VA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.image-products": { "id": "routes/app.image-products", "parentId": "routes/app", "path": "image-products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.image-products-_2IXCMrd.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ImageOptionsForm-CsZ56ZpF.js", "/assets/useAutoRefresh-Bwi9F4c1.js", "/assets/image-editor-Dkh2175b.js", "/assets/ui-CCPWwTiq.js", "/assets/image-products-BpLzRnjK.js", "/assets/search-DVQHDemA.js", "/assets/x-CUdg-5nA.js", "/assets/trash-K8o4AfSx.js", "/assets/rotate-ccw-BprJTMCp.js", "/assets/download-B5lLFQ81.js", "/assets/undo-2-oelYNy1y.js", "/assets/createLucideIcon-DsmJuneY.js", "/assets/shopping-bag-COoHNGPk.js", "/assets/sparkles-DEkIhHE9.js", "/assets/chevron-down-DXhzW4VA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.integrations": { "id": "routes/app.integrations", "parentId": "routes/app", "path": "integrations", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.integrations-j_OppAa4.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/useAutoRefresh-Bwi9F4c1.js", "/assets/ui-CCPWwTiq.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.logs": { "id": "routes/app.logs", "parentId": "routes/app", "path": "logs", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.logs-Bda31WVv.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/useAutoRefresh-Bwi9F4c1.js", "/assets/ui-CCPWwTiq.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.order-sheet": { "id": "routes/app.order-sheet", "parentId": "routes/app", "path": "order-sheet", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.order-sheet-BNqi1UMe.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/useAutoRefresh-Bwi9F4c1.js", "/assets/ui-CCPWwTiq.js", "/assets/ProgressBar-D6JY6vUU.js", "/assets/createLucideIcon-DsmJuneY.js", "/assets/x-CUdg-5nA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.orders": { "id": "routes/app.orders", "parentId": "routes/app", "path": "orders", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.orders-0hVLtLmc.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ui-CCPWwTiq.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.product-scrapper": { "id": "routes/app.product-scrapper", "parentId": "routes/app", "path": "product-scrapper", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.product-scrapper-BD7D6zZZ.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/useAutoRefresh-Bwi9F4c1.js", "/assets/ui-CCPWwTiq.js", "/assets/ProgressBar-D6JY6vUU.js", "/assets/search-DVQHDemA.js", "/assets/trash-K8o4AfSx.js", "/assets/download-B5lLFQ81.js", "/assets/createLucideIcon-DsmJuneY.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.products": { "id": "routes/app.products", "parentId": "routes/app", "path": "products", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.products-vrOF8-7e.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ui-CCPWwTiq.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.quick-replies": { "id": "routes/app.quick-replies", "parentId": "routes/app", "path": "quick-replies", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.quick-replies-DKKEx323.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ui-CCPWwTiq.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.seo": { "id": "routes/app.seo", "parentId": "routes/app", "path": "seo", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.seo-Ca1Df0JO.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ui-CCPWwTiq.js", "/assets/ProgressBar-D6JY6vUU.js", "/assets/scan-search-BdiaXDva.js", "/assets/circle-check-CdACTwfw.js", "/assets/search-DVQHDemA.js", "/assets/x-CUdg-5nA.js", "/assets/createLucideIcon-DsmJuneY.js", "/assets/chevron-down-DXhzW4VA.js", "/assets/download-B5lLFQ81.js", "/assets/undo-2-oelYNy1y.js", "/assets/rotate-ccw-BprJTMCp.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.settings": { "id": "routes/app.settings", "parentId": "routes/app", "path": "settings", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.settings-D6bag5FY.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ui-CCPWwTiq.js", "/assets/useAppBridge-Bj34gXAL.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.waiting": { "id": "routes/app.waiting", "parentId": "routes/app", "path": "waiting", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": false, "hasErrorBoundary": false, "module": "/assets/app.waiting-l0sNRNKZ.js", "imports": [], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/app.whatsapp-web": { "id": "routes/app.whatsapp-web", "parentId": "routes/app", "path": "whatsapp-web", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasDefaultExport": true, "hasErrorBoundary": false, "module": "/assets/app.whatsapp-web-6X5SYdWT.js", "imports": ["/assets/jsx-runtime-8POF5vqj.js", "/assets/ui-CCPWwTiq.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-4199cfc2.js", "version": "4199cfc2", "sri": void 0 };
 const assetsBuildDirectory = "build/client";
 const basename = "/";
 const future = { "unstable_optimizeDeps": false, "v8_passThroughRequests": false, "v8_trailingSlashAwareDataRequests": false, "unstable_previewServerPrerendering": false, "v8_middleware": false, "v8_splitRouteModules": false, "v8_viteEnvironmentApi": false };

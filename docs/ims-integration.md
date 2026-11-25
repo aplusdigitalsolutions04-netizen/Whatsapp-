@@ -90,3 +90,13 @@ Rules that keep customers safe:
 * Keep the `.wa-auth` folder, the SQLite file and `WHATSAPP_MEDIA_DIR` on persistent storage.
 * The server must stay on and be served over HTTPS. If a proxy sits in front, it must forward `x-forwarded-for`.
 * If a key leaks: change it in `.env`, restart, and give the new one to the other side.
+
+## 5. WERY orders -> IMS (the app sends orders to the IMS portal)
+
+Set up in the app: Integrations -> "IMS portal". Paste the IMS address (`https://<IMS-DOMAIN>/api/external/v1/shopify/orders`) and the IMS API key, switch it on, Save.
+
+* Every new order is sent at once (`order.created`); every change (status, tracking) and every cancel follows about 20 seconds later (`order.updated` / `order.cancelled`). The IMS answers 200 or 201 for "received".
+* "Send old orders" sends the whole history, 10 orders at a time. The same `shopifyOrderId` sent again updates the order in the IMS, it is never duplicated.
+* Every order goes through an outbox: a wrong key, a slow IMS or a stopped server never loses an order. It is retried (30 s, 1 min, 2 min ... up to 1 hour between tries, 10 tries). Orders that fail are listed on the page with the reason; "Retry failed" queues them again.
+* The IMS needs a SKU for every item. An order with an item without a SKU is not sent and is listed with the reason; add the SKU in Shopify, then press "Retry failed".
+* The key is stored encrypted and is never shown again (only its last 4 characters). The body has the fields of the IMS document plus `fulfillmentStatus`, `tracking` and `cancelledAt` as extra information.

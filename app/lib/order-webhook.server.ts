@@ -14,7 +14,7 @@ export async function handleOrderWebhook(shop: string, topic: string, payload: a
           ? orderGid(payload.id)
           : null;
     if (!id) return;
-    await syncOrderById(shop, id);
+    await syncOrderById(shop, id, topic);
   } catch (e) {
     await logEvent({ shop, source: "shopify", level: "error", event: "order_webhook_failed", detail: `${topic}: ${(e as Error).message}` });
   }
