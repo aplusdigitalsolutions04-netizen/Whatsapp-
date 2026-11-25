@@ -14,7 +14,10 @@ const SHOW = 50;
  */
 export async function searchInbox(shop: string, q: string, base: Record<string, unknown>) {
   const text = q.trim().slice(0, 60);
-  const or: Record<string, unknown>[] = [{ customerName: { contains: text } }, { messages: { some: { body: { contains: text } } } }];
+  // words inside messages only from 2 characters: one letter matches almost every message and would scan them all on every keystroke
+  const or: Record<string, unknown>[] = [{ customerName: { contains: text } }];
+  const inMessages = text.length >= 2;
+  if (inMessages) or.push({ messages: { some: { body: { contains: text } } } });
 
   // an order id: find the order in the Order Update sheet and look for chats with the customer's number
   const ref = parseOrderRef(text);
@@ -38,7 +41,7 @@ export async function searchInbox(shop: string, q: string, base: Record<string, 
   });
 
   // the newest message of each chat that contains the text (shown as the preview)
-  const hits = found.length
+  const hits = found.length && inMessages
     ? await prisma.message.findMany({ where: { conversationId: { in: found.map((c) => c.id) }, body: { contains: text } }, orderBy: { createdAt: "desc" }, take: 600, select: { conversationId: true, body: true } })
     : [];
   const hitBody = new Map<string, string>();

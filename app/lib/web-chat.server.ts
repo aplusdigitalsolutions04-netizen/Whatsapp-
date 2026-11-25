@@ -42,6 +42,14 @@ export async function sendWebMessage(args: { shop: string; sid: string; text: st
   }
   const settings = await getSettings(shop);
   if (!args.test && !settings.webWidget) return { ok: false, error: "Chat is not available right now.", status: 403 };
+  // Every new session id opens a new chat in the owner's Live Inbox. Without this limit one script could fill the inbox with fake chats
+  // (and use the AI answers) by sending a new random id every time.
+  if (ip && !args.test) {
+    const exists = await prisma.conversation.findUnique({ where: { shop_phone: { shop, phone: `web:${sid}` } }, select: { id: true } });
+    if (!exists && (rateLimited(`webchat:new:${ip}`, 6, 60_000) || rateLimited("webchat:new:all", 100, 60_000))) {
+      return { ok: false, error: "Too many new chats right now. Please try again in a minute.", status: 429 };
+    }
+  }
   const name = (args.name ?? "").trim().slice(0, 40) || (args.test ? "You (test chat)" : "");
   try {
     await handleInbound(

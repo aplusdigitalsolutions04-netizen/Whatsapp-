@@ -17,7 +17,8 @@ const headersFor = (request: Request): HeadersInit => {
   if (origin) h["Access-Control-Allow-Origin"] = origin;
   return h;
 };
-const json = (request: Request, data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: headersFor(request) });
+const json = (request: Request, data: unknown, status = 200, extra: Record<string, string> = {}) =>
+  new Response(JSON.stringify(data), { status, headers: { ...headersFor(request), ...extra } });
 
 const ipOf = (request: Request) => request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
 
@@ -25,7 +26,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   const shop = await widgetShop();
   if (!shop) return json(request, { enabled: false, whatsapp: "", messages: [] });
-  if (url.searchParams.get("config")) return json(request, await webChatConfig(shop));
+  // the icon asks this on every page view of the store: browsers may keep the answer for 30 s (switching the icon off takes at most that long)
+  if (url.searchParams.get("config")) return json(request, await webChatConfig(shop), 200, { "Cache-Control": "public, max-age=30" });
   const cfg = await webChatConfig(shop);
   const sid = url.searchParams.get("sid") ?? "";
   const res = await readWebMessages(shop, sid, url.searchParams.get("after"));

@@ -42,7 +42,11 @@ async function schemaCheck() {
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const debug = new URL(request.url).searchParams.get("debug") === "1";
+  const q = new URL(request.url).searchParams;
+  // ?debug=1 shows the last server errors (with the app file they came from). Set HEALTH_DEBUG_KEY on the server and it also needs
+  // &key=<that value>, so nobody else can read them. Without the setting it stays open, as before.
+  const need = (process.env.HEALTH_DEBUG_KEY ?? "").trim();
+  const debug = q.get("debug") === "1" && (!need || q.get("key") === need);
   try {
     await prisma.$queryRaw`SELECT 1`;
     return Response.json({ ok: true, assets: assetCount(), image: await imageLibrary(), schema: await schemaCheck(), ...(debug ? { recentErrors: recentErrors() } : {}) }, { headers: { "Cache-Control": "no-store" } });

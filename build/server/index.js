@@ -4890,11 +4890,15 @@ async function enqueueAllOrders(shop) {
 async function enqueueMissedOrders(shop) {
   const cfg = await prisma.imsConfig.findUnique({ where: { shop }, select: { enabled: true, url: true, keyEnc: true, autoFrom: true } });
   if (!(cfg == null ? void 0 : cfg.enabled) || !cfg.url || !cfg.keyEnc || !cfg.autoFrom) return 0;
-  const rows = await prisma.orderSheet.findMany({
+  const newest = await prisma.orderSheet.findMany({
     where: { shop, isManual: false, createdAt: { gte: cfg.autoFrom } },
-    select: { shopifyOrderId: true, orderName: true },
-    orderBy: [{ orderDate: "asc" }, { createdAt: "asc" }],
+    select: { shopifyOrderId: true, orderName: true, orderDate: true, createdAt: true },
+    orderBy: { createdAt: "desc" },
     take: 300
+  });
+  const rows = newest.sort((a, b) => {
+    var _a2, _b;
+    return (((_a2 = a.orderDate) == null ? void 0 : _a2.getTime()) ?? 0) - (((_b = b.orderDate) == null ? void 0 : _b.getTime()) ?? 0) || a.createdAt.getTime() - b.createdAt.getTime();
   });
   if (!rows.length) return 0;
   const have = new Set((await prisma.imsPush.findMany({ where: { shop, orderGid: { in: rows.map((r) => orderGidFor(r.shopifyOrderId)) } }, select: { orderGid: true } })).map((x) => x.orderGid));
@@ -6365,7 +6369,9 @@ async function schemaCheck() {
 const loader$r = async ({
   request
 }) => {
-  const debug = new URL(request.url).searchParams.get("debug") === "1";
+  const q = new URL(request.url).searchParams;
+  const need = (process.env.HEALTH_DEBUG_KEY ?? "").trim();
+  const debug = q.get("debug") === "1" && (!need || q.get("key") === need);
   try {
     await prisma.$queryRaw`SELECT 1`;
     return Response.json({
@@ -6614,6 +6620,12 @@ async function sendWebMessage(args) {
   }
   const settings = await getSettings(shop);
   if (!settings.webWidget) return { ok: false, error: "Chat is not available right now.", status: 403 };
+  if (ip && true) {
+    const exists = await prisma.conversation.findUnique({ where: { shop_phone: { shop, phone: `web:${sid}` } }, select: { id: true } });
+    if (!exists && (rateLimited(`webchat:new:${ip}`, 6, 6e4) || rateLimited("webchat:new:all", 100, 6e4))) {
+      return { ok: false, error: "Too many new chats right now. Please try again in a minute.", status: 429 };
+    }
+  }
   const name2 = (args.name ?? "").trim().slice(0, 40) || "";
   try {
     await handleInbound(
@@ -6651,9 +6663,12 @@ const headersFor = (request) => {
   if (origin) h["Access-Control-Allow-Origin"] = origin;
   return h;
 };
-const json$3 = (request, data, status = 200) => new Response(JSON.stringify(data), {
+const json$3 = (request, data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
   status,
-  headers: headersFor(request)
+  headers: {
+    ...headersFor(request),
+    ...extra
+  }
 });
 const ipOf = (request) => {
   var _a2, _b;
@@ -6669,7 +6684,9 @@ const loader$o = async ({
     whatsapp: "",
     messages: []
   });
-  if (url.searchParams.get("config")) return json$3(request, await webChatConfig(shop));
+  if (url.searchParams.get("config")) return json$3(request, await webChatConfig(shop), 200, {
+    "Cache-Control": "public, max-age=30"
+  });
   const cfg = await webChatConfig(shop);
   const sid = url.searchParams.get("sid") ?? "";
   const res = await readWebMessages(shop, sid, url.searchParams.get("after"));
@@ -11904,7 +11921,9 @@ const FETCH = 200;
 const SHOW = 50;
 async function searchInbox(shop, q, base) {
   const text2 = q.trim().slice(0, 60);
-  const or = [{ customerName: { contains: text2 } }, { messages: { some: { body: { contains: text2 } } } }];
+  const or = [{ customerName: { contains: text2 } }];
+  const inMessages = text2.length >= 2;
+  if (inMessages) or.push({ messages: { some: { body: { contains: text2 } } } });
   const ref = parseOrderRef(text2);
   const orderPhones = /* @__PURE__ */ new Map();
   if (ref && !refIsPhone(ref)) {
@@ -11923,7 +11942,7 @@ async function searchInbox(shop, q, base) {
     take: FETCH,
     include: { messages: { orderBy: { createdAt: "desc" }, take: 1 } }
   });
-  const hits2 = found.length ? await prisma.message.findMany({ where: { conversationId: { in: found.map((c) => c.id) }, body: { contains: text2 } }, orderBy: { createdAt: "desc" }, take: 600, select: { conversationId: true, body: true } }) : [];
+  const hits2 = found.length && inMessages ? await prisma.message.findMany({ where: { conversationId: { in: found.map((c) => c.id) }, body: { contains: text2 } }, orderBy: { createdAt: "desc" }, take: 600, select: { conversationId: true, body: true } }) : [];
   const hitBody = /* @__PURE__ */ new Map();
   for (const h of hits2) if (!hitBody.has(h.conversationId)) hitBody.set(h.conversationId, h.body);
   const lower = text2.toLowerCase();

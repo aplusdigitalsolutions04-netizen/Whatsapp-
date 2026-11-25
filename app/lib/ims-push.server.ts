@@ -98,12 +98,15 @@ export async function enqueueAllOrders(shop: string): Promise<number> {
 export async function enqueueMissedOrders(shop: string): Promise<number> {
   const cfg = await prisma.imsConfig.findUnique({ where: { shop }, select: { enabled: true, url: true, keyEnc: true, autoFrom: true } });
   if (!cfg?.enabled || !cfg.url || !cfg.keyEnc || !cfg.autoFrom) return 0;
-  const rows = await prisma.orderSheet.findMany({
+  // the NEWEST 300 orders seen since the switch (a missed order is a recent one; looking at the oldest 300 would never reach new orders
+  // once more than 300 have come in), then queued oldest first
+  const newest = await prisma.orderSheet.findMany({
     where: { shop, isManual: false, createdAt: { gte: cfg.autoFrom } },
-    select: { shopifyOrderId: true, orderName: true },
-    orderBy: [{ orderDate: "asc" }, { createdAt: "asc" }],
+    select: { shopifyOrderId: true, orderName: true, orderDate: true, createdAt: true },
+    orderBy: { createdAt: "desc" },
     take: 300,
   });
+  const rows = newest.sort((a, b) => (a.orderDate?.getTime() ?? 0) - (b.orderDate?.getTime() ?? 0) || a.createdAt.getTime() - b.createdAt.getTime());
   if (!rows.length) return 0;
   const have = new Set((await prisma.imsPush.findMany({ where: { shop, orderGid: { in: rows.map((r) => orderGidFor(r.shopifyOrderId)) } }, select: { orderGid: true } })).map((x) => x.orderGid));
   const base = Date.now();
